@@ -1620,7 +1620,7 @@ theorem valueArms_trace_number {K K' : Stage2NoEventWalkCarry}
   refine h.step (K' := K')
     (evs := [ConsumerEvent.number (strtodSpec d).toBits])
     (toks := [Token.number ⟨start, stop⟩]) ?_ ?_ hbs harena htok hterms
-  · exact Stage2NoEvent.number hwf hstop hslice Stage2NoEvent.nil
+  · exact Stage2NoEvent.number (StrtodReader.reader_lexeme hwf) hstop hslice Stage2NoEvent.nil
   · exact valueArms_arenaBound_number K.arena _
 
 /-! ### The number arm's export -/

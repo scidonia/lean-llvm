@@ -120,14 +120,14 @@ slice decodes to the token's code points. -/
 theorem eventBridge_bodyReads_str_plain {bs arena : List UInt8} {key : Bool}
     {len field : Nat} {cs : List Nat} (hnot : ¬ field < 2 ^ 63)
     (hbnd : (field - 2 ^ 63) + len ≤ bs.length)
-    (hread : escapeCodePoints ((bs.drop (field - 2 ^ 63)).take len) = some cs) :
+    (hcode : bodyCodePointsAt bs (field - 2 ^ 63) = some cs) :
     (EventRecord.str key len field).BodyReads bs arena := by
   refine ⟨cs, ?_, ?_⟩
   · unfold recordBodyCodePoints
-    rw [ite_eq_right hnot, ite_eq_left hbnd, hread]
+    rw [ite_eq_right hnot, ite_eq_left hbnd]
+    exact hcode
   · unfold stringConsumer
-    rw [ite_eq_right hnot, hread]
-    rfl
+    rw [ite_eq_right hnot, hcode, Option.getD_some]
 
 /-- The consumer's reading of a trace is a `map`, so its head is the head
 record's event and its tail is the tail trace's.  Stated as an equation so the
@@ -235,7 +235,7 @@ theorem bodyReads_of_bodiesWithin {bs arena : List UInt8} {rs : List EventRecord
       · exact ih (fun e he => hw e (by
           rw [eventBridge_consumeRecords_cons]
           exact List.mem_cons_of_mem _ he)) r hr
-  | strPlain hq hs hbody hcode h ih =>
+  | strPlain hq hs hcode h ih =>
       rename_i key s rs' toks' len cs
       intro hw r hr
       rcases List.mem_cons.mp hr with heq | hr
@@ -259,7 +259,8 @@ theorem bodyReads_of_bodiesWithin {bs arena : List UInt8} {rs : List EventRecord
           unfold plainSpan
           omega
         rw [ite_eq_right hlt] at hb
-        exact eventBridge_bodyReads_str_plain hlt hb (by rw [hsub]; exact hbody)
+        exact eventBridge_bodyReads_str_plain hlt hb
+          (by rw [hsub, ← bodyCodePoints_eq_at]; exact hcode)
       · exact ih (fun e he => hw e (by
           rw [eventBridge_consumeRecords_cons]
           exact List.mem_cons_of_mem _ he)) r hr

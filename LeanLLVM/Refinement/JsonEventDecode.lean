@@ -23,6 +23,17 @@ open LeanLLVM.JSON
 /-- The lexeme a number event's payload renders: its eight bytes, little-endian. -/
 def bitsLexeme (bits : Nat) : List UInt8 := bitsBytes bits
 
+/-- The body's code points as the tape's escape-aware scanner reads them from a
+body that starts at `bodyStart`.  This is the reading a string record
+addresses — the plain form's field is the body's first document byte, the arena
+form's slice is decoded the same way — and it lives here, beside the stream's
+other decoders, so a reader of the bytes does not import the stage-2 relation or
+the proof tower behind it. -/
+def bodyCodePointsAt (bs : List UInt8) (bodyStart : Nat) : Option (List Nat) :=
+  match scanCharsEnd (ByteString.literal bs) bodyStart 0 with
+  | .ok (cs, _) => some cs
+  | .error _ => none
+
 /-! ### The event decoder
 
 A recursive descent over the consumer's events.  Commas and colons are absent

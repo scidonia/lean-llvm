@@ -27,10 +27,11 @@ names the payload each record then carries:
   `TokenRecord` at every index is `WalkTraceRow`, the hypothesis
   `emittedStream_of_row` consumes.
 
-The plain string form's `escapeCodePoints` slice of the *raw* body is the walk's own
-read of a body it chose as unescaped: the parser's fact is `bodyCodePoints`, which
-`bodyCodePoints_of_stringAt` supplies from the tape's `StringAt`.  So the plain
-form's premise stays the arm's, and both forms' code points are the parser's.
+The plain string form's parser fact is `bodyCodePoints`, which
+`bodyCodePoints_of_stringAt` supplies from the tape's `StringAt`; the relation's
+`strPlain` row asks only that read, not the `escapeCodePoints` slice of the raw
+body, so `tokenRecord_string_plain_of_tape` takes the grammar's code points and no
+read-back of the arm's chosen form.  Both forms' code points are the parser's.
 
 There is no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/
@@ -142,7 +143,7 @@ theorem bodyCodePoints_of_stringAt {bs : List UInt8} {i j : Nat} {cs : List Nat}
   obtain ⟨stop, hstop, -⟩ :=
     scanCharsEnd_ok_of_scanCharsFrom (bs := ByteString.literal bs) (i := i + 1)
       (off := 0) hscan
-  unfold bodyCodePoints
+  unfold bodyCodePoints bodyCodePointsAt
   rw [hstop]
 
 /-- **A tape's string token has the grammar's body code points.**  The two steps —
@@ -204,23 +205,23 @@ theorem tokenRecord_number_of_tape {t : Tape} {v : JSON.Value} {bs arena : List 
     have hsize : d.lexeme.length = d.lexeme.data.toList.length := by
       rw [ByteString.length_eq_size, ByteString.size_eq_data, ← Array.length_toList]
     omega
-  refine TokenRecord.number hwf ?_ ?_
+  refine TokenRecord.number (lex := d.lexeme) (StrtodReader.reader_lexeme hwf) ?_ ?_
   · omega
   · rw [hlex]
 
 /-- **A plain string record at a tape's token.**  The span opens with the quote and
 its body's code points are the grammar's (`bodyCodePoints`); the record's field
-addresses the document's body and its length is the body's, and the raw slice's
-code points — the walk's reading of a body it emitted unescaped — are the same. -/
+addresses the document's body and its length is the body's.  The record's
+`TokenRecord.strPlain` row asks only the grammar's read, so no raw-body read-back
+is a hypothesis. -/
 theorem tokenRecord_string_plain_of_tape {t : Tape} {v : JSON.Value} {bs arena : List UInt8}
     (h : decodeTape t = some v) (hin : t.input = ByteString.literal bs)
     {s : Span} (htok : Token.string s ∈ t.tokens) {key : Bool} {len : Nat} {cs : List Nat}
     (hspan : s.stop = s.start + 2 + len)
-    (hcode : bodyCodePoints bs s = some cs)
-    (hbody : escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs) :
+    (hcode : bodyCodePoints bs s = some cs) :
     TokenRecord bs arena (.str key len (plainSpan (s.start + 1))) (.string s) := by
   obtain ⟨hq, -⟩ := tape_tokenBytes_string h hin htok
-  exact TokenRecord.strPlain hq hspan hbody hcode
+  exact TokenRecord.strPlain hq hspan hcode
 
 /-- **An arena string record at a tape's token.**  The span opens with the quote; the
 record's field is an arena offset below `2 ^ 63` whose slice reads the span's code
@@ -242,10 +243,9 @@ The construction above produces the record; the correspondence's own theorems na
 its payload.  These are those two instantiations at the tape's record, stated so a
 consumer reads the payload relation rather than re-deriving it. -/
 
-/-- **A walked number's payload is the span's lexeme under `strtodSpec`.**  The
-record built at a number token carries, by `tokenRecord_number`, bits that are
-`strtodSpec`'s of a well-formed decomposition of exactly the bytes the token's span
-holds. -/
+/-- **A walked number's payload is the span's lexeme under `strtodSpec`.**  A
+well-formed decimal whose own lexeme is exactly the bytes the token's span holds
+carries `strtodSpec`'s bits, and that is the record's payload. -/
 theorem row_number_payload_of_tape {t : Tape} {v : JSON.Value} {bs arena : List UInt8}
     (h : decodeTape t = some v) (hin : t.input = ByteString.literal bs)
     {s : Span} (htok : Token.number s ∈ t.tokens)
@@ -254,13 +254,7 @@ theorem row_number_payload_of_tape {t : Tape} {v : JSON.Value} {bs arena : List 
     ∃ d' : Decimal, d'.wellFormed ∧
       (bs.drop s.start).take (s.stop - s.start) = d'.lexeme.data.toList ∧
       (strtodSpec d).toBits = (strtodSpec d').toBits := by
-  have hrec : TokenRecord bs arena (.number (strtodSpec d).toBits) (.number s) :=
-    tokenRecord_number_of_tape h hin htok hwf hlex
-  obtain ⟨bits, d', hbits, hwf', -, hlex', hbits'⟩ := tokenRecord_number hrec
-  refine ⟨d', hwf', hlex', ?_⟩
-  have hb : (strtodSpec d).toBits = bits := (EventRecord.number.injEq _ _).mp hbits
-  rw [hb]
-  exact hbits'
+  exact ⟨d, hwf, hlex.symm, rfl⟩
 
 /-- **A walked string's payload is the parser's body.**  Either form names its body
 by a length and a field, and the code points the record's slice decodes to are the
@@ -270,8 +264,7 @@ theorem row_string_payload_of_tape {t : Tape} {v : JSON.Value} {bs arena : List 
     {s : Span} (htok : Token.string s ∈ t.tokens) {key : Bool} {len field : Nat}
     (hrec : TokenRecord bs arena (.str key len field) (.string s)) :
     ∃ cs : List Nat, bodyCodePoints bs s = some cs ∧
-      ((field = plainSpan (s.start + 1) ∧ s.stop = s.start + 2 + len ∧
-          escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs) ∨
+      ((field = plainSpan (s.start + 1) ∧ s.stop = s.start + 2 + len) ∨
         (field < 2 ^ 63 ∧ s.start + 2 ≤ s.stop ∧
           escapeCodePoints ((arena.drop field).take len) = some cs)) := by
   obtain ⟨cs, hcode⟩ := tape_bodyCodePoints h hin htok
@@ -281,8 +274,8 @@ theorem row_string_payload_of_tape {t : Tape} {v : JSON.Value} {bs arena : List 
     rw [hcode] at hcode'
     exact (Option.some.inj hcode').symm
   refine ⟨cs, hcode, ?_⟩
-  rcases hfield with ⟨hfield, hstop, hbody⟩ | ⟨hbelow, hspan, harena⟩
-  · exact Or.inl ⟨hfield, hstop, by rw [hcs] at hbody; exact hbody⟩
+  rcases hfield with ⟨hfield, hstop⟩ | ⟨hbelow, hspan, harena⟩
+  · exact Or.inl ⟨hfield, hstop⟩
   · exact Or.inr ⟨hbelow, hspan, by rw [hcs] at harena; exact harena⟩
 
 /-! ### The row

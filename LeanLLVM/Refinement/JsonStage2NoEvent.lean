@@ -89,6 +89,7 @@ import LeanLLVM.Refinement.JsonStage2TokenCorrespondence
 import LeanLLVM.JsonCallRoute
 
 set_option autoImplicit false
+set_option maxRecDepth 100000
 
 namespace LeanLLVM.Refinement
 
@@ -166,16 +167,19 @@ is a total function — the caller's loop, not the walk's — so it reads any
 stream; on a stream a related trace was written as it is the trace's events
 (`consumeBytes_flatten`). -/
 
-/-- A string event's decoded body: the document's body for the top-bit-set plain
-form, the arena slice for the clear-bit escaped form.  A body that does not
-decode yields no code points; on a related stream the relation's own hypothesis
-says it does. -/
+/-- A string event's decoded body: the document body for the top-bit-set plain
+form, the arena slice for the clear-bit escaped form.  The plain form recomputes
+the token's span from the record (`field` clears to the body's first byte, `len`
+is the raw body's byte count) and reads it with the escape-aware scan — the
+record addresses the document, not a pre-decoded copy of it.  The arena form
+keeps its own UTF-8 read.  A body that does not decode yields no code points; on
+a related stream the relation's own hypothesis says it does. -/
 def stringConsumer (bs arena : List UInt8) (key : Bool) (len field : Nat) :
     ConsumerEvent :=
   if field < 2 ^ 63 then
     .str key len field ((escapeCodePoints ((arena.drop field).take len)).getD [])
   else
-    .str key len field ((escapeCodePoints ((bs.drop (field - 2 ^ 63)).take len)).getD [])
+    .str key len field ((bodyCodePointsAt bs (field - 2 ^ 63)).getD [])
 
 /-- The consumer's reading of one record. -/
 def EventRecord.consume (bs arena : List UInt8) : EventRecord → ConsumerEvent
@@ -298,22 +302,22 @@ inductive Stage2NoEvent (bs arena : List UInt8) :
       (hspan : s.stop = s.start + 4)
       (h : Stage2NoEvent bs arena es toks) :
       Stage2NoEvent bs arena (.kind 10 :: es) (.null s :: toks)
-  /-- A number (`T_NUM = 7`): the payload is `strtodSpec`'s bits of the span's
-  well-formed lexeme. -/
+  /-- A number (`T_NUM = 7`): the payload is `strtodSpec`'s bits of the reader's
+  normalised decimal of the span's own bytes. -/
   | number {s : Span} {es : List ConsumerEvent} {toks : List Token} {d : Decimal}
-      (hwf : d.wellFormed)
-      (hspan : s.stop = s.start + d.lexeme.length)
-      (hlexeme : (bs.drop s.start).take (s.stop - s.start) = d.lexeme.data.toList)
+      {lex : Bytes}
+      (hread : StrtodReader.reader lex = some d)
+      (hspan : s.stop = s.start + lex.length)
+      (hlexeme : (bs.drop s.start).take (s.stop - s.start) = lex.data.toList)
       (h : Stage2NoEvent bs arena es toks) :
       Stage2NoEvent bs arena (.number (strtodSpec d).toBits :: es) (.number s :: toks)
   /-- A key or string written in the plain form: the record field is the body's
-  first document byte with the top bit set, the length is the body's length, and
-  the body decodes to the token's code points. -/
+  first document byte with the top bit set, the length is the raw body's byte
+  count, and the token's own escape-aware scan reads its code points. -/
   | strPlain {key : Bool} {s : Span} {es : List ConsumerEvent} {toks : List Token}
       {len : Nat} {cs : List Nat}
       (hquote : bs[s.start]? = some 0x22)
       (hspan : s.stop = s.start + 2 + len)
-      (hbody : escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs)
       (hcode : bodyCodePoints bs s = some cs)
       (h : Stage2NoEvent bs arena es toks) :
       Stage2NoEvent bs arena
@@ -336,15 +340,15 @@ inductive Stage2NoEvent (bs arena : List UInt8) :
 The reader's decoding at a related string record is the token's code points. -/
 
 /-- A plain string's consumer event: the field is the span's top-bit-set form, so
-the reader takes the document's body. -/
+the reader recomputes the document span and takes the token's escape-aware
+reading. -/
 theorem stringConsumer_plain {bs arena : List UInt8} {key : Bool} {len field
-    bodyStart : Nat} {cs : List Nat}
-    (hge : 2 ^ 63 ≤ field) (hsub : field - 2 ^ 63 = bodyStart)
-    (h : escapeCodePoints ((bs.drop bodyStart).take len) = some cs) :
+    : Nat} {cs : List Nat}
+    (hge : 2 ^ 63 ≤ field)
+    (hcode : bodyCodePointsAt bs (field - 2 ^ 63) = some cs) :
     stringConsumer bs arena key len field = .str key len field cs := by
   unfold stringConsumer
-  rw [if_neg (by omega), hsub, h]
-  rfl
+  rw [if_neg (by omega), hcode, Option.getD_some]
 
 /-- An escaped string's consumer event: the field is the arena offset. -/
 theorem stringConsumer_arena {bs arena : List UInt8} {key : Bool} {len field : Nat}
@@ -371,6 +375,22 @@ cleared. -/
 theorem plainSpan_sub (a : Nat) : plainSpan a - 2 ^ 63 = a := by
   unfold plainSpan
   omega
+
+/-- A related plain record's consumer event at the token's own reading.  The
+reader only looks at the reconstructed span's start, which clears to the token's
+own body start. -/
+theorem stringConsumer_plain_span {bs arena : List UInt8} {key : Bool} {s : Span}
+    {len : Nat} {cs : List Nat}
+    (hcode : bodyCodePoints bs s = some cs) :
+    stringConsumer bs arena key len (plainSpan (s.start + 1)) =
+      .str key len (plainSpan (s.start + 1)) cs := by
+  have hb : bodyCodePointsAt bs (plainSpan (s.start + 1) - 2 ^ 63) = some cs := by
+    rw [show plainSpan (s.start + 1) - 2 ^ 63 = s.start + 1 from by
+      unfold plainSpan
+      rw [Nat.add_sub_cancel]]
+    rw [← bodyCodePoints_eq_at]
+    exact hcode
+  exact stringConsumer_plain (Nat.not_lt.mp (plainSpan_not_lt (s.start + 1))) hb
 
 /-- **The trace at the consumer's vocabulary.**  A related `Stage2Records` trace,
 with each record replaced by the event the consumer reads from it, satisfies the
@@ -403,14 +423,13 @@ theorem Stage2Records.toNoEvent {bs arena : List UInt8} {rs : List EventRecord}
   | nullTag hb hs _ ih =>
       simpa only [consumeRecords, List.map_cons, EventRecord.consume,
         ConsumerEvent.kind] using Stage2NoEvent.nullTag hb hs ih
-  | number hwf hs hlex _ ih =>
+  | number hread hs hlex _ ih =>
       simpa only [consumeRecords, List.map_cons, EventRecord.consume,
-        ConsumerEvent.number] using Stage2NoEvent.number hwf hs hlex ih
-  | strPlain hq hs hbody hcode _ ih =>
+        ConsumerEvent.number] using Stage2NoEvent.number hread hs hlex ih
+  | strPlain hq hs hcode _ ih =>
       simpa only [consumeRecords, List.map_cons, EventRecord.consume,
-        stringConsumer, plainSpan_not_lt, plainSpan_sub, hbody, Option.getD_some,
-        ↓reduceIte]
-        using Stage2NoEvent.strPlain hq hs hbody hcode ih
+        stringConsumer_plain_span hcode]
+        using Stage2NoEvent.strPlain hq hs hcode ih
   | strArena hq hs hcode hbelow harena _ ih =>
       simpa only [consumeRecords, List.map_cons, EventRecord.consume,
         stringConsumer, hbelow, harena, Option.getD_some, ↓reduceIte]
@@ -435,7 +454,7 @@ theorem Stage2Records.length_nonSeparators {bs arena : List UInt8}
   | falseTag _ _ _ ih => simp [Token.nonSeparators, ih]
   | nullTag _ _ _ ih => simp [Token.nonSeparators, ih]
   | number _ _ _ _ ih => simp [Token.nonSeparators, ih]
-  | strPlain _ _ _ _ _ ih => simp [Token.nonSeparators, ih]
+  | strPlain _ _ _ _ ih => simp [Token.nonSeparators, ih]
   | strArena _ _ _ _ _ _ ih => simp [Token.nonSeparators, ih]
 
 /-- **The no-event trace's length is its event count.**  The two separators carry
@@ -456,7 +475,7 @@ theorem Stage2NoEvent.length_nonSeparators {bs arena : List UInt8}
   | falseTag _ _ _ ih => simp [Token.nonSeparators, ih]
   | nullTag _ _ _ ih => simp [Token.nonSeparators, ih]
   | number _ _ _ _ ih => simp [Token.nonSeparators, ih]
-  | strPlain _ _ _ _ _ ih => simp [Token.nonSeparators, ih]
+  | strPlain _ _ _ _ ih => simp [Token.nonSeparators, ih]
   | strArena _ _ _ _ _ _ ih => simp [Token.nonSeparators, ih]
 
 /-- **Two traces over one document compose.**  Each constructor reads one token
@@ -485,11 +504,11 @@ theorem Stage2NoEvent.append {bs arena : List UInt8} {es₁ es₂ : List Consume
       simpa only [List.cons_append] using Stage2NoEvent.falseTag hbytes hspan ih
   | nullTag hbytes hspan _ ih =>
       simpa only [List.cons_append] using Stage2NoEvent.nullTag hbytes hspan ih
-  | number hwf hspan hlexeme _ ih =>
-      simpa only [List.cons_append] using Stage2NoEvent.number hwf hspan hlexeme ih
-  | strPlain hquote hspan hbody hcode _ ih =>
+  | number hread hspan hlexeme _ ih =>
+      simpa only [List.cons_append] using Stage2NoEvent.number hread hspan hlexeme ih
+  | strPlain hquote hspan hcode _ ih =>
       simpa only [List.cons_append] using
-        Stage2NoEvent.strPlain hquote hspan hbody hcode ih
+        Stage2NoEvent.strPlain hquote hspan hcode ih
   | strArena hquote hspan hcode hbelow harena _ ih =>
       simpa only [List.cons_append] using
         Stage2NoEvent.strArena hquote hspan hcode hbelow harena ih
@@ -539,12 +558,12 @@ theorem Stage2NoEvent.arena_append {bs arena extra : List UInt8}
   | nullTag hbytes hspan _ ih =>
       intro hb
       exact .nullTag hbytes hspan (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
-  | number hwf hspan hlexeme _ ih =>
+  | number hread hspan hlexeme _ ih =>
       intro hb
-      exact .number hwf hspan hlexeme (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
-  | strPlain hquote hspan hbody hcode _ ih =>
+      exact .number hread hspan hlexeme (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
+  | strPlain hquote hspan hcode _ ih =>
       intro hb
-      exact .strPlain hquote hspan hbody hcode
+      exact .strPlain hquote hspan hcode
         (ih (fun e he => hb e (List.mem_cons_of_mem _ he)))
   | strArena =>
       case strArena key s es' toks' len off cs hquote hspan hcode hbelow harena h ih =>

@@ -225,12 +225,17 @@ inductive Stage2NoEventWalkRefusalEvidence (K : Stage2NoEventWalkCarry) (s : Sta
       eoff < 2 ^ 64 →
       Stage2NoEventWalkRefusalEvidence K s
 
-/-- **The reference run's facts at an acceptance.**  The record trace the reference
-run emitted for this document and arena, the relation at the parser's tokens, the
-identity `obs = consumeRecords`, the record widths, the used-extent clause on the
-reported events, and the parser's token tie.  All of it is **carried data**: it is
-the reference execution's, and — as `stage2NoEvent_str_len_free` shows — it is not
-a consequence of `Stage2NoEvent`, so it may not be quantified over derivations.
+/-- **An acceptance's facts, at the parse's trace.**  The record trace the parse's
+tokens determine for this document and arena, the relation at the parser's
+tokens, the identity `obs = consumeRecords`, the record widths, the used-extent
+clause on the reported events, and the parser's token tie.  The trace, its
+relation, its widths and its extent clause are **derived from the parse**:
+`JsonStage2NoEventWalkRecordSupplyOfParse` produces them at every accepting parse
+(`stage2NoEventWalkRecordsSupply_of_parse`), and
+`stage2NoEventWalkReferenceFacts_iff_supply` shows the facts are exactly that
+supply plus `obs` and `toks`.  What the relation does not supply — as
+`stage2NoEvent_str_len_free` shows — is the read-back: `obs` is not a function of
+`(bs, arena, toks)`, so the facts may not be quantified over derivations.
 Stated at the acceptance's own `(bs, arena, obs, toks, t)`, so the walk's witnesses
 select it.
 
@@ -240,22 +245,23 @@ module: the reference module's transfer chain and its row bundle read it from th
 definition. -/
 structure Stage2NoEventWalkReferenceFacts (bs arena : List UInt8)
     (obs : List ConsumerEvent) (toks : List Token) (t : Tape) : Type where
-  /-- The emitted record trace the reference run produced.  **carried data**. -/
+  /-- A record trace the parse's tokens determine (not necessarily the one a
+  reference run emits).  **derived from the parse**. -/
   rs : List EventRecord
   /-- The record trace is the document's relation at the parser's tokens.
-  **carried data**. -/
+  **derived from the parse**. -/
   records : Stage2Records bs arena rs toks
   /-- The walk's report is the record trace read back by the consumer.
-  **carried data**. -/
+  **the reference's choice of read-back**. -/
   consume : obs = consumeRecords bs arena rs
   /-- Every record fits the field widths its bytes are written at.
-  **carried data**. -/
+  **derived from the parse**. -/
   bounded : ∀ r ∈ rs, r.Bounded
   /-- Every reported string's body lies inside the source it names.
-  **carried data**. -/
+  **derived from the parse**, at the read-back the acceptance names. -/
   within : ∀ e ∈ obs, e.BodiesWithin bs arena
   /-- The parser's tape carries exactly the tokens the relation is at.
-  **carried data**. -/
+  **derived from the parse** (definitional once `toks` is the tape's token list). -/
   tokens : t.tokens = toks
 
 /-- **The reference parser refuses the document.**  **carried data**: the
@@ -269,11 +275,17 @@ def Stage2NoEventWalkParseRefusal (bs : List UInt8) : Prop :=
 
 /-- **An acceptance's reference data, as the producer consumes it.**  The tape,
 the parse equality at it, the observations and the tokens the acceptance names,
-the relation at them, the two count equations, and the reference run's facts at
-them.  **carried data**: one value per acceptance, supplied by the deployment
-boundary, never derived from `Stage2NoEvent` (its `len` is free above the decoded
-slice).  Indexed by the head's and the acceptance's carries, so a producer takes
-it at the witnesses its route reports. -/
+the relation at them, the two count equations, and the facts at them.  The tape,
+the parse and the trace are the parse's
+(`JsonStage2NoEventWalkRecordSupplyOfParse`).  What the deployment supplies is the
+reference's own data: the two count equations — the walk's counted-token and term
+registers against the trace — and the read-back identity `obs = consumeRecords`
+that places them at the observations.  They are not derived from `Stage2NoEvent`
+(the read-back's `len` is free above the decoded slice, and
+`countsTieDoc_terms_two_derivations` separates two arena-bound derivations' term
+sums), so a producer is given them rather than proving them.  Indexed by the head's
+and the acceptance's carries, so a producer takes it at the witnesses its route
+reports. -/
 def Stage2NoEventWalkReferenceAccept (K K' : Stage2NoEventWalkCarry) : Type :=
   Σ (t : Tape) (obs : List ConsumerEvent) (toks : List Token),
     (Stage2NoEvent K.bs K'.arena obs toks ∧ obs.length = K'.tok ∧
@@ -283,10 +295,10 @@ def Stage2NoEventWalkReferenceAccept (K K' : Stage2NoEventWalkCarry) : Type :=
 
 /-- **A refusal's reference data, as the producer consumes it.**  The observations
 and tokens the head's trace names, the relation at them, the two count equations,
-and the reference parser's verdict on the document.  **carried data**, for the
-same reason the acceptance's is: the exit is `Type`, so its `(obs, toks)` are
-terms a producer must be given, and the trace alone is a `Prop` that cannot
-supply them. -/
+and the reference parser's verdict on the document.  **entirely carried data**:
+the refusal's trace is a `Prop` that cannot supply the exit's `Type` fields, so the
+observations, the tokens, the relation's witnesses, the two counts and the verdict
+all come from the deployment boundary. -/
 def Stage2NoEventWalkReferenceRefuse (K : Stage2NoEventWalkCarry) : Type :=
   Σ (obs : List ConsumerEvent) (toks : List Token),
     (Stage2NoEvent K.bs K.arena obs toks ∧ obs.length = K.tok ∧
@@ -306,10 +318,12 @@ accumulator is inhabitable at every route's terminal state.
 
 The exit is **data**, not a proof: a terminal route's witnesses (`K'`, the report's
 tokens and the parser's tape) are what a consumer of the walk theorem reads, so the
-type lives in `Type`.  The acceptance carries the reference run's facts at its own
-witnesses (`Stage2NoEventWalkReferenceFacts`) and the refusal carries the reference
-parser's verdict on the head's document; both are **carried data** the producer takes
-from the deployment boundary, never invents. -/
+type lives in `Type`.  The acceptance carries the reference's facts at its own
+witnesses (`Stage2NoEventWalkReferenceFacts`) — the parse's trace, the reference's
+read-back and its counts — and the refusal carries the reference parser's verdict
+on the head's document; the trace is the parse's, while the read-back, the counts
+and the refusal's verdict are **carried data** the producer takes from the
+deployment boundary, never invents. -/
 inductive Stage2NoEventWalkExit (calls : Calls) (mem : Mem) (F : Nat)
     (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) : Type
   /-- The accepted arm: verdict one, the last entry's carry `K'`, the three

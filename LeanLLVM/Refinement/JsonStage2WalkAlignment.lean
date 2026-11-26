@@ -1022,7 +1022,7 @@ theorem align_not_enough {m0 : Mem} (G : WalkGeom m0) (hent : G.ent = [0])
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkAlign
 
-/-- info: 'LeanLLVM.Refinement.WalkTraceRow' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTraceRow' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.WalkTraceRow
 
@@ -1214,7 +1214,7 @@ theorem align_not_enough {m0 : Mem} (G : WalkGeom m0) (hent : G.ent = [0])
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.checkSpans_mem
 
-/-- info: 'LeanLLVM.Refinement.tokenRecord_punct' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.tokenRecord_punct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.tokenRecord_punct
 

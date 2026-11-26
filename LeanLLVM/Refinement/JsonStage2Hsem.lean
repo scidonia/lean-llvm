@@ -182,21 +182,25 @@ inductive Stage2Records (bs arena : List UInt8) : List EventRecord → List Toke
       (hspan : s.stop = s.start + 4)
       (h : Stage2Records bs arena rs toks) :
       Stage2Records bs arena (EventRecord.tag 10 :: rs) (.null s :: toks)
-  /-- A number (`T_NUM = 7`): the payload is `strtodSpec`'s eight bytes of a
-  well-formed lexeme at the token's own span. -/
+  /-- A number (`T_NUM = 7`): the reader's decimal of the span's own bytes, and
+  `strtodSpec`'s eight bytes of it.  The reader normalises the spellings the
+  scanner accepts (`E`, `+`), so the payload is the value of the span's lexeme
+  without requiring a `Decimal` whose own `lexeme` is those bytes. -/
   | number {s : Span} {rs : List EventRecord} {toks : List Token} {d : Decimal}
-      (hwf : d.wellFormed)
-      (hspan : s.stop = s.start + d.lexeme.length)
-      (hlexeme : (bs.drop s.start).take (s.stop - s.start) = d.lexeme.data.toList)
+      {lex : Bytes}
+      (hread : StrtodReader.reader lex = some d)
+      (hspan : s.stop = s.start + lex.length)
+      (hlexeme : (bs.drop s.start).take (s.stop - s.start) = lex.data.toList)
       (h : Stage2Records bs arena rs toks) :
       Stage2Records bs arena (EventRecord.number (strtodSpec d).toBits :: rs)
         (.number s :: toks)
-  /-- A key or string written in the plain form. -/
+  /-- A key or string written in the plain form, at the token's own escape-aware
+  scan.  `len` is the raw body's byte count, so the record still addresses the
+  document slice. -/
   | strPlain {key : Bool} {s : Span} {rs : List EventRecord} {toks : List Token}
       {len : Nat} {cs : List Nat}
       (hquote : bs[s.start]? = some 0x22)
       (hspan : s.stop = s.start + 2 + len)
-      (hbody : escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs)
       (hcode : bodyCodePoints bs s = some cs)
       (h : Stage2Records bs arena rs toks) :
       Stage2Records bs arena (EventRecord.str key len (plainSpan (s.start + 1)) :: rs)
@@ -234,8 +238,8 @@ theorem append {bs arena : List UInt8} {rs₁ : List EventRecord}
     (fun hb hs _ ih => Stage2Records.trueTag hb hs ih)
     (fun hb hs _ ih => Stage2Records.falseTag hb hs ih)
     (fun hb hs _ ih => Stage2Records.nullTag hb hs ih)
-    (fun hwf hs hlex _ ih => Stage2Records.number hwf hs hlex ih)
-    (fun hq hs hbody hcode _ ih => Stage2Records.strPlain hq hs hbody hcode ih)
+    (fun hread hs hlex _ ih => Stage2Records.number hread hs hlex ih)
+    (fun hq hs hcode _ ih => Stage2Records.strPlain hq hs hcode ih)
     (fun hq hs hcode hbelow harena _ ih =>
       Stage2Records.strArena hq hs hcode hbelow harena ih)
     h₁
@@ -258,9 +262,9 @@ theorem toEventRel {bs arena : List UInt8} {rs : List EventRecord}
   | trueTag hb hs _ ih => exact Stage2EventRel.trueTag hb hs ih
   | falseTag hb hs _ ih => exact Stage2EventRel.falseTag hb hs ih
   | nullTag hb hs _ ih => exact Stage2EventRel.nullTag hb hs ih
-  | number hwf hs hlex _ ih => exact Stage2EventRel.number hwf hs hlex ih
-  | strPlain hq hs hbody hcode _ ih =>
-      exact Stage2EventRel.strPlain hq hs hbody hcode ih
+  | number hread hs hlex _ ih => exact Stage2EventRel.number hread hs hlex ih
+  | strPlain hq hs hcode _ ih =>
+      exact Stage2EventRel.strPlain hq hs hcode ih
   | strArena hq hs hcode hbelow harena _ ih =>
       exact Stage2EventRel.strArena hq hs hcode hbelow harena ih
 
@@ -563,15 +567,15 @@ theorem pair_records_composed :
 
 /-! ### Axiom footprints -/
 
-/-- info: 'LeanLLVM.Refinement.Stage2Records.append' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.Stage2Records.append' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Stage2Records.append
 
-/-- info: 'LeanLLVM.Refinement.Stage2Records.toEventRel' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.Stage2Records.toEventRel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Stage2Records.toEventRel
 
-/-- info: 'LeanLLVM.Refinement.stage2EventRel_of_records' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2EventRel_of_records' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2EventRel_of_records
 
@@ -615,23 +619,23 @@ theorem pair_records_composed :
 #guard_msgs in
 #print axioms pipeline_satisfies_stage2_of_evidence
 
-/-- info: 'LeanLLVM.Refinement.null_records' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.null_records' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms null_records
 
-/-- info: 'LeanLLVM.Refinement.null_eventRel' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.null_eventRel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms null_eventRel
 
-/-- info: 'LeanLLVM.Refinement.pair_records' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.pair_records' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms pair_records
 
-/-- info: 'LeanLLVM.Refinement.pair_eventRel' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.pair_eventRel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms pair_eventRel
 
-/-- info: 'LeanLLVM.Refinement.pair_records_composed' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.pair_records_composed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms pair_records_composed
 

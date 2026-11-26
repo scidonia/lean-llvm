@@ -41,8 +41,8 @@ it, so a per-arm proof supplies one record's relation and nothing else:
 The per-class layer at the loop head is here too, at the token the alignment
 names: `headTokenRecord_*` for the four containers and the three literals (the
 tape's own facts plus `WalkAlign.head_*`), and `headTokenRecord_number` /
-`headTokenRecord_string_plain` / `headTokenRecord_string_arena` with the payload
-premise the number and escape arms supply.  `headRow_openBrace` and
+`headTokenRecord_string_plain` / `headTokenRecord_string_arena` with the extra
+premises the number and arena arms supply.  `headRow_openBrace` and
 `headRow_openBracket` are those arms' rows end to end: the opener's tag select
 (`WalkScope.ifEnd24St`) at the byte the head carries is the parser's tag, so the
 two opening containers need no record premise at all.
@@ -89,12 +89,12 @@ The three residuals `ParserRows` names, at their own vocabulary:
   entry index and the token count separately (`WalkTracePrefixAt`), take the arm's
   two readings of the stream (`close = lane k + 1`, the extent
   `close - idxprom - 1`) as the record's fields, and step the entry index by two at
-  each string.  The plain row derives the raw-body read-back from the document's
-  bytes at the token's span; the arena row takes the decoded length and arena base as
-  parameters and the arena-slice read-back at the token's span (its literal instance
-  proves both from `stringDocumentArena`).  A read-back quantified over every span is
-  not a premise that can hold: `bodyCodePoints` returns `some` at spans that are not
-  tokens, so the earlier all-spans form was false.  What remains is outside the row: the
+  each string.  The plain row needs only the grammar's read at the token's span; the
+  arena row takes the decoded length and arena base as parameters and the arena-slice
+  read-back at the token's span (its literal instance proves both from
+  `stringDocumentArena`).  The arena read-back is at the token's span, not quantified
+  over every span: `bodyCodePoints` returns `some` at spans that are not tokens.
+  What remains is outside the row: the
   payload arms' `WalkSegment`s (the dispatch layer composes them) and the closers' and
   the separators' walk-level routes (`WalkRevolution` is stated and the openers
   inhabit it);
@@ -356,7 +356,7 @@ theorem TokenRecord.not_separator {bs arena : List UInt8} {r : EventRecord} {tok
   | falseTag _ _ => refine ⟨?_, ?_⟩ <;> (intro s h; cases h)
   | nullTag _ _ => refine ⟨?_, ?_⟩ <;> (intro s h; cases h)
   | number _ _ _ => refine ⟨?_, ?_⟩ <;> (intro s h; cases h)
-  | strPlain _ _ _ _ => refine ⟨?_, ?_⟩ <;> (intro s h; cases h)
+  | strPlain _ _ _ => refine ⟨?_, ?_⟩ <;> (intro s h; cases h)
   | strArena _ _ _ _ _ => refine ⟨?_, ?_⟩ <;> (intro s h; cases h)
 
 /-! ### The prefix correspondence
@@ -631,18 +631,15 @@ theorem headTokenRecord_number {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     tokenRecord_number_of_tape hdec hal.input (List.mem_of_getElem? htok) hwf (hlex sp htok)⟩
 
 /-- **A string's record at the loop head, the body in the document.**  The span's
-code points are the parser's (`tape_bodyCodePoints`); the arm supplies that the raw
-body it emitted unescaped reads back to them, which is its own choice of form. -/
+code points are the parser's (`tape_bodyCodePoints`), and the record's `strPlain`
+row asks only that grammar read. -/
 theorem headTokenRecord_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {C : WalkCarry G} {s : State} (hal : WalkAlign G t) (hInv : WalkInv G C s)
     (hk : C.k < G.nep) {v : JSON.Value} (hdec : decodeTape t = some v)
     (arena : List UInt8) (hbyte : entryByte G C.k = 0x22)
     {key : Bool} {len : Nat}
     (hspan : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) →
-      sp.stop = sp.start + 2 + len)
-    (hbody : ∀ sp : Span, t.tokens[C.k]? = some (.string sp) → ∀ cs : List Nat,
-      bodyCodePoints G.bs sp = some cs →
-      escapeCodePoints ((G.bs.drop (sp.start + 1)).take len) = some cs) :
+      sp.stop = sp.start + 2 + len) :
     ∃ (sp : Span) (cs : List Nat), t.tokens[C.k]? = some (.string sp) ∧
       bodyCodePoints G.bs sp = some cs ∧
       TokenRecord G.bs arena (.str key len (plainSpan (sp.start + 1))) (.string sp) := by
@@ -650,7 +647,7 @@ theorem headTokenRecord_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   obtain ⟨cs, hcode⟩ := tape_bodyCodePoints hdec hal.input (List.mem_of_getElem? htok)
   refine ⟨sp, cs, htok, hcode, ?_⟩
   exact tokenRecord_string_plain_of_tape hdec hal.input (List.mem_of_getElem? htok)
-    (hspan sp htok) hcode (hbody sp htok cs hcode)
+    (hspan sp htok) hcode
 
 /-- **A string's record at the loop head, the body in the arena.**  The span's code
 points are the parser's; the arm supplies that the arena's slice at its offset reads
@@ -1811,11 +1808,13 @@ the carry the loop leaves carries the index one entry on, and the trace at it is
 `WalkTraceStep.emit`'s.
 
 The three payload classes are the number's and the string's two forms.  Beside its
-segment each takes the payload premise the header's residual list names — the numeral's
-decomposition and the string's read-back — because those are the arm's reading of the
-document rather than the row's: the numeral is the arm's `num_fast_el1` decomposition of
-the span's bytes, and the string's body is the escape unit's answer at the bytes it wrote.
-The span, the token and the record's relation are the row's, and they are derived here.
+segment each takes the payload premises the header's residual list names — the numeral's
+decomposition, and for the arena form the slice read-back — because those are the arm's
+reading of the document rather than the row's: the numeral is the arm's `num_fast_el1`
+decomposition of the span's bytes, and the arena form's body is the escape unit's answer
+at the bytes it wrote.  The plain form's record is the grammar's code points at the
+token's span and needs no such premise.  The span, the token and the record's relation
+are the row's, and they are derived here.
 -/
 
 /-- **A payload arm's step.**  The arm's segment reaches the merge carry with the index
@@ -1870,8 +1869,8 @@ theorem payloadStep_number {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   exact payloadStep_of_segment hpre htok hrec hk hev
 
 /-- **A plain string's step.**  The head's byte is the quote, the token is the span's,
-and the arm's read of the raw body — the bytes before the closing quote — is the
-parser's body.  The record addresses that body through `plainSpan`. -/
+and the record's `strPlain` row reads the parser's body code points.  The record
+addresses that body through `plainSpan`. -/
 theorem payloadStep_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {C Cd : WalkCarry G} {s : State} (arena : List UInt8) (hal : WalkAlign G t)
     (hInv : WalkInv G C s) (hklt : C.k < G.nep) {v : JSON.Value}
@@ -1880,16 +1879,13 @@ theorem payloadStep_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {key : Bool} {len : Nat}
     (hspan : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') →
       sp'.stop = sp'.start + 2 + len)
-    (hbody : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') → ∀ cs : List Nat,
-      bodyCodePoints G.bs sp' = some cs →
-      escapeCodePoints ((G.bs.drop (sp'.start + 1)).take len) = some cs)
     (hpre : WalkTracePrefix G arena t C)
     (hk : Cd.k = C.k)
     (hev : Cd.events = C.events ++ [EventRecord.str key len (plainSpan (sp.start + 1))]) :
     WalkPayloadStep G arena t C { Cd with k := Cd.k + 1 }
       (EventRecord.str key len (plainSpan (sp.start + 1))) := by
-  obtain ⟨sp', cs, htok', hcode, hrec⟩ :=
-    headTokenRecord_string_plain hal hInv hklt hdec arena hbyte hspan hbody
+  obtain ⟨sp', -, htok', -, hrec⟩ :=
+    headTokenRecord_string_plain hal hInv hklt hdec arena hbyte hspan
   have hsp : sp' = sp := by
     have h1 : Token.string sp = Token.string sp' :=
       Option.some.inj (htokC.symm.trans htok')
@@ -1950,9 +1946,6 @@ theorem payloadRevolution_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {key : Bool} {len : Nat}
     (hspan : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') →
       sp'.stop = sp'.start + 2 + len)
-    (hbody : ∀ sp' : Span, t.tokens[C.k]? = some (.string sp') → ∀ cs : List Nat,
-      bodyCodePoints G.bs sp' = some cs →
-      escapeCodePoints ((G.bs.drop (sp'.start + 1)).take len) = some cs)
     (hpre : WalkTracePrefix G arena t C)
     (hseg : WalkScope.WalkSegment (stage2Calls stage2SubCalls) G C s Cd sd p)
     (hk : Cd.k = C.k)
@@ -1962,7 +1955,7 @@ theorem payloadRevolution_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   seg := hseg
   k := hk
   events := hev
-  step := payloadStep_string_plain arena hal hInv hklt hdec hbyte htokC hspan hbody hpre
+  step := payloadStep_string_plain arena hal hInv hklt hdec hbyte htokC hspan hpre
     hk hev
 
 /-- **An arena string's revolution.** -/
@@ -1996,8 +1989,8 @@ the containers and the payloads read, proves the numeral's decomposition of its 
 (`decimalOne`, `decimalTwo`), and leaves exactly what the row cannot supply: the tape's
 acceptance, the walk's alignment, the opener's and the separator's carries, the two
 heads' invariants, the two arms' `WalkSegment`s with the merge carries they end at.
-The plain string row derives its raw-body read-back from the document's bytes at the
-token's span; the arena row's slice read-back is a premise at that span, and its
+The plain string row needs no payload premise: its record is the grammar's code points
+at the token's span.  The arena row's slice read-back is a premise at that span, and its
 literal instance proves it from `stringDocumentArena`. -/
 
 /-- The document `[1,2]`'s bytes. -/
@@ -2174,8 +2167,8 @@ The string arm's readings are the entry stream's: `close = lane k + 1`, the body
 `close - idxprom - 1` (`WalkAlignQuoted.stringExtent`), and the record's offset `p + 1`
 — the arm's `%sub260.i` and `(p + 1) | 1 << 63` (`kernel/json/stage2.c`'s quote arm).
 At this document those are `4 - 1 - 1 = 2` and `9 - 6 - 1 = 2`, the extents the two
-records name, and the offsets `2` and `7`.  The body's read-back stays the arm's
-premise, as the string record's statement says.
+records name, and the offsets `2` and `7`.  The plain form's record needs no body
+read-back; the arena form's slice read-back stays the arm's premise.
 
 The row's steps are its premises': the opener's one-entry emit, each string's
 two-entry back edge (the merge's kept index and one appended record), the comma's
@@ -2280,10 +2273,8 @@ The carries are at entries `0, 1, 3, 4, 6, 7` and the token counts `0, 1, 2, 3, 
 each string's record names its body by the arm's own readings, `close - start - 1` for
 the length and `start + 1` for the offset.
 
-Both raw-body read-backs are derived from `hbs` at the tokens' spans (`⟨1,5⟩` and
-`⟨6,10⟩`), so the row has no payload premise.  The earlier statement took them
-quantified over every span, which `bodyCodePoints` makes false at spans that are not
-tokens: `⟨3,5⟩` reads `some []` while the document's two bytes from `4` are `[34,44]`. -/
+The row has no payload premise: each string's record is the grammar's code points at
+the token's span, which `tape_bodyCodePoints` reads off the tape. -/
 theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     {arena : List UInt8} {C₀ C₁ C₂ C₃ C₄ C₅ Cd₁ Cd₂ : WalkCarry G}
     {v : JSON.Value}
@@ -2328,30 +2319,6 @@ theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     simp [entryPos, hk, hent]
   have hlen₂ : entryPos G (C₃.k + 1) - entryPos G C₃.k - 1 = 2 := by
     rw [hp₃', hp₃]
-  -- the raw-body read-backs, at the token's own span: `hbs` fixes the bytes, so the
-  -- document's scan and its body slice are both decided.  (The earlier statement
-  -- quantified them over every span, which is false at spans that are not tokens —
-  -- `⟨3,5⟩` reads `some []` against the two bytes from `4`, `[34,44]`.)
-  have hbody₁ : ∀ cs : List Nat, bodyCodePoints G.bs ⟨1, 5⟩ = some cs →
-      escapeCodePoints ((G.bs.drop 2).take 2) = some cs := by
-    intro cs hcs
-    rw [hbs] at hcs
-    have h : bodyCodePoints stringDocumentBytes ⟨1, 5⟩ = some [97, 98] := by decide
-    rw [h] at hcs
-    have hcs' : ([97, 98] : List Nat) = cs := Option.some.inj hcs
-    subst cs
-    rw [hbs]
-    decide
-  have hbody₂ : ∀ cs : List Nat, bodyCodePoints G.bs ⟨6, 10⟩ = some cs →
-      escapeCodePoints ((G.bs.drop 7).take 2) = some cs := by
-    intro cs hcs
-    rw [hbs] at hcs
-    have h : bodyCodePoints stringDocumentBytes ⟨6, 10⟩ = some [99, 100] := by decide
-    rw [h] at hcs
-    have hcs' : ([99, 100] : List Nat) = cs := Option.some.inj hcs
-    subst cs
-    rw [hbs]
-    decide
   -- the seed, and the opener's step
   have hs₀ : WalkTracePrefixAt G arena t C₀ 0 :=
     (WalkTracePrefixAt.of_prefix hpre₀).congr hk₀.symm rfl
@@ -2363,15 +2330,13 @@ theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     WalkTracePrefixAt.emit_advance (j' := 1) hs₀ htok₀ hrec₀ rfl hev₁
   -- the first string: the arm's record, and its two-entry back edge
   have hmem₁ : Token.string ⟨1, 5⟩ ∈ t.tokens := by rw [htokens]; simp
-  obtain ⟨cs₁, hcode₁⟩ := tape_bodyCodePoints hdec hal.input hmem₁
+  obtain ⟨_, hcode₁⟩ := tape_bodyCodePoints hdec hal.input hmem₁
   have hrec₁ : TokenRecord G.bs arena
       (EventRecord.str false (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1)
         (plainSpan 2)) (.string ⟨1, 5⟩) := by
     refine tokenRecord_string_plain_of_tape (s := ⟨1, 5⟩) (key := false) (arena := arena)
-      (len := entryPos G (C₁.k + 1) - entryPos G C₁.k - 1) hdec hal.input hmem₁ ?_ hcode₁ ?_
+      (len := entryPos G (C₁.k + 1) - entryPos G C₁.k - 1) hdec hal.input hmem₁ ?_ hcode₁
     · rw [hp₁', hp₁]
-    · rw [hlen₁]
-      exact hbody₁ cs₁ hcode₁
   have hevc₁' : Cd₁.events = C₁.events ++
       [EventRecord.str false (entryPos G (C₁.k + 1) - entryPos G C₁.k - 1) (plainSpan 2)] := by
     rw [hevc₁, hp₁]
@@ -2384,15 +2349,13 @@ theorem row_stringPlainDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     WalkTracePrefixAt.advance_separator (j' := 3) hpre₂ htok₂ (Or.inl rfl) rfl hev₃
   -- the second string
   have hmem₂ : Token.string ⟨6, 10⟩ ∈ t.tokens := by rw [htokens]; simp
-  obtain ⟨cs₂, hcode₂⟩ := tape_bodyCodePoints hdec hal.input hmem₂
+  obtain ⟨_, hcode₂⟩ := tape_bodyCodePoints hdec hal.input hmem₂
   have hrec₂ : TokenRecord G.bs arena
       (EventRecord.str false (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1)
         (plainSpan 7)) (.string ⟨6, 10⟩) := by
     refine tokenRecord_string_plain_of_tape (s := ⟨6, 10⟩) (key := false) (arena := arena)
-      (len := entryPos G (C₃.k + 1) - entryPos G C₃.k - 1) hdec hal.input hmem₂ ?_ hcode₂ ?_
+      (len := entryPos G (C₃.k + 1) - entryPos G C₃.k - 1) hdec hal.input hmem₂ ?_ hcode₂
     · rw [hp₃', hp₃]
-    · rw [hlen₂]
-      exact hbody₂ cs₂ hcode₂
   have hevc₂' : Cd₂.events = C₃.events ++
       [EventRecord.str false (entryPos G (C₃.k + 1) - entryPos G C₃.k - 1) (plainSpan 7)] := by
     rw [hevc₂, hp₃]
@@ -2423,9 +2386,8 @@ stream.**  The records' lengths and offsets are the arms' own readings — the d
 length `%outn.i` receives and the arena base `%z.val36` (`f.A.toNat`) — so the row
 takes them as parameters `L₁`/`O₁` and `L₂`/`O₂` beside the escape unit's two
 read-backs: the arena slice at the offset reads as the token's code points, and the
-offset is below `2 ^ 63`.  Those are the counterparts of the plain row's raw-body
-read-back and the number row's `f.ev`: what the walk cannot supply, because the body
-is the callee's.
+offset is below `2 ^ 63`.  Those are the counterparts of the number row's `f.ev`: what
+the walk cannot supply, because the body is the callee's.
 
 **The read-back is at the token's span, not over every span.**  `bodyCodePoints` is a
 function of the document alone and scans from `sp.start + 1`, so it returns `some` at
@@ -2664,27 +2626,27 @@ than assumed. -/
 #guard_msgs in
 #print axioms forall₂_length
 
-/-- info: 'LeanLLVM.Refinement.TokenRecord.not_separator' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.TokenRecord.not_separator' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms TokenRecord.not_separator
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefixEmit' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefixEmit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefixEmit
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.of_seed' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.of_seed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.of_seed
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.congr' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.congr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.congr
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.length' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.length' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.length
 
@@ -2692,35 +2654,35 @@ than assumed. -/
 #guard_msgs in
 #print axioms WalkTracePrefix.events_le
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.emit' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.emit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.emit
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.advance' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.advance' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.advance
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.emit_advance' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.emit_advance' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.emit_advance
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.advance_separator' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.advance_separator' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.advance_separator
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.toTraceRow' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.toTraceRow' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.toTraceRow
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefixEmit.congr' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefixEmit.congr' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefixEmit.congr
 
-/-- info: 'LeanLLVM.Refinement.WalkAlign.traceRow_of_prefix' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkAlign.traceRow_of_prefix' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkAlign.traceRow_of_prefix
 
-/-- info: 'LeanLLVM.Refinement.prefix_not_enough' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.prefix_not_enough' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms prefix_not_enough
 
@@ -2732,7 +2694,7 @@ than assumed. -/
 #guard_msgs in
 #print axioms WalkAlign.bs_getElem
 
-/-- info: 'LeanLLVM.Refinement.headTokenRecord_punct' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.headTokenRecord_punct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms headTokenRecord_punct
 
@@ -2768,11 +2730,11 @@ than assumed. -/
 #guard_msgs in
 #print axioms ifEnd24St_openBracket
 
-/-- info: 'LeanLLVM.Refinement.headRow_openBrace' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.headRow_openBrace' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms headRow_openBrace
 
-/-- info: 'LeanLLVM.Refinement.headRow_openBracket' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.headRow_openBracket' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms headRow_openBracket
 
@@ -2788,19 +2750,19 @@ than assumed. -/
 #guard_msgs in
 #print axioms WalkScope.openC₉_events
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.emit_merge' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.emit_merge' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.emit_merge
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.keep_merge' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.keep_merge' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.keep_merge
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.row_of_last' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.row_of_last' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.row_of_last
 
-/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.events_eq_nil' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTracePrefix.events_eq_nil' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTracePrefix.events_eq_nil
 
@@ -2812,27 +2774,27 @@ than assumed. -/
 #guard_msgs in
 #print axioms ifEnd24St_entryByte_5B
 
-/-- info: 'LeanLLVM.Refinement.containerOpenEmit_bracket' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.containerOpenEmit_bracket' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms containerOpenEmit_bracket
 
-/-- info: 'LeanLLVM.Refinement.containerCloseEmit_bracket' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.containerCloseEmit_bracket' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms containerCloseEmit_bracket
 
-/-- info: 'LeanLLVM.Refinement.separatorHead' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.separatorHead' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms separatorHead
 
-/-- info: 'LeanLLVM.Refinement.containerOpenLastRow_bracket' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.containerOpenLastRow_bracket' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms containerOpenLastRow_bracket
 
-/-- info: 'LeanLLVM.Refinement.containerCloseLastRow_bracket' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.containerCloseLastRow_bracket' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms containerCloseLastRow_bracket
 
-/-- info: 'LeanLLVM.Refinement.row_openBracketOnly' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.row_openBracketOnly' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms row_openBracketOnly
 
@@ -2848,31 +2810,31 @@ than assumed. -/
 #guard_msgs in
 #print axioms row_openCloseBracket
 
-/-- info: 'LeanLLVM.Refinement.WalkTraceStep' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTraceStep
 
-/-- info: 'LeanLLVM.Refinement.WalkTraceStep.emit' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep.emit' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTraceStep.emit
 
-/-- info: 'LeanLLVM.Refinement.WalkTraceStep.separator' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep.separator' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTraceStep.separator
 
-/-- info: 'LeanLLVM.Refinement.WalkTraceStep.gain_of_separator' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep.gain_of_separator' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTraceStep.gain_of_separator
 
-/-- info: 'LeanLLVM.Refinement.WalkTraceStep.gain_of_record' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTraceStep.gain_of_record' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTraceStep.gain_of_record
 
-/-- info: 'LeanLLVM.Refinement.WalkRevolution' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkRevolution' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkRevolution
 
-/-- info: 'LeanLLVM.Refinement.WalkRevolution.toTraceStep' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkRevolution.toTraceStep' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkRevolution.toTraceStep
 
@@ -2884,11 +2846,11 @@ than assumed. -/
 #guard_msgs in
 #print axioms containerOpenRevolution_brace_step
 
-/-- info: 'LeanLLVM.Refinement.WalkPayloadStep' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkPayloadStep' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkPayloadStep
 
-/-- info: 'LeanLLVM.Refinement.WalkTraceChain' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTraceChain' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTraceChain
 
@@ -2896,11 +2858,11 @@ than assumed. -/
 #guard_msgs in
 #print axioms WalkTraceChain.k_eq
 
-/-- info: 'LeanLLVM.Refinement.WalkTraceChain.carries' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTraceChain.carries' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTraceChain.carries
 
-/-- info: 'LeanLLVM.Refinement.WalkTraceChain.traceRow' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.WalkTraceChain.traceRow' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms WalkTraceChain.traceRow
 
@@ -2932,7 +2894,7 @@ than assumed. -/
 #guard_msgs in
 #print axioms row_colonBrace
 
-/-- info: 'LeanLLVM.Refinement.payloadStep_of_segment' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.payloadStep_of_segment' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms payloadStep_of_segment
 

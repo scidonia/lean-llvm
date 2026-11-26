@@ -370,23 +370,6 @@ theorem stage2NoEventWalkStringB_relationArena
   Stage2NoEvent.strArena hquote hspan hcode hbelow (by simpa using hdecode)
     Stage2NoEvent.nil
 
-/-- **The class's relation at the document form**: the body read straight out of
-the document's quote gives the same code points, so the plain record is the same
-token's. -/
-theorem stage2NoEventWalkStringB_relationPlain
-    {K : Stage2NoEventWalkCarry} {lane nextLane len : Nat} {cs : List Nat}
-    (hquote : K.bs[lane]? = some (34 : UInt8))
-    (hstop : nextLane + 1 = lane + 2 + len)
-    (hbody : escapeCodePoints ((K.bs.drop (lane + 1)).take len) = some cs)
-    (hcode : bodyCodePoints K.bs ⟨lane, nextLane + 1⟩ = some cs) :
-    Stage2NoEvent K.bs K.arena
-      [ConsumerEvent.str false len (plainSpan (lane + 1)) cs]
-      [Token.string ⟨lane, nextLane + 1⟩] :=
-  Stage2NoEvent.strPlain hquote hstop hbody hcode Stage2NoEvent.nil
-
-/-- The empty body decodes to no code points. -/
-theorem stage2NoEventWalkStringB_escapeCodePoints_nil : escapeCodePoints [] = some [] := rfl
-
 /-- **The empty string's relation**: the plain record at `len = 0` — its field is
 the document body's first byte with the top bit set, its code points are none, and
 the token's span is the entry's two quotes, two bytes apart. -/
@@ -396,8 +379,7 @@ theorem stage2NoEventWalkStringB_relationPlainEmpty
     (hcode : bodyCodePoints K.bs ⟨lane, lane + 2⟩ = some []) :
     Stage2NoEvent K.bs K.arena
       [ConsumerEvent.str false 0 (plainSpan (lane + 1)) []] [Token.string ⟨lane, lane + 2⟩] :=
-  Stage2NoEvent.strPlain hquote (by simp)
-    (by simpa using stage2NoEventWalkStringB_escapeCodePoints_nil) hcode Stage2NoEvent.nil
+  Stage2NoEvent.strPlain hquote (by simp) hcode Stage2NoEvent.nil
 
 /-- **The carry the string class's step delivers**: one event counted, the
 record's contribution added, the decoded body appended to the arena, and the
@@ -650,7 +632,6 @@ theorem stage2NoEventWalkStringB_step
 #print axioms stage2NoEventWalkStringB_entry
 #print axioms ConsumerEvent.terms_str_false
 #print axioms stage2NoEventWalkStringB_relationArena
-#print axioms stage2NoEventWalkStringB_relationPlain
 #print axioms stage2NoEventWalkStringB_relationPlainEmpty
 #print axioms stage2NoEventWalkStringCarryPlain_terms
 #print axioms Stage2NoEventWalkTrace.stringStep

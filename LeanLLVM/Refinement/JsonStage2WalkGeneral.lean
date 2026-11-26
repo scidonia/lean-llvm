@@ -34,8 +34,8 @@ This module states and proves the row at that generality:
   the staged stream;
 * the payload arms produce their steps at the tape's own tokens:
   `stepAt_number` is the numeral's decomposition and lexeme read-back,
-  `stepAt_string_plain` the plain form's body read-back, and `stepAt_string_arena`
-  the write-back form's arena slice.  A container's record is the tape's own span
+  `stepAt_string_plain` the plain form's grammar read of the body, and
+  `stepAt_string_arena` the write-back form's arena slice.  A container's record is the tape's own span
   and byte (`stepAt_punct`), and a literal's step is `WalkTraceStepAt.emit` at the
   record `tokenRecord_null_of_tape`, `tokenRecord_true_of_tape` or
   `tokenRecord_false_of_tape` gives.
@@ -51,8 +51,8 @@ stated in, and the general chain's one-lane steps are its steps.
 **What the row still takes.**  It is about the walk's trace, so the facts that
 name a run's state stay premises: the seed's correspondence, and at every token the
 arm's own net effect — for a container or a literal the record its span gives, for
-a payload the read-back the arm's choice of form supplies, and for every arm the
-carry it reaches and the index its back edge leaves.  The arms' `WalkInv`s, their
+a payload the read its arm supplies (the numeral's lexeme, the arena's slice), and
+for every arm the carry it reaches and the index its back edge leaves.  The arms' `WalkInv`s, their
 bundles and their `WalkSegment`s are not read here: `JsonStage2WalkRowArms`'
 `numberArmSegment`, `stringArmSegment` and `stringArenaArmSegment` compose a head's
 bundle to those carries and expose the merge's kept index and appended record, and
@@ -348,29 +348,25 @@ theorem stepAt_number {m0 : Mem} {G : WalkGeom m0} {t : Tape} {arena : List UInt
     (tokenRecord_number_of_tape hdec hal.input (List.mem_of_getElem? htok) hwf hlex) hk hev
 
 /-- **The plain string arm's step, its two lanes.**  The span opens and closes with
-the quotation mark, its body's code points are the grammar's
-(`tape_bodyCodePoints`), and the arm's raw body reads back to them — its own choice
-of form.  The record's length is the body's extent (`%sub260.i`) and its offset the
-body's start with the top bit set (`strOr`); the merge keeps the index and the back
-edge takes the closing quote. -/
+the quotation mark and its body's code points are the grammar's
+(`tape_bodyCodePoints`).  The record's length is the body's extent (`%sub260.i`) and
+its offset the body's start with the top bit set (`strOr`); the merge keeps the
+index and the back edge takes the closing quote. -/
 theorem stepAt_string_plain {m0 : Mem} {G : WalkGeom m0} {t : Tape} {arena : List UInt8}
     {C Cd C' : WalkCarry G} {j : Nat} {v : JSON.Value} {sp : Span}
     (hal : WalkAlignQuoted G t) (hpre : WalkTracePrefixAt G arena t C j)
     (hdec : decodeTape t = some v) (htok : t.tokens[j]? = some (.string sp))
     (hquote : sp.start + 2 ≤ sp.stop)
-    (hbody : ∀ cs : List Nat, bodyCodePoints G.bs sp = some cs →
-      escapeCodePoints ((G.bs.drop (sp.start + 1)).take (sp.stop - sp.start - 2)) =
-        some cs)
     (hkC : Cd.k = C.k)
     (hevC : Cd.events = C.events ++
       [EventRecord.str false (sp.stop - sp.start - 2) (plainSpan (sp.start + 1))])
     (hk' : C'.k = Cd.k + 2) (hev' : C'.events = Cd.events) :
     WalkTraceStepAt G arena t C C' j := by
-  obtain ⟨cs, hcode⟩ := tape_bodyCodePoints hdec hal.input (List.mem_of_getElem? htok)
+  obtain ⟨_, hcode⟩ := tape_bodyCodePoints hdec hal.input (List.mem_of_getElem? htok)
   have hspan : sp.stop = sp.start + 2 + (sp.stop - sp.start - 2) := by omega
   exact WalkTraceStepAt.emit_two hpre htok
     (tokenRecord_string_plain_of_tape hdec hal.input (List.mem_of_getElem? htok)
-      hspan hcode (hbody cs hcode))
+      hspan hcode)
     hkC hevC hk' hev'
 
 /-- **The write-back string arm's step, its two lanes.**  The span holds its two
@@ -606,17 +602,8 @@ theorem row_numberStringDocument {m0 : Mem} {G : WalkGeom m0} {t : Tape}
   have htok₃ : t.tokens[3]? = some (.string ⟨3, 7⟩) := by
     rw [htokens]; rfl
   have hquote : (⟨3, 7⟩ : Span).start + 2 ≤ (⟨3, 7⟩ : Span).stop := by decide
-  have hbody : ∀ cs : List Nat, bodyCodePoints G.bs ⟨3, 7⟩ = some cs →
-      escapeCodePoints ((G.bs.drop (3 + 1)).take (7 - 3 - 2)) = some cs := by
-    intro cs hcs
-    rw [hbs] at hcs
-    have h : bodyCodePoints numberStringDocumentBytes ⟨3, 7⟩ = some [97, 98] := by decide
-    rw [h] at hcs
-    obtain rfl := Option.some.inj hcs
-    rw [hbs]
-    decide
   have hstepS : WalkTraceStepAt G arena t C₃ C₄ 3 :=
-    stepAt_string_plain hal (WalkTraceStepAt.trace_of hstepC) hdec htok₃ hquote hbody
+    stepAt_string_plain hal (WalkTraceStepAt.trace_of hstepC) hdec htok₃ hquote
       hkC hevC hk₄ hev₄
   -- the closer's step
   have htok₄ : t.tokens[4]? = some (.punct .closeBracket ⟨7, 8⟩) := by
@@ -680,7 +667,7 @@ The lane-count readings are `propext` alone. -/
 #guard_msgs in
 #print axioms Token.entryLanes_length_of_no_string
 
-/-- info: 'LeanLLVM.Refinement.stepAt_punct' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stepAt_punct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stepAt_punct
 

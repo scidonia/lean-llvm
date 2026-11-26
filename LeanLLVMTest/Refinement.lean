@@ -10460,15 +10460,15 @@ contiguous to the end of this file. -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.consumeBytes_flatten
 
-/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_witness' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_witness' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventBoundary_witness
 
-/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_iff' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_iff' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventBoundary_iff
 
-/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_sum_exact' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2NoEventBoundary_sum_exact' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventBoundary_sum_exact
 
@@ -11467,3 +11467,115 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 /-- info: 'LeanLLVM.Refinement.eventsOfBytes_valueOfEvents_scalar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.eventsOfBytes_valueOfEvents_scalar
+
+-- The no-event walk's decision against the reference decoder's verdict.  The
+-- pins record that the decision tie adds no axiom beyond the standard footprint:
+-- the whole module is `propext` and `Quot.sound`, and the outcome-injectivity
+-- helper is `propext` alone.
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkRet_int_eq' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkRet_int_eq
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkParseResult_cases' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkParseResult_cases
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkReferenceWord_eq_one_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkReferenceWord_eq_one_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkReferenceWord_eq_zero_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkReferenceWord_eq_zero_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkDecisionRun' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkDecisionRun
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkDecisionWord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkDecisionWord
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkAccepts_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkAccepts_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkRefuses_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkRefuses_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkDecision_admitted' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkDecision_admitted
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkAccept_obligation' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkAccept_obligation
+
+-- The counts tie's pins.  The module settles which side of the deployment
+-- boundary each count equation is on; every theorem there carries the standard
+-- footprint except the definitional count-bound restatement and the arena
+-- singleton, which are axiom-free and `propext` alone.
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalk_length_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalk_length_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEvent_length_functionable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEvent_length_functionable
+
+/-- info: 'LeanLLVM.Refinement.consumeRecords_terms_map' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.consumeRecords_terms_map
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalk_terms_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalk_terms_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkCountsTie_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkCountsTie_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkAccept_counts_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkAccept_counts_iff
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkReferenceAccept_of_supply_tie' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkReferenceAccept_of_supply_tie
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkCount_iff' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkCount_iff
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkTrace.exists_countsTie' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkTrace.exists_countsTie
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkTrace.empty' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkTrace.empty
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventArenaBound_str_singleton' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventArenaBound_str_singleton
+
+/-- info: 'LeanLLVM.Refinement.countsTieDoc_terms_two_derivations' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.countsTieDoc_terms_two_derivations
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEvent_terms_not_functionable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEvent_terms_not_functionable
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEvent_obs_not_functionable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEvent_obs_not_functionable
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkCountsTie_not_relation_determined' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkCountsTie_not_relation_determined
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEvent_step_terms_delta_not_relation_determined' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEvent_step_terms_delta_not_relation_determined

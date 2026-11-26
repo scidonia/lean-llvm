@@ -32,6 +32,16 @@ inductive Punct where
   | openBracket | closeBracket | openBrace | closeBrace | comma | colon
 deriving DecidableEq, Repr
 
+/-- The byte a structural kind denotes (RFC 8259 §2's six structural
+characters). -/
+def Punct.byte : Punct → UInt8
+  | .openBracket => 0x5B
+  | .closeBracket => 0x5D
+  | .openBrace => 0x7B
+  | .closeBrace => 0x7D
+  | .comma => 0x2C
+  | .colon => 0x3A
+
 /-- A tape token: its kind and its span, with no decoded payload.  A string token
 is a pair of indexes, so a consumer that wants the text must read the input
 through the span, and `decodeTape` cannot be fooled by a payload the input does

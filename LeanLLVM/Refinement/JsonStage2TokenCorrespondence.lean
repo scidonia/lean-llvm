@@ -128,17 +128,18 @@ inductive TokenRecord (bs arena : List UInt8) : EventRecord → Token → Prop w
       (hbytes : (bs.drop s.start).take 4 = [0x6E, 0x75, 0x6C, 0x6C])
       (hspan : s.stop = s.start + 4) :
       TokenRecord bs arena (EventRecord.tag 10) (.null s)
-  /-- A number (`T_NUM = 7`): `strtodSpec`'s bits of the span's own lexeme. -/
-  | number {s : Span} {d : Decimal}
-      (hwf : d.wellFormed)
-      (hspan : s.stop = s.start + d.lexeme.length)
-      (hlexeme : (bs.drop s.start).take (s.stop - s.start) = d.lexeme.data.toList) :
+  /-- A number (`T_NUM = 7`): `strtodSpec`'s bits of the reader's normalised
+  decimal of the span's own bytes. -/
+  | number {s : Span} {d : Decimal} {lex : Bytes}
+      (hread : StrtodReader.reader lex = some d)
+      (hspan : s.stop = s.start + lex.length)
+      (hlexeme : (bs.drop s.start).take (s.stop - s.start) = lex.data.toList) :
       TokenRecord bs arena (EventRecord.number (strtodSpec d).toBits) (.number s)
-  /-- A key or string whose body the document holds. -/
+  /-- A key or string whose body the document holds, at the token's own
+  escape-aware scan. -/
   | strPlain {key : Bool} {s : Span} {len : Nat} {cs : List Nat}
       (hquote : bs[s.start]? = some 0x22)
       (hspan : s.stop = s.start + 2 + len)
-      (hbody : escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs)
       (hcode : bodyCodePoints bs s = some cs) :
       TokenRecord bs arena (EventRecord.str key len (plainSpan (s.start + 1))) (.string s)
   /-- A key or string whose body the arena holds. -/
@@ -175,9 +176,9 @@ theorem forall₂ {bs arena : List UInt8} {rs : List EventRecord} {toks : List T
   | trueTag hb hs _ ih => exact List.Forall₂.cons (.trueTag hb hs) ih
   | falseTag hb hs _ ih => exact List.Forall₂.cons (.falseTag hb hs) ih
   | nullTag hb hs _ ih => exact List.Forall₂.cons (.nullTag hb hs) ih
-  | number hwf hs hlex _ ih => exact List.Forall₂.cons (.number hwf hs hlex) ih
-  | strPlain hq hs hbody hcode _ ih =>
-      exact List.Forall₂.cons (.strPlain hq hs hbody hcode) ih
+  | number hr hs hlex _ ih => exact List.Forall₂.cons (.number hr hs hlex) ih
+  | strPlain hq hs hcode _ ih =>
+      exact List.Forall₂.cons (.strPlain hq hs hcode) ih
   | strArena hq hs hcode hbelow harena _ ih =>
       exact List.Forall₂.cons (.strArena hq hs hcode hbelow harena) ih
 
@@ -258,16 +259,16 @@ theorem of_forall₂ {bs arena : List UInt8} :
       cases h with
       | cons hrec htail =>
           cases hrec with
-          | number hwf hs hlex =>
-              exact Stage2Records.number hwf hs hlex (of_forall₂ htail)
+          | number hr hs hlex =>
+              exact Stage2Records.number hr hs hlex (of_forall₂ htail)
   | rs, .string s :: rest, h => by
       change List.Forall₂ (TokenRecord bs arena) rs
         (.string s :: Token.nonSeparators rest) at h
       cases h with
       | cons hrec htail =>
           cases hrec with
-          | strPlain hq hs hbody hcode =>
-              exact Stage2Records.strPlain hq hs hbody hcode (of_forall₂ htail)
+          | strPlain hq hs hcode =>
+              exact Stage2Records.strPlain hq hs hcode (of_forall₂ htail)
           | strArena hq hs hcode hbelow harena =>
               exact Stage2Records.strArena hq hs hcode hbelow harena (of_forall₂ htail)
 
@@ -331,7 +332,7 @@ theorem tokenRecord_tagVal {bs arena : List UInt8} {r : EventRecord} {tok : Toke
   | falseTag _ _ => exact Or.inl ⟨9, rfl, rfl⟩
   | nullTag _ _ => exact Or.inl ⟨10, rfl, rfl⟩
   | number _ _ _ => exact Or.inl ⟨stage2TagNum, rfl, rfl⟩
-  | strPlain hq hs hbody hcode =>
+  | strPlain hq hs hcode =>
       exact Or.inr ⟨_, _, _,
         rfl⟩
   | strArena hq hs hcode hbelow harena =>
@@ -370,9 +371,9 @@ theorem tokenRecord_tag {bs arena : List UInt8} {n : Nat} {tok : Token}
   | nullTag hb hs =>
       exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨rfl, _, rfl, hb, hs⟩)))))
 
-/-- **A number record's payload is `strtodSpec`'s bits of the span's lexeme.**  The
-token's span is the lexeme's — `s.stop = s.start + d.lexeme.length` with the
-document holding exactly `d.lexeme` — the lexeme is well formed, and the record's
+/-- **A number record's payload is `strtodSpec`'s bits of the reader's decimal.**
+The token's span is the lexeme's — `s.stop = s.start + lex.length` with the
+document holding exactly `lex` — the reader reads `lex` as `d`, and the record's
 eight payload bytes are the bits of `strtodSpec d`.  The conversion's own
 arithmetic is the model's (`stage2NumFast_writes_strtodSpec`); the *body's*
 conversion is `ub` at the walk's call selection
@@ -380,29 +381,30 @@ conversion is `ub` at the walk's call selection
 relation's. -/
 theorem tokenRecord_number {bs arena : List UInt8} {r : EventRecord} {s : Span}
     (h : TokenRecord bs arena r (.number s)) :
-    ∃ (bits : Nat) (d : Decimal), r = .number bits ∧ d.wellFormed ∧
-      s.stop = s.start + d.lexeme.length ∧
-      (bs.drop s.start).take (s.stop - s.start) = d.lexeme.data.toList ∧
+    ∃ (bits : Nat) (d : Decimal) (lex : Bytes), r = .number bits ∧
+      StrtodReader.reader lex = some d ∧
+      s.stop = s.start + lex.length ∧
+      (bs.drop s.start).take (s.stop - s.start) = lex.data.toList ∧
       bits = (strtodSpec d).toBits := by
   cases h with
-  | number hwf hspan hlex => exact ⟨_, _, rfl, hwf, hspan, hlex, rfl⟩
+  | number hread hspan hlex => exact ⟨_, _, _, rfl, hread, hspan, hlex, rfl⟩
 
 /-- **A key or string record's fields are the span's body.**  The token's span
 opens with a quote, its body's code points are `bodyCodePoints`'s, and the record
-is one of the two forms: `plainSpan` over the document's body, or an arena offset
-below `2 ^ 63` whose slice reads back as those code points. -/
+is one of the two forms: `plainSpan` over the document's body at the token's own
+escape-aware reading, or an arena offset below `2 ^ 63` whose slice reads back as
+those code points. -/
 theorem tokenRecord_string {bs arena : List UInt8} {r : EventRecord} {s : Span}
     (h : TokenRecord bs arena r (.string s)) :
     bs[s.start]? = some 0x22 ∧
       ∃ (key : Bool) (len field : Nat) (cs : List Nat),
         r = .str key len field ∧ bodyCodePoints bs s = some cs ∧
-        ((field = plainSpan (s.start + 1) ∧ s.stop = s.start + 2 + len ∧
-            escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs) ∨
+        ((field = plainSpan (s.start + 1) ∧ s.stop = s.start + 2 + len) ∨
           (field < 2 ^ 63 ∧ s.start + 2 ≤ s.stop ∧
             escapeCodePoints ((arena.drop field).take len) = some cs)) := by
   cases h with
-  | strPlain hq hs hbody hcode =>
-      exact ⟨hq, _, _, _, _, rfl, hcode, Or.inl ⟨rfl, hs, hbody⟩⟩
+  | strPlain hq hs hcode =>
+      exact ⟨hq, _, _, _, _, rfl, hcode, Or.inl ⟨rfl, hs⟩⟩
   | strArena hq hs hcode hbelow harena =>
       exact ⟨hq, _, _, _, _, rfl, hcode, Or.inr ⟨hbelow, hs, harena⟩⟩
 
@@ -620,7 +622,7 @@ theorem Stage2Records.tagged {bs arena : List UInt8} {rs : List EventRecord}
       intro r hr; rcases List.mem_cons.mp hr with rfl | hr
       · trivial
       · exact ih r hr
-  | strPlain _ _ _ _ _ ih =>
+  | strPlain _ _ _ _ ih =>
       intro r hr; rcases List.mem_cons.mp hr with rfl | hr
       · trivial
       · exact ih r hr
@@ -709,35 +711,35 @@ theorem trueTag_null_span_not_records :
 
 /-! ### Axiom footprints -/
 
-/-- info: 'LeanLLVM.Refinement.TokenRecord' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.TokenRecord' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms TokenRecord
 
-/-- info: 'LeanLLVM.Refinement.tokenRecord_tagVal' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.tokenRecord_tagVal' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms tokenRecord_tagVal
 
-/-- info: 'LeanLLVM.Refinement.tokenRecord_tag' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.tokenRecord_tag' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms tokenRecord_tag
 
-/-- info: 'LeanLLVM.Refinement.tokenRecord_number' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.tokenRecord_number' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms tokenRecord_number
 
-/-- info: 'LeanLLVM.Refinement.tokenRecord_string' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.tokenRecord_string' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms tokenRecord_string
 
-/-- info: 'LeanLLVM.Refinement.Stage2Records.forall₂' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.Stage2Records.forall₂' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Stage2Records.forall₂
 
-/-- info: 'LeanLLVM.Refinement.Stage2Records.of_forall₂' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.Stage2Records.of_forall₂' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Stage2Records.of_forall₂
 
-/-- info: 'LeanLLVM.Refinement.stage2Records_iff_forall₂' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2Records_iff_forall₂' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2Records_iff_forall₂
 
@@ -753,7 +755,7 @@ theorem trueTag_null_span_not_records :
 #guard_msgs in
 #print axioms parseSkeleton_encodedBytes
 
-/-- info: 'LeanLLVM.Refinement.Stage2Records.tagged' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.Stage2Records.tagged' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Stage2Records.tagged
 
@@ -765,14 +767,14 @@ theorem trueTag_null_span_not_records :
 #guard_msgs in
 #print axioms stage2Records_at_accept
 
-/-- info: 'LeanLLVM.Refinement.null_records_of_forall₂' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.null_records_of_forall₂' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms null_records_of_forall₂
 
-/-- info: 'LeanLLVM.Refinement.null_trueTag_not_records' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.null_trueTag_not_records' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms null_trueTag_not_records
 
-/-- info: 'LeanLLVM.Refinement.trueTag_null_span_not_records' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.trueTag_null_span_not_records' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms trueTag_null_span_not_records

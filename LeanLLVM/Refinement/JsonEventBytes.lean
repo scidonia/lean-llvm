@@ -45,9 +45,11 @@ open LeanLLVM.JSON
 
 /-- A string or key record's decoded body.  The record's field names its source
 — the arena prefix for the clear-bit escaped form, the document for the
-top-bit-set plain form — and the body is that source's `len`-byte slice, read as
-code points by `escapeCodePoints`.  `none` when the slice runs past its source
-or its bytes do not decode. -/
+top-bit-set plain form — and the body is that source's `len`-byte slice.  The
+plain form recomputes the token's span (the field clears to the body's first
+byte, `len` is the raw body's byte count) and reads it with the escape-aware
+scan; the arena form reads its own UTF-8 slice.  `none` when the slice runs past
+its source or its bytes do not decode. -/
 def recordBodyCodePoints (bs arena : List UInt8) (len field : Nat) :
     Option (List Nat) :=
   if field < 2 ^ 63 then
@@ -57,7 +59,7 @@ def recordBodyCodePoints (bs arena : List UInt8) (len field : Nat) :
   else
     let off := field - 2 ^ 63
     if off + len ≤ bs.length then
-      escapeCodePoints ((bs.drop off).take len)
+      bodyCodePointsAt bs off
     else none
 
 /-- The walk: one record at a time, at the widths `kernel/json/stage2.h`

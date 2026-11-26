@@ -1080,14 +1080,13 @@ the guards that produced each token.  It restates nothing about the parser: the
 token's facts are read off the document at the span the guard fixed, and the
 guards are the evidence. -/
 
-/-- The document facts a token carries.  A punctuation span is one byte; a
-literal's span is the literal's own length and the document holds its bytes; a
-number's span holds the maximal lexeme, which is an RFC 8259 number; a key or
-string's span opens with the quote and reads as a JSON string literal.  The
-punctuation byte itself is the run's own read (`WalkAlign.class` in the
-refinement); what the tape's construction adds is the one-byte width. -/
+/-- The document facts a token carries.  A punctuation span is one byte and the
+document holds the byte the kind denotes; a literal's span is the literal's own
+length and the document holds its bytes; a number's span holds the maximal
+lexeme, which is an RFC 8259 number; a key or string's span opens with the quote
+and reads as a JSON string literal. -/
 def TokenBytes (bs : Bytes) : Token → Prop
-  | .punct _ s => s.stop = s.start + 1
+  | .punct p s => s.stop = s.start + 1 ∧ bs[s.start]? = some p.byte
   | .null s =>
       (bs.drop s.start).take 4 = ByteString.literal [0x6E, 0x75, 0x6C, 0x6C] ∧
         s.stop = s.start + 4
@@ -1234,9 +1233,9 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                         subst hc
                         intro tok htok
                         rcases List.mem_cons.mp htok with rfl | htok'
-                        · exact Or.inr rfl
+                        · exact Or.inr ⟨rfl, hb⟩
                         rcases List.mem_cons.mp htok' with rfl | hmem
-                        · exact Or.inr rfl
+                        · exact Or.inr ⟨rfl, hcl⟩
                         · exact Or.inl hmem
                       · cases hdec
                   | openBracket => simp [headPunct] at h
@@ -1285,7 +1284,7 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                           subst hd
                           intro tok htok
                           rcases List.mem_cons.mp htok with rfl | hmem
-                          · exact Or.inr rfl
+                          · exact Or.inr ⟨rfl, hb⟩
                           · have hlen1 : (tok2 :: rest2).length < n := by
                               simp only [List.length_cons] at hlen ⊢
                               omega
@@ -1302,7 +1301,7 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                               rcases hE2 d1.cursor t hdt tok hm1 with hm2 | htb
                               · rw [hC] at hm2
                                 rcases List.mem_cons.mp hm2 with rfl | hm3
-                                · exact Or.inr rfl
+                                · exact Or.inr ⟨rfl, hcl⟩
                                 · exact Or.inl hm3
                               · exact Or.inr htb
                             · exact Or.inr htb
@@ -1331,9 +1330,9 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                         subst hc
                         intro tok htok
                         rcases List.mem_cons.mp htok with rfl | htok'
-                        · exact Or.inr rfl
+                        · exact Or.inr ⟨rfl, hb⟩
                         rcases List.mem_cons.mp htok' with rfl | hmem
-                        · exact Or.inr rfl
+                        · exact Or.inr ⟨rfl, hcl⟩
                         · exact Or.inl hmem
                       · cases hdec
                   | openBracket => simp [headPunct] at h
@@ -1404,7 +1403,7 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                                   subst hd
                                   intro tok htok
                                   rcases List.mem_cons.mp htok with rfl | hmem
-                                  · exact Or.inr rfl
+                                  · exact Or.inr ⟨rfl, hb⟩
                                   · have hlen1 : (tok2 :: rest2).length < n := by
                                       simp only [List.length_cons] at hlen ⊢
                                       omega
@@ -1414,7 +1413,7 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                                       with hm1 | htb
                                     · rw [hColon] at hm1
                                       rcases List.mem_cons.mp hm1 with rfl | hm2
-                                      · exact Or.inr rfl
+                                      · exact Or.inr ⟨rfl, hcol⟩
                                       · have hlenR1 : rest1.length < n := by
                                           have hkl : k.rest.length = rest1.length + 1 := by
                                             rw [hColon]; simp
@@ -1434,7 +1433,7 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                                           rcases hM2 d1.cursor t hdt tok hm3 with hm4 | htb
                                           · rw [hC] at hm4
                                             rcases List.mem_cons.mp hm4 with rfl | hm5
-                                            · exact Or.inr rfl
+                                            · exact Or.inr ⟨rfl, hcl⟩
                                             · exact Or.inl hm5
                                           · exact Or.inr htb
                                         · exact Or.inr htb
@@ -1486,7 +1485,7 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                     subst hd
                     intro tok' htok'
                     rcases List.mem_cons.mp htok' with rfl | hmem
-                    · exact Or.inr rfl
+                    · exact Or.inr ⟨rfl, hc⟩
                     · have hlen1 : rest.length < n := by
                         simp only [List.length_cons] at hlen
                         omega
@@ -1585,7 +1584,7 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                             subst hsc
                             intro tok' htok'
                             rcases List.mem_cons.mp htok' with rfl | hmem
-                            · exact Or.inr rfl
+                            · exact Or.inr ⟨rfl, hc⟩
                             · have hlen1 : rest.length < n := by
                                 simp only [List.length_cons] at hlen
                                 omega
@@ -1594,7 +1593,7 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
                                 with hm1 | htb
                               · rw [hColon] at hm1
                                 rcases List.mem_cons.mp hm1 with rfl | hm2
-                                · exact Or.inr rfl
+                                · exact Or.inr ⟨rfl, hcol⟩
                                 · have hlenR1 : rest1.length < n := by
                                     have hkl : k.rest.length = rest1.length + 1 := by
                                       rw [hColon]; simp

@@ -42,10 +42,12 @@ precondition so both sides state one policy.
 
 There is no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/
+import LeanLLVM.Refinement.JsonEventDecode
 import LeanLLVM.Refinement.JsonPipelineSpec
 import LeanLLVM.Refinement.JsonStage2Body
 import LeanLLVM.Refinement.JsonUtf8IR
 import LeanLLVM.JSON.Strtod
+import LeanLLVM.StrtodReader
 import LeanLLVM.JSON.TapeCorrect
 import LeanLLVM.JSON.Correct
 
@@ -86,9 +88,11 @@ def plainSpan (bodyStart : Nat) : Nat := bodyStart + 2 ^ 63
 the token's span.  This is the string side of the relation's bridge: a record's
 arena slice must decode to the same code points the tape's span does. -/
 def bodyCodePoints (bs : List UInt8) (s : Span) : Option (List Nat) :=
-  match scanCharsEnd (ByteString.literal bs) (s.start + 1) 0 with
-  | .ok (cs, _) => some cs
-  | .error _ => none
+  bodyCodePointsAt bs (s.start + 1)
+
+/-- The two readings are the same function of the body's start. -/
+theorem bodyCodePoints_eq_at (bs : List UInt8) (s : Span) :
+    bodyCodePoints bs s = bodyCodePointsAt bs (s.start + 1) := rfl
 
 /-! ### The relation
 
@@ -173,22 +177,22 @@ inductive Stage2EventRel (bs arena : List UInt8) : List UInt8 → List Token →
       (h : Stage2EventRel bs arena evs toks) :
       Stage2EventRel bs arena (tagRecord 10 ++ evs) (.null s :: toks)
   /-- A number (`T_NUM = 7`): the eight payload bytes are `strtodSpec`'s encoding
-  of the token's lexeme, and the lexeme is the token's own span. -/
+  of the reader's normalised decimal, and the lexeme is the token's own span. -/
   | number {s : Span} {evs : List UInt8} {toks : List Token} {d : Decimal}
-      (hwf : d.wellFormed)
-      (hspan : s.stop = s.start + d.lexeme.length)
-      (hlexeme : (bs.drop s.start).take (s.stop - s.start) = d.lexeme.data.toList)
+      {lex : Bytes}
+      (hread : StrtodReader.reader lex = some d)
+      (hspan : s.stop = s.start + lex.length)
+      (hlexeme : (bs.drop s.start).take (s.stop - s.start) = lex.data.toList)
       (h : Stage2EventRel bs arena evs toks) :
       Stage2EventRel bs arena
         (numberRecordBytes (strtodSpec d).toBits ++ evs) (.number s :: toks)
   /-- A key or string written in the plain form: the span field is the body's
   first document byte with the top bit set, the length is the body's length, and
-  the body reads as the token's code points. -/
+  the body reads as the token's code points under the escape-aware scan. -/
   | strPlain {key : Bool} {s : Span} {evs : List UInt8} {toks : List Token}
       {len : Nat} {cs : List Nat}
       (hquote : bs[s.start]? = some 0x22)
       (hspan : s.stop = s.start + 2 + len)
-      (hbody : escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs)
       (hcode : bodyCodePoints bs s = some cs)
       (h : Stage2EventRel bs arena evs toks) :
       Stage2EventRel bs arena
@@ -241,8 +245,8 @@ theorem Stage2EventRel.append {bs arena : List UInt8} {evs₁ : List UInt8}
     (fun hb hs _ ih => Stage2EventRel.trueTag hb hs ih)
     (fun hb hs _ ih => Stage2EventRel.falseTag hb hs ih)
     (fun hb hs _ ih => Stage2EventRel.nullTag hb hs ih)
-    (fun hwf hs hlex _ ih => Stage2EventRel.number hwf hs hlex ih)
-    (fun hq hs hbody hcode _ ih => Stage2EventRel.strPlain hq hs hbody hcode ih)
+    (fun hread hs hlex _ ih => Stage2EventRel.number hread hs hlex ih)
+    (fun hq hs hcode _ ih => Stage2EventRel.strPlain hq hs hcode ih)
     (fun hq hs hcode hbelow harena _ ih =>
       Stage2EventRel.strArena hq hs hcode hbelow harena ih)
     h₁
@@ -322,20 +326,19 @@ theorem stage2EventRel_string_arena {bs arena : List UInt8} {key : Bool}
   Stage2EventRel.strArena hquote hspan hcode hbelow harena h
 
 /-- Strings in the plain form: the record's span field is the body's first
-document byte with the top bit set, and the body reads as the token's code
-points. -/
+document byte with the top bit set, and the token's own escape-aware scan reads
+its code points. -/
 theorem stage2EventRel_string_plain {bs arena : List UInt8} {key : Bool}
     {s : Span} {len : Nat} {cs : List Nat}
     {evs : List UInt8} {toks : List Token}
     (hquote : bs[s.start]? = some 0x22)
     (hspan : s.stop = s.start + 2 + len)
-    (hbody : escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs)
     (hcode : bodyCodePoints bs s = some cs)
     (h : Stage2EventRel bs arena evs toks) :
     Stage2EventRel bs arena
       (strRecordBytes key len (plainSpan (s.start + 1)) ++ evs)
       (.string s :: toks) :=
-  Stage2EventRel.strPlain hquote hspan hbody hcode h
+  Stage2EventRel.strPlain hquote hspan hcode h
 
 /-- The arena side of the string class is inhabited: the UTF-8 encoding of a
 code-point list reads back as that list (`escapeCodePoints_encode`), so a
@@ -349,17 +352,17 @@ theorem stage2EventRel_string_arena_inhabited (cs : List Nat)
   rw [List.drop_zero, List.take_of_length_le (Nat.le_refl _)]
   exact escapeCodePoints_encode cs h
 
-/-- Numbers: `bitsBytes (strtodSpec d).toBits` is the record payload for a
-well-formed lexeme, and the token's span is that lexeme. -/
+/-- Numbers: `bitsBytes (strtodSpec d).toBits` is the record payload for the
+reader's decimal of the token's own lexeme. -/
 theorem stage2EventRel_number {bs arena : List UInt8} {s : Span} {d : Decimal}
-    {evs : List UInt8} {toks : List Token}
-    (hwf : d.wellFormed)
-    (hspan : s.stop = s.start + d.lexeme.length)
-    (hlexeme : (bs.drop s.start).take (s.stop - s.start) = d.lexeme.data.toList)
+    {lex : Bytes} {evs : List UInt8} {toks : List Token}
+    (hread : StrtodReader.reader lex = some d)
+    (hspan : s.stop = s.start + lex.length)
+    (hlexeme : (bs.drop s.start).take (s.stop - s.start) = lex.data.toList)
     (h : Stage2EventRel bs arena evs toks) :
     Stage2EventRel bs arena
       (numberRecordBytes (strtodSpec d).toBits ++ evs) (.number s :: toks) :=
-  Stage2EventRel.number hwf hspan hlexeme h
+  Stage2EventRel.number hread hspan hlexeme h
 
 /-! ### The used-prefix read
 
@@ -531,35 +534,35 @@ theorem pipelineSpecPre_resourcePolicy {tab base : Nat} {args : List Value}
 #guard_msgs in
 #print axioms strRecordBytes
 
-/-- info: 'LeanLLVM.Refinement.Stage2EventRel' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.Stage2EventRel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Stage2EventRel
 
-/-- info: 'LeanLLVM.Refinement.stage2EventRel' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2EventRel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2EventRel
 
-/-- info: 'LeanLLVM.Refinement.Stage2EventRel.append' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.Stage2EventRel.append' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms Stage2EventRel.append
 
-/-- info: 'LeanLLVM.Refinement.stage2EventRel_scalars' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2EventRel_scalars' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2EventRel_scalars
 
-/-- info: 'LeanLLVM.Refinement.stage2EventRel_array' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2EventRel_array' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2EventRel_array
 
-/-- info: 'LeanLLVM.Refinement.stage2EventRel_object' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2EventRel_object' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2EventRel_object
 
-/-- info: 'LeanLLVM.Refinement.stage2EventRel_string_arena' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2EventRel_string_arena' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2EventRel_string_arena
 
-/-- info: 'LeanLLVM.Refinement.stage2EventRel_string_plain' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2EventRel_string_plain' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2EventRel_string_plain
 
@@ -567,7 +570,7 @@ theorem pipelineSpecPre_resourcePolicy {tab base : Nat} {args : List Value}
 #guard_msgs in
 #print axioms stage2EventRel_string_arena_inhabited
 
-/-- info: 'LeanLLVM.Refinement.stage2EventRel_number' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2EventRel_number' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2EventRel_number
 

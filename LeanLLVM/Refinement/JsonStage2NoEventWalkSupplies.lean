@@ -2,27 +2,45 @@
 The reference's two supplies, and which side proves what.
 
 `Stage2NoEventWalkExit` carries the reference's data on both arms: `accept` binds a
-tape, the parse equality at it and the reference run's facts
+tape, the parse equality at it and the reference facts
 (`Stage2NoEventWalkReferenceFacts`), and `refuse` binds the parser's verdict
-(`Stage2NoEventWalkParseRefusal`).  Nothing in this tree produces either — they
-are the reference execution's — so this module states exactly what a producer of
-them must have, proves what follows from the tree about them, and says which part
-is whose.
+(`Stage2NoEventWalkParseRefusal`).  The accept arm's data is the tree's:
+`JsonStage2NoEventWalkRecordSupplyOfParse` proves `Stage2NoEventWalkRecordsSupply`
+at every `parseBytes … = .ok t`, and `Stage2NoEventAdmitted.referenceRecords` gives
+`Stage2NoEventReferenceRecords` at every admitted document.  The refusal arm's is
+not — its verdict belongs only to documents the reference refuses — so this module
+states exactly what a producer of either must have, proves what follows from the
+tree about them, and says which part is whose.
 
-**The accept supply reduces to one record trace.**  `parseBytes` is a function, so
-a document has at most one tape (`stage2NoEventWalkParsed_unique`), and the tape it
-returns is the document's own: `t.input` is the bytes and `decodeTape` reads the
-accepted value (`stage2NoEventWalkParsed_tape`).  The facts' tape field is then not
-an obligation of its own — its only content, `t.tokens = toks`, holds
-definitionally once `toks` is the tape's token list — and
-`stage2NoEventWalkReferenceFacts_iff_supply` proves the facts are exactly
-`Stage2NoEventWalkRecordsSupply` plus those two identifications.  The *nontrivial* part of the accept arm's carried data is
-four fields: the record trace `rs`, the relation `Stage2Records bs arena rs
-t.tokens` at the tape's own tokens, the record widths `∀ r ∈ rs, r.Bounded`, and
-the extent clause `∀ e ∈ consumeRecords bs arena rs, e.BodiesWithin bs arena`.  The
-interface also carries the two count equations; they are the deployment's as much
-as the trace is (`ReferenceAccept`'s own docstring), and what the reduction below
-proves is that no *further* reference data is hidden behind them.
+**The accept supply reduces to one record trace, and the parse determines it.**
+`parseBytes` is a function, so a document has at most one tape
+(`stage2NoEventWalkParsed_unique`), and the tape it returns is the document's own:
+`t.input` is the bytes and `decodeTape` reads the accepted value
+(`stage2NoEventWalkParsed_tape`).  The facts' tape field is then not an obligation
+of its own — its only content, `t.tokens = toks`, holds definitionally once `toks`
+is the tape's token list — and `stage2NoEventWalkReferenceFacts_iff_supply` proves
+the facts are exactly `Stage2NoEventWalkRecordsSupply` plus those two
+identifications.  The four remaining fields — the trace `rs`, the relation
+`Stage2Records bs arena rs t.tokens` at the tape's own tokens, the record widths
+`∀ r ∈ rs, r.Bounded`, and the extent clause
+`∀ e ∈ consumeRecords bs arena rs, e.BodiesWithin bs arena` — are produced by
+`records_exists` (`JsonStage2NoEventWalkRecordSupplyOfParse`) from the parse's
+tokens under the strengthened `TokenBytes`: the witness is a relation-satisfying
+trace, with plain-form strings (`EventRecord.str false`), that the parse's tokens
+determine, not necessarily a trace a particular reference run emits.  The choice
+of witness is harmless: the transfer chain's `value` is a theorem at every facts
+value at the same document, so every such trace yields the same
+`scalarCanonValueOfBytes`.  What remains the deployment's is the two count
+equations, `obs.length = K'.tok` and `K'.terms = (obs.map ConsumerEvent.terms).sum`
+(`JsonStage2NoEventWalkCountsTie`): the tree does not compute the walk's two
+registers from the document — its invariant carries only `K.tok ≤ K.n`
+(`Stage2NoEventWalkInv.tokLe`) and its count is only an over-count
+(`Stage2NoEventWalkCount_iff`) — so at a chosen supply, where
+`obs = consumeRecords bs arena rs`, the equations compare those registers against
+the trace's own data.  The bounded witness `countsTieDoc_terms_two_derivations`
+separates two *derivations* with `obs` free, not two values at one supply: it
+shows the relation alone fixes neither the read-back nor its term sum.  The
+reduction below proves that no *further* reference data is hidden behind them.
 
 **The refusal arm's carried data is the whole `Stage2NoEventWalkReferenceRefuse`.**
 The exit's `refuse` also holds the walk's trace, but a `Prop` trace cannot supply
@@ -42,17 +60,23 @@ and the exclusivity at the admitted domain (`Stage2NoEventAdmitted.not_parseRefu
 `…referenceWord_eq_one`, `…referenceRecords_iff`, `…refuseSupply_not`,
 `…tape_tied`).
 
-**What the deployment proves.**  On the accept arm: the record trace of the
-reference execution at the document's own parse tape, with its relation, its
-widths, its extent clause and the two count equations at the read-back.  None of the four is derivable from
-`Stage2NoEvent`: the relation's `len` is free above the decoded slice
-(`stage2NoEvent_str_len_free`), so it determines neither the trace nor the events,
-and the widths and extents are hypotheses the transfer chain and the certified
-boundary's own projection already take the same way
-(`eventsOfBytes_valueOfEvents_scalar` for the extents, `stage2Boundary_noEventConsumer`
-for the widths).  On the refusal arm: the whole `ReferenceRefuse` — the relation's
-witnesses, the counts and the parser's error.  The run, its price, the
-boundary, the terminal witnesses and the row are the walk's.
+**What the deployment proves.**  On the accept arm: nothing beyond the two count
+equations.  The trace, its relation, its widths and its extent clause are the
+parse's own (`stage2NoEventWalkRecordsSupply_of_parse`), and the facts' `obs` and
+`toks` are the read-back and the tape's tokens; the equations `obs.length = K'.tok`
+and `K'.terms = (obs.map ConsumerEvent.terms).sum` compare the walk's registers
+against that derived data, and `JsonStage2NoEventWalkCountsTie` shows they are the
+deployment's: the counted-token register is not computed by the tree (its invariant
+carries only `K.tok ≤ K.n`, `Stage2NoEventWalkInv.tokLe`; its count only
+`Stage2NoEventWalkCount_iff`), and the relation does not fix the read-back — the
+bounded witness `countsTieDoc_terms_two_derivations` gives two arena-bound
+derivations at one `(bs, arena, toks)`, with `obs` free, of equal length and
+different sums.  At a chosen supply, where `obs = consumeRecords bs arena rs`, the
+term sum is determined, and the equation compares the walk's term register against
+the trace's own `(rs.map EventRecord.terms).sum`.  On the refusal arm:
+the whole `ReferenceRefuse` — the relation's witnesses, the counts and the parser's
+error.  The run, its price, the boundary, the terminal witnesses and the row are
+the walk's.
 -/
 import LeanLLVM.Refinement.JsonStage2NoEventWalkReference
 import LeanLLVM.Refinement.JsonStage2NoEventAdmission
@@ -70,19 +94,25 @@ open LeanLLVM.Refinement.JsonStage2NoEventIR
 
 /-! ### The accept supply
 
-The one data structure the accept route's producer must fill.  It is indexed by the
-document and the acceptance's arena — the exit's own `K.bs` and `K'.arena` — and by
-the tape the reference parser returned, so a producer that builds it at the
+The one data structure the accept route's reference data reduces to.  It is indexed
+by the document and the acceptance's arena — the exit's own `K.bs` and `K'.arena` —
+and by the tape the reference parser returned, so a producer that builds it at the
 document's own parse cannot place it anywhere else. -/
 
-/-- **The reference run's records at a document's parse.**  The trace, the relation
+/-- **A record trace at a document's parse.**  The trace, the relation
 at the tape's own token list, the record widths, and the reported strings' extent
-clause.  **Carried data**: the reference execution's, never derived from
-`Stage2NoEvent` (the relation's `len` is free above the decoded slice, so a
-derivation does not determine the events) and never a consequence of the parse
-alone (the parser returns tokens, not records). -/
+clause.  `JsonStage2NoEventWalkRecordSupplyOfParse` produces this for every accepted
+document: `stage2NoEventWalkRecordsSupply_of_parse` builds the trace from the
+parse's own tokens under the strengthened `TokenBytes` (plain-form strings,
+`EventRecord.str false`), so the supply is a relation-satisfying trace the parse
+determines, not necessarily the trace a particular reference run emits.  The choice
+between such traces is harmless: the transfer chain's `value` holds at every facts
+value at the same document, so each yields the same `scalarCanonValueOfBytes`.
+What the tokens do not determine is the two count equations, which
+`JsonStage2NoEventWalkCountsTie` classifies. -/
 structure Stage2NoEventWalkRecordsSupply (bs arena : List UInt8) (t : Tape) : Type where
-  /-- The record trace the reference run emitted for this document and arena. -/
+  /-- A record trace the parse's tokens determine at this document and
+  arena. -/
   rs : List EventRecord
   /-- The trace is the document's relation at the parser's own tokens. -/
   records : Stage2Records bs arena rs t.tokens
@@ -116,7 +146,7 @@ def facts {bs arena : List UInt8} {t : Tape}
     tokens := rfl }
 
 /-- **The transfer chain at the supply.**  At one acceptance — the parser's equality
-at the tape plus the reference run's records — the emitted stream's value is
+at the tape plus the supply's records — the emitted stream's value is
 `scalarCanonValueOfBytes` at the document.  This is
 `stage2NoEventWalkReference_valueOfEvents` with the facts the supply builds, so a
 producer that proves the supply has proved the value equation's premises and
@@ -161,17 +191,17 @@ theorem stage2NoEventWalkReferenceFacts_iff_supply {bs arena : List UInt8}
     exact ⟨s.rs, hrec, hobs, s.bounded, hwith, htoks.symm⟩
 
 /-- **The accept route's reference-side supply.**  The parser's verdict at the
-document and the reference run's records at that tape.  This is everything
+document and the record trace the parse determines at that tape.  This is everything
 `Stage2NoEventWalkExit.accept` binds beyond the walk's own evidence: the tape, the
 parse equality at it, and the facts (which the records supply determines, at the
-observations and tokens it names).  A producer takes it from the deployment
-boundary, at the witnesses its route reports. -/
+observations and tokens it names).  A producer reads the records from
+`stage2NoEventWalkRecordsSupply_of_parse`; the counts are the deployment's. -/
 structure Stage2NoEventWalkAcceptSupply (K K' : Stage2NoEventWalkCarry) : Type where
   /-- The tape the reference parser returned at the head's document. -/
   t : Tape
   /-- The parse equality at that tape. -/
   parsed : parseBytes Limits.default (ByteString.literal K.bs) = .ok t
-  /-- The reference run's records at the acceptance's arena and that tape. -/
+  /-- The record trace the parse determines at the acceptance's arena and that tape. -/
   recordsSupply : Stage2NoEventWalkRecordsSupply K.bs K'.arena t
 
 namespace Stage2NoEventWalkAcceptSupply
@@ -207,10 +237,13 @@ count equations `obs.length = K'.tok` and
 `K'.terms = (obs.map ConsumerEvent.terms).sum`, read at the consumer's read-back of
 the supply's trace.
 
-The counts are the deployment's too, not the walk's: their left side is the
-reference's observation list, the tree carries them in `ReferenceAccept`
-(`JsonStage2NoEventWalkPremises`), every accept exit destructures them from that
-carried data (`…RowsContainerZero`), and nothing in the tree derives them from the
+The counts are the deployment's, not the walk's, and the two are oriented
+differently: `obs.length = K'.tok` puts the observation list (the read-back of the
+supply's trace) on the left and the walk's counted-token register on the right,
+while `K'.terms = (obs.map ConsumerEvent.terms).sum` puts the walk's term register
+on the left and the observation sum on the right.  The tree carries both in
+`ReferenceAccept` (`JsonStage2NoEventWalkPremises`), every accept exit destructures
+them from that data (`…RowsContainerZero`), and nothing in the tree computes the
 walk's stored words.  What the reduction shows is therefore that the accept arm
 carries no *further* reference data beyond the supply and these two equations. -/
 theorem stage2NoEventWalkReferenceAccept_iff (K K' : Stage2NoEventWalkCarry) :
@@ -270,7 +303,7 @@ theorem Stage2NoEventWalkAcceptSupply.tape_eq {K K' : Stage2NoEventWalkCarry}
 
 /-- **The accept supply's tape is the domain's.**  At an admitted document the
 domain names the parse (existentially), and uniqueness makes it the tape any
-accept supply carries: the deployment's tape is not a choice.  The tie is the
+accept supply carries: the tape is the parser's, not a choice.  The tie is the
 parser's (`Stage2NoEventWalkAcceptSupply.tape_eq`, `…tape_tied`), and uniqueness
 means the domain's existential and the supply's tape agree without further data. -/
 theorem Stage2NoEventWalkAcceptSupply.tape_tied {bs : List UInt8}
@@ -311,18 +344,20 @@ theorem Stage2NoEventAdmitted.referenceWord_eq_one {bs : List UInt8}
   obtain ⟨t, ht⟩ := h.referenceAccepts
   exact stage2NoEventWalkReferenceWord_of_ok ht
 
-/-- **The deployment's accept-arm obligation at a document.**  The reference
-execution of `bs` emits a record trace at the parser's own tape for the arena:
-this is `Stage2NoEventWalkRecordsSupply`, stated without naming the tape.  It is
-the one statement a deployment of the accept route must prove about the reference. -/
+/-- **The accept arm's record obligation at a document.**  The parse of `bs`
+determines a record trace at the parser's own tape for the arena: this is
+`Stage2NoEventWalkRecordsSupply`, stated without naming the tape.
+`JsonStage2NoEventWalkRecordSupplyOfParse` proves it from an accepting parse
+(`stage2NoEventWalkRecordsSupply_of_parse`), so it is the tree's statement, not a
+deployment obligation. -/
 def Stage2NoEventReferenceRecords (bs arena : List UInt8) : Prop :=
   ∃ t : Tape, parseBytes Limits.default (ByteString.literal bs) = .ok t ∧
     Nonempty (Stage2NoEventWalkRecordsSupply bs arena t)
 
 /-- **At an admitted document the obligation is at the domain's tape.**  Every
 accepting tape at `bs` is the same tape, so the records obligation holds at one if
-and only if it holds at every parse of the document.  A producer therefore proves
-it once, at the tape admission names. -/
+and only if it holds at every parse of the document; the domain inherits it at the
+tape admission names. -/
 theorem Stage2NoEventAdmitted.referenceRecords_iff {bs arena : List UInt8}
     (h : Stage2NoEventAdmitted bs) :
     Stage2NoEventReferenceRecords bs arena ↔
@@ -338,10 +373,9 @@ theorem Stage2NoEventAdmitted.referenceRecords_iff {bs arena : List UInt8}
     exact ⟨t, ht, hall t ht⟩
 
 /-- **The refusal supply cannot be produced at an admitted document.**  The
-refusal's carried verdict is refutable there, so a producer at the admitted domain
-builds the accept arm and only that one; the refusal arm's supply belongs to
-documents the reference itself refuses, where `Stage2NoEventAdmitted` does not
-hold. -/
+refusal's carried verdict is refutable there, so only the accept arm exists at the
+admitted domain; the refusal arm's supply belongs to documents the reference itself
+refuses, where `Stage2NoEventAdmitted` does not hold. -/
 theorem Stage2NoEventAdmitted.refuseSupply_not {bs : List UInt8}
     (h : Stage2NoEventAdmitted bs) {K : Stage2NoEventWalkCarry} (hK : K.bs = bs) :
     ¬ Nonempty (Stage2NoEventWalkReferenceRefuse K) := by

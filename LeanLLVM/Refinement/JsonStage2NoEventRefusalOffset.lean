@@ -101,7 +101,7 @@ theorem stage2NoEventRefusalOffset_flush_eoff {args : List Value} {mem m0 : Mem}
 
 /-! ### Axiom footprints -/
 
-/-- info: 'LeanLLVM.Refinement.stage2NoEventRun_bs_length' depends on axioms: [propext] -/
+/-- info: 'LeanLLVM.Refinement.stage2NoEventRun_bs_length' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stage2NoEventRun_bs_length
 

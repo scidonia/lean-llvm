@@ -76,12 +76,11 @@ the body the consumer reads. -/
 theorem consume_str_document {bs arena : List UInt8} {key : Bool} {len field : Nat}
     {cs : List Nat} {bodyStart : Nat}
     (hge : ¬ field < 2 ^ 63) (hfield : field - 2 ^ 63 = bodyStart)
-    (hbody : escapeCodePoints ((bs.drop bodyStart).take len) = some cs) :
+    (hcode : bodyCodePointsAt bs bodyStart = some cs) :
     EventRecord.consume bs arena (EventRecord.str key len field) =
       ConsumerEvent.str key len field cs := by
   simp only [EventRecord.consume, stringConsumer]
-  rw [ite_eq_right hge, hfield, hbody]
-  rfl
+  rw [ite_eq_right hge, hfield, hcode, Option.getD_some]
 
 /-- A string record's consumer event when the field addresses the arena: the
 slice the relation decoded. -/
@@ -96,13 +95,17 @@ theorem consume_str_arena {bs arena : List UInt8} {key : Bool} {len off : Nat}
   rfl
 
 /-- **The plain form's consumer event.**  The record's field sets the top bit, so
-the consumer reads the document's body, which the relation decoded. -/
+the consumer recomputes the document span and reads the token's own escape-aware
+code points. -/
 theorem consume_str_plain {bs arena : List UInt8} {key : Bool} {s : Span}
     {len : Nat} {cs : List Nat}
-    (hbody : escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs) :
+    (hcode : bodyCodePoints bs s = some cs) :
     EventRecord.consume bs arena (EventRecord.str key len (plainSpan (s.start + 1))) =
-      ConsumerEvent.str key len (plainSpan (s.start + 1)) cs :=
-  consume_str_document (by simp only [plainSpan]; omega) (by simp only [plainSpan]; omega) hbody
+      ConsumerEvent.str key len (plainSpan (s.start + 1)) cs := by
+  refine consume_str_document (bodyStart := s.start + 1)
+    (by simp only [plainSpan]; omega) (by simp only [plainSpan]; omega) ?_
+  rw [← bodyCodePoints_eq_at]
+  exact hcode
 
 /-- The number run from a position is a prefix of the bytes there, as a list. -/
 private theorem numRun_toList (b : Bytes) :
@@ -114,14 +117,14 @@ private theorem numRun_toList (b : Bytes) :
 from the cursor and the relation's span cover the same bytes, so the decode's
 value is the lexeme the relation's record was built from. -/
 private theorem number_lexeme_eq {bs : List UInt8} {i : Nat} {s : Span}
-    {d0 : Decimal}
+    {lex : Bytes}
     (hguard : s = ⟨i, i + (numRunFrom (ByteString.literal bs) i).length⟩)
-    (hlexeme : (bs.drop s.start).take (s.stop - s.start) = d0.lexeme.data.toList) :
-    numRunFrom (ByteString.literal bs) i = d0.lexeme := by
+    (hlexeme : (bs.drop s.start).take (s.stop - s.start) = lex.data.toList) :
+    numRunFrom (ByteString.literal bs) i = lex := by
   have hstart : s.start = i := by rw [hguard]
   have hstop : s.stop = i + (numRunFrom (ByteString.literal bs) i).length := by
     rw [hguard]
-  have hlex2 : (bs.drop s.start).take (s.stop - s.start) = d0.lexeme.toList := by
+  have hlex2 : (bs.drop s.start).take (s.stop - s.start) = lex.toList := by
     rw [ByteString.toList_eq_data_toList, hlexeme]
   apply ByteString.eq_of_toList_eq
   rw [← hlex2, hstart, hstop]
@@ -133,7 +136,7 @@ points and the stop index. -/
 theorem bodyCodePoints_scan {bs : List UInt8} {s : Span} {cs : List Nat}
     (h : bodyCodePoints bs s = some cs) :
     ∃ stop, scanCharsEnd (ByteString.literal bs) (s.start + 1) 0 = .ok (cs, stop) := by
-  unfold bodyCodePoints at h
+  unfold bodyCodePoints bodyCodePointsAt at h
   cases hs : scanCharsEnd (ByteString.literal bs) (s.start + 1) 0 with
   | error e => rw [hs] at h; cases h
   | ok p =>
@@ -154,15 +157,15 @@ theorem canonValue_number_eq {lexeme : Bytes} {d : Decimal}
 /-- `canonValue` of the decoded number: the canonical rendering of the relation's
 own payload. -/
 theorem canonValue_number_of_rel {bs : List UInt8} {i : Nat} {s : Span}
-    {d0 : Decimal}
+    {d0 : Decimal} {lex : Bytes}
     (hguard : s = ⟨i, i + (numRunFrom (ByteString.literal bs) i).length⟩)
-    (hwf : d0.wellFormed)
-    (hlexeme : (bs.drop s.start).take (s.stop - s.start) = d0.lexeme.data.toList) :
+    (hread : StrtodReader.reader lex = some d0)
+    (hlexeme : (bs.drop s.start).take (s.stop - s.start) = lex.data.toList) :
     canonValue (.number (numRunFrom (ByteString.literal bs) i)) =
       some (.number (ByteString.literal (bitsLexeme (strtodSpec d0).toBits))) := by
   apply canonValue_number_eq
   rw [number_lexeme_eq hguard hlexeme]
-  exact StrtodReader.reader_lexeme hwf
+  exact hread
 
 
 /-! ### The relation's head inversions
@@ -213,16 +216,18 @@ theorem inv_closeBrace {bs arena : List UInt8} {rs : List EventRecord} {s : Span
   cases h with
   | closeBrace hb hs h' => exact ⟨_, rfl, h'⟩
 
-/-- A number head: the decode's lexeme is the relation's own. -/
+/-- A number head: the record's payload is the reader's decimal of the span's own
+bytes. -/
 theorem inv_number {bs arena : List UInt8} {rs : List EventRecord} {s : Span}
     {toks : List Token} (h : Stage2Records bs arena rs (.number s :: toks)) :
-    ∃ (rs0 : List EventRecord) (d0 : Decimal),
-      rs = EventRecord.number (strtodSpec d0).toBits :: rs0 ∧ d0.wellFormed ∧
-      s.stop = s.start + d0.lexeme.length ∧
-      (bs.drop s.start).take (s.stop - s.start) = d0.lexeme.data.toList ∧
+    ∃ (rs0 : List EventRecord) (d0 : Decimal) (lex : Bytes),
+      rs = EventRecord.number (strtodSpec d0).toBits :: rs0 ∧
+      StrtodReader.reader lex = some d0 ∧
+      s.stop = s.start + lex.length ∧
+      (bs.drop s.start).take (s.stop - s.start) = lex.data.toList ∧
       Stage2Records bs arena rs0 toks := by
   cases h with
-  | number hwf hs hlex h' => exact ⟨_, _, rfl, hwf, hs, hlex, h'⟩
+  | number hread hs hlex h' => exact ⟨_, _, _, rfl, hread, hs, hlex, h'⟩
 
 /-- A string head: the token is a key or a value in either record form, and the
 relation fixes the code points both forms decode. -/
@@ -231,7 +236,6 @@ theorem inv_string {bs arena : List UInt8} {rs : List EventRecord} {s : Span}
     (∃ (key : Bool) (len : Nat) (cs : List Nat) (rs0 : List EventRecord),
         rs = EventRecord.str key len (plainSpan (s.start + 1)) :: rs0 ∧
         s.stop = s.start + 2 + len ∧
-        escapeCodePoints ((bs.drop (s.start + 1)).take len) = some cs ∧
         bodyCodePoints bs s = some cs ∧
         Stage2Records bs arena rs0 toks)
     ∨ (∃ (key : Bool) (len off : Nat) (cs : List Nat) (rs0 : List EventRecord),
@@ -241,8 +245,8 @@ theorem inv_string {bs arena : List UInt8} {rs : List EventRecord} {s : Span}
         escapeCodePoints ((arena.drop off).take len) = some cs ∧
         Stage2Records bs arena rs0 toks) := by
   cases h with
-  | strPlain hquote hspan hbody hcode h' =>
-      exact Or.inl ⟨_, _, _, _, rfl, hspan, hbody, hcode, h'⟩
+  | strPlain hquote hspan hcode h' =>
+      exact Or.inl ⟨_, _, _, _, rfl, hspan, hcode, h'⟩
   | strArena hquote hspan hcode hbelow harena h' =>
       exact Or.inr ⟨_, _, _, _, _, rfl, hspan, hcode, hbelow, harena, h'⟩
 
@@ -786,7 +790,7 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
                   ConsumerEvent.kind, parseValueF.eq_3]
             · cases hdec
         | number s =>
-          obtain ⟨rs0, d0, hrs, hwf, hspan, hlex, hrel1⟩ := inv_number hrel
+          obtain ⟨rs0, d0, lex, hrs, hread, hspan, hlex, hrel1⟩ := inv_number hrel
           rw [decodeValue.eq_4] at hdec
           split at hdec
           · rename_i hcond
@@ -795,7 +799,7 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
               simpa only [Bool.and_eq_true, beq_iff_eq] using hcond
             refine ⟨[EventRecord.number (strtodSpec d0).toBits], rs0,
               .number (ByteString.literal (bitsLexeme (strtodSpec d0).toBits)),
-              ?_, by simp, hrel1, canonValue_number_of_rel hguard hwf hlex, ?_⟩
+              ?_, by simp, hrel1, canonValue_number_of_rel hguard hread hlex, ?_⟩
             · rw [hrs]; rfl
             · intro f hf
               obtain ⟨f', rfl⟩ : ∃ f', f = f' + 1 := ⟨f - 1, by omega⟩
@@ -816,7 +820,7 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
                 simpa only [Bool.and_eq_true, decide_eq_true_eq] using hcond
               have hstart : s.start = i := by rw [hspan_eq]
               rcases inv_string hrel with
-                ⟨key, len, csRel, rs0, hrs, hspan, hbody, hcode, hrel1⟩ |
+                ⟨key, len, csRel, rs0, hrs, hspan, hcode, hrel1⟩ |
                 ⟨key, len, off, csRel, rs0, hrs, hspan, hcode, hbelow, harena, hrel1⟩
               · obtain ⟨stopRel, hscanRel⟩ := bodyCodePoints_scan hcode
                 have hcs : cps = csRel := by
@@ -833,7 +837,7 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
                   obtain ⟨f', rfl⟩ : ∃ f', f = f' + 1 := ⟨f - 1, by omega⟩
                   rw [hrs]
                   simp only [consumeRecords, List.map_cons]
-                  rw [consume_str_plain hbody]
+                  rw [consume_str_plain hcode]
                   have htag : (ConsumerEvent.str key len (plainSpan (s.start + 1)) csRel).tag = 5 ∨
                       (ConsumerEvent.str key len (plainSpan (s.start + 1)) csRel).tag = 6 := by
                     cases key <;>
@@ -936,12 +940,12 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
                               exact agreeV_array_step bs arena N ih hrs hrel1 hlt hlt2 hdv hdt hC
                                 hsplit (by simp [EventRecord.consume, ConsumerEvent.kind])
                           | number s2 =>
-                            obtain ⟨r0, d0, hsplit, -, -, -, -⟩ := inv_number hrel1
+                            obtain ⟨r0, d0, -, hsplit, -, -, -, -⟩ := inv_number hrel1
                             exact agreeV_array_step bs arena N ih hrs hrel1 hlt hlt2 hdv hdt hC
                               hsplit (by simp [EventRecord.consume, ConsumerEvent.number, stage2TagNum])
                           | string s2 =>
                             rcases inv_string hrel1 with
-                              ⟨key, len, cs, r0, hsplit, -, -, -, -⟩ |
+                              ⟨key, len, cs, r0, hsplit, -, -, -⟩ |
                               ⟨key, len, off, cs, r0, hsplit, -, -, -, -, -⟩
                             · exact agreeV_array_step bs arena N ih hrs hrel1 hlt hlt2 hdv hdt hC
                                 hsplit consume_str_tag_ne4
@@ -1061,7 +1065,7 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
                                     have hlt2 : d2.rest.length < N := by
                                       have := d2.shrunk; omega
                                     rcases inv_string hrel1 with
-                                      ⟨key, len, csRel, rs0, hsplit, hsp, hbody, hcode, hrel0⟩ |
+                                      ⟨key, len, csRel, rs0, hsplit, hsp, hcode, hrel0⟩ |
                                       ⟨key, len, off, csRel, rs0, hsplit, hsp, hcode, hbelow, harena, hrel0⟩
                                     · obtain ⟨stopRel, hscanRel⟩ := bodyCodePoints_scan hcode
                                       have hstart : s2.start =
@@ -1079,7 +1083,7 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
                                       have hkey : EventRecord.consume bs arena
                                           (EventRecord.str key len (plainSpan (s2.start + 1))) =
                                           ConsumerEvent.str key len (plainSpan (s2.start + 1)) csK := by
-                                        rw [consume_str_plain hbody, hcsRel, hcsK]
+                                        rw [consume_str_plain hcode, hcsRel, hcsK]
                                       exact agreeV_object_step bs arena N ih hrs hsplit hkey hrelz
                                         hlt hlt2 hd2 hdt hC
                                     · obtain ⟨stopRel, hscanRel⟩ := bodyCodePoints_scan hcode
@@ -1162,13 +1166,13 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
                         exact agreeE_step bs arena N ih hrs0
                           (by simp [EventRecord.consume, ConsumerEvent.kind]) hlt hlt2 hrel0 hd1 hdt hrest
                     | number s2 =>
-                      obtain ⟨r0, d0, hrs0, -, -, -, -⟩ := inv_number hrel0
+                      obtain ⟨r0, d0, -, hrs0, -, -, -, -⟩ := inv_number hrel0
                       exact agreeE_step bs arena N ih hrs0
                         (by simp [EventRecord.consume, ConsumerEvent.number, stage2TagNum])
                         hlt hlt2 hrel0 hd1 hdt hrest
                     | string s2 =>
                       rcases inv_string hrel0 with
-                        ⟨key, len, cs, r0, hrs0, -, -, -, -⟩ |
+                        ⟨key, len, cs, r0, hrs0, -, -, -⟩ |
                         ⟨key, len, off, cs, r0, hrs0, -, -, -, -, -⟩
                       · exact agreeE_step bs arena N ih hrs0 consume_str_tag_ne4 hlt hlt2 hrel0 hd1 hdt hrest
                       · exact agreeE_step bs arena N ih hrs0 consume_str_tag_ne4 hlt hlt2 hrel0 hd1 hdt hrest
@@ -1318,7 +1322,7 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
                               have hlt2 : d.rest.length < N := by
                                 have := d.shrunk; omega
                               rcases inv_string hrel0 with
-                                ⟨key, len, csRel, rs0, hsplit, hsp, hbody, hcode, hrelz0⟩ |
+                                ⟨key, len, csRel, rs0, hsplit, hsp, hcode, hrelz0⟩ |
                                 ⟨key, len, off, csRel, rs0, hsplit, hsp, hcode, hbelow, harena, hrelz0⟩
                               · obtain ⟨stopRel, hscanRel⟩ := bodyCodePoints_scan hcode
                                 have hstart : s2.start =
@@ -1336,7 +1340,7 @@ private theorem agree (bs arena : List UInt8) : ∀ N, AgreeAt bs arena N := by
                                 have hkey : EventRecord.consume bs arena
                                     (EventRecord.str key len (plainSpan (s2.start + 1))) =
                                     ConsumerEvent.str key len (plainSpan (s2.start + 1)) csK := by
-                                  rw [consume_str_plain hbody, hcsRel, hcsK]
+                                  rw [consume_str_plain hcode, hcsRel, hcsK]
                                 exact agreeM_step bs arena N ih hsplit hkey hlt hlt2 hrelz hd hdt hrest
                               · obtain ⟨stopRel, hscanRel⟩ := bodyCodePoints_scan hcode
                                 have hstart : s2.start =
