@@ -349,3 +349,6 @@ import LeanLLVM.Refinement.JsonStage2NoEventWalkReference
 import LeanLLVM.Refinement.JsonStage2NoEventAdmission
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsDischarge
 import LeanLLVM.Refinement.JsonStage2NoEventWalkInstance
+import LeanLLVM.Refinement.JsonStage2NoEventWalkBraceCloseEntry
+import LeanLLVM.Refinement.JsonStage2NoEventWalkBracketParentCloser
+import LeanLLVM.Refinement.JsonStage2NoEventWalkDescendClasses
