@@ -348,3 +348,4 @@ import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsAssembled
 import LeanLLVM.Refinement.JsonStage2NoEventWalkReference
 import LeanLLVM.Refinement.JsonStage2NoEventAdmission
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsDischarge
+import LeanLLVM.Refinement.JsonStage2NoEventWalkInstance
