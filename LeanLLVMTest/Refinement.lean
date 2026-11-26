@@ -11619,3 +11619,47 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 /-- info: 'LeanLLVM.Refinement.stage2NoEventWalkTrace_not_of_bs_nil' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEventWalkTrace_not_of_bs_nil
+
+/-- info: 'LeanLLVM.Refinement.stringAt_two_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stringAt_two_le
+
+/-- info: 'LeanLLVM.Refinement.stringAt_bodyCodePoints' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stringAt_bodyCodePoints
+
+/-- info: 'LeanLLVM.Refinement.records_exists' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.records_exists
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkRecordsSupply_of_parse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkRecordsSupply_of_parse
+
+/-- info: 'LeanLLVM.Refinement.escapeDoc_records' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.escapeDoc_records
+
+/-- info: 'LeanLLVM.Refinement.escapeDoc_supply' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.escapeDoc_supply
+
+/-- info: 'LeanLLVM.Refinement.nullDoc_supply' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.nullDoc_supply
+
+/-- info: 'LeanLLVM.Refinement.eDoc_reader' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eDoc_reader
+
+/-- info: 'LeanLLVM.Refinement.eDoc_records' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eDoc_records
+
+/-- info: 'LeanLLVM.Refinement.eDoc_supply' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eDoc_supply
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventAdmitted.referenceRecords' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventAdmitted.referenceRecords
