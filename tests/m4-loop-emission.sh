@@ -29,6 +29,14 @@
 # the refusal is about the attribute and not about declarations being
 # unsupported.
 #
+# --declare-param-attr is E5: a declaration parameter's attribute carries its
+# own parenthesised argument list, so the `)` that follows that list closes the
+# attribute and not the parameter list.  E5's declaration is
+# `declare void @f(i32 range(i32 0, 8), i32)`, and the refusal must name the
+# first parameter's attribute rather than report the comma and second parameter
+# as trailing text after the parameter list.  Its affirmative control is the
+# same two-parameter declaration without the attribute, rewritten verbatim.
+#
 # --capture builds a private, repository-shaped tree under a temporary
 # directory, copies probes/install/ir/capture.sh into it, and runs that copy
 # against local shims for the only tools the script invokes — lake, clang and
@@ -55,15 +63,15 @@
 # successful `verify`, so the rest of the capture run — the baseline and
 # candidate fixtures — completes.
 #
-# --return-attr, --function-attr and --declare-attr run the repository driver
-# `lake build leanllvm` prepares, copied into the temporary directory and
-# invoked there with `--passes none`, so the header rule is observed at the
-# driver's command line.  A clean input that carries no attribute is rewritten
-# by the same copied driver first, so the output the refusal asserts is absent
-# is shown to be observable when a run does write it.  The refusal's diagnostic
-# must bind the attribute token to an unsupported or unmodelled statement on
-# one line — `unsupported`, `unmodelled`, `unmodeled`, or `is not modelled yet`;
-# a line that only echoes the input header does not pass.
+# --return-attr, --function-attr, --declare-attr and --declare-param-attr run
+# the repository driver `lake build leanllvm` prepares, copied into the
+# temporary directory and invoked there with `--passes none`, so the header rule
+# is observed at the driver's command line.  A clean input that carries no
+# attribute is rewritten by the same copied driver first, so the output the
+# refusal asserts is absent is shown to be observable when a run does write it.
+# The refusal's diagnostic must bind the attribute token to an unsupported or
+# unmodelled statement on one line — `unsupported`, `unmodelled`, `unmodeled`,
+# or `not modelled`; a line that only echoes the input header does not pass.
 #
 # TMPDIR points inside the temporary directory.  The check itself reaches no
 # compiler, linker, network, clock or other service once it runs inside the
@@ -75,13 +83,13 @@
 set -uo pipefail
 
 usage() {
-  echo "usage: bash tests/m4-loop-emission.sh --capture|--return-attr|--function-attr|--declare-attr" >&2
+  echo "usage: bash tests/m4-loop-emission.sh --capture|--return-attr|--function-attr|--declare-attr|--declare-param-attr" >&2
   exit 2
 }
 
 mode=${1:-}
 case "$mode" in
-  --capture|--return-attr|--function-attr|--declare-attr) ;;
+  --capture|--return-attr|--function-attr|--declare-attr|--declare-param-attr) ;;
   *) usage ;;
 esac
 [ "$#" -eq 1 ] || usage
@@ -294,10 +302,10 @@ shift_lane_defect() {
 # Whether one diagnostic line binds the attribute to a refusal: it must carry
 # the attribute token and say that attribute is unsupported or unmodelled —
 # `unsupported`, either spelling of `unmodelled`, or the parser's own
-# `is not modelled yet` idiom.  A line that only echoes the input header does
-# not satisfy this.
+# `not modelled` idiom.  A line that only echoes the input header does not
+# satisfy this.
 attribute_refusal() {
-  grep -E 'unsupported|unmodell?ed|is not modelled yet' "$1" |
+  grep -E 'unsupported|unmodell?ed|not modelled' "$1" |
     grep -Eq '(^|[^A-Za-z0-9_.])'"$2"'([^A-Za-z0-9_.]|$)'
 }
 
@@ -807,6 +815,10 @@ else
     cat > "$case_dir/clean.ll" <<'IR'
 declare void @f()
 IR
+  elif [ "$mode" = --declare-param-attr ]; then
+    cat > "$case_dir/clean.ll" <<'IR'
+declare void @f(i32, i32)
+IR
   else
     cat > "$case_dir/clean.ll" <<'IR'
 define i64 @f(i64 %x) {
@@ -825,6 +837,14 @@ IR
     cat > "$case_dir/header.ll" <<'IR'
 ; The attribute group changes what the declared function promises its caller.
 declare void @f() #0
+IR
+  elif [ "$mode" = --declare-param-attr ]; then
+    label=E5
+    attribute=range
+    construct="parameter attribute 'range(i32 0, 8)' on a declaration"
+    cat > "$case_dir/header.ll" <<'IR'
+; The parameter attribute constrains the first parameter's value.
+declare void @f(i32 range(i32 0, 8), i32)
 IR
   elif [ "$mode" = --return-attr ]; then
     label=E2
@@ -877,6 +897,13 @@ IR
       echo "SETUP: the rewritten declaration is not 'declare void @f()' (output: $(tr '\n' ';' < "$case_dir/clean.out.ll"))" >&2
       exit 3
     fi
+  elif [ "$mode" = --declare-param-attr ]; then
+    if grep -qx 'declare void @f(i32, i32)' "$case_dir/clean.out.ll"; then
+      ok "control: the two-parameter declaration without the attribute was rewritten verbatim"
+    else
+      echo "SETUP: the rewritten declaration is not 'declare void @f(i32, i32)' (output: $(tr '\n' ';' < "$case_dir/clean.out.ll"))" >&2
+      exit 3
+    fi
   fi
 
   # --- the refusal --------------------------------------------------------
@@ -901,6 +928,17 @@ IR
     ok "$label: no output file was created"
   else
     bad "$label: an output file was created at $case_dir/out.ll"
+  fi
+
+  # E5's refusal comes from inside the parameter list, not from the tokens
+  # after it: the attribute's own argument list is not the list's end.
+  if [ "$mode" = --declare-param-attr ]; then
+    if grep -q 'parameter 1' "$work/run.stderr" &&
+       ! grep -q 'after the parameter list' "$work/run.stderr"; then
+      ok "$label: the diagnostic names parameter 1's attribute rather than reporting text after the parameter list"
+    else
+      bad "$label: the diagnostic does not name parameter 1's attribute, or reports the second parameter as text after the parameter list (stderr: $(tr '\n' ' ' < "$work/run.stderr"))"
+    fi
   fi
 
   printf 'driver status: %s\n' "$status"

@@ -2113,18 +2113,20 @@ def parseFunction (layout : Layout) (header : List String) (rest : List (List St
                   | .ok _ => .ok (f, rest')
 
 /-- The tokens between a `(` already consumed and the `)` that matches it, with
-the tokens after the close.  A nested group is reinserted whole, so an
-attribute's argument list (`range(i64 0, 65)`) does not end the parameter list
-early. -/
-def takeParenGroup : List String → Except String (List String × List String)
-  | [] => .error "unterminated parameter list: expected ')'"
-  | ")" :: rest => .ok ([], rest)
-  | "(" :: rest => do
-      let (inner, rest') ← takeParenGroup rest
-      .ok ("(" :: inner ++ [")"], rest')
-  | t :: rest => do
-      let (inner, rest') ← takeParenGroup rest
-      .ok (t :: inner, rest')
+the tokens after the close.  The depth counts the groups opened inside, so a
+nested group is kept whole and does not end the parameter list early: a
+parameter's attribute (`range(i64 0, 65)`) has its own argument list, and the
+`,` that follows it separates parameters rather than trailing the list. -/
+def takeParenGroup (toks : List String) : Except String (List String × List String) :=
+  let rec go (depth : Nat) (acc : List String) :
+      List String → Except String (List String × List String)
+    | [] => .error "unterminated parameter list: expected ')'"
+    | ")" :: rest =>
+        if depth = 0 then .ok (acc.reverse, rest)
+        else go (depth - 1) (")" :: acc) rest
+    | "(" :: rest => go (depth + 1) ("(" :: acc) rest
+    | t :: rest => go depth (t :: acc) rest
+  go 0 [] toks
 
 /-- Read one declaration parameter from the tokens between two commas: its type
 and, optionally, a `%name`.  `Decl` carries parameter types and no names, so a

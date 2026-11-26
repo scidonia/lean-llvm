@@ -62,10 +62,10 @@ after the parameter list — a function attribute, an attribute group reference,
 attachment — are declined.  A declaration's linkage, visibility, calling
 convention and parameter names are accepted and dropped, exactly as a
 definition's header surface is.
-A diagnostic that only echoes the header line back does not satisfy E2, E3 or
-E4: the accepted form is a single diagnostic line that both names the attribute
-and says that attribute is unsupported or unmodelled — `unsupported`,
-`unmodelled`, `unmodeled`, or the parser's own `is not modelled yet` idiom.
+A diagnostic that only echoes the header line back does not satisfy E2, E3,
+E4 or E5: the accepted form is a single diagnostic line that both names the
+attribute and says that attribute is unsupported or unmodelled — `unsupported`,
+`unmodelled`, `unmodeled`, or the parser's own `not modelled` idiom.
 A header attribute that constrains the returned value, or one that changes what
 the function promises its caller, is part of the function's contract; a driver
 that parses past it and writes the function back without it has accepted a
@@ -73,9 +73,11 @@ contract the pipeline proved nothing about.  E2 and E3 pin that at the driver's
 command line.  Both place the attribute where LLVM's own emission puts it, as
 `probes/install/ir/baseline.o1.ll` shows for a return attribute, and each input
 carries its attribute only in the header line.  E4 pins the same for a
-declaration, whose attribute likewise stands only in its header line.
+declaration, whose attribute likewise stands only in its header line.  E5 pins
+it for a declaration parameter's attribute, whose own argument list must not be
+mistaken for the end of the parameter list.
 
-E2, E3 and E4 run against a binary the repository builds outside the check's
+E2, E3, E4 and E5 run against a binary the repository builds outside the check's
 temporary tree: `nix develop -c lake build leanllvm` produces
 `.lake/build/bin/leanllvm`, and the check copies that binary into a private
 temporary directory and invokes the copy there, so the rule is observed at the
@@ -91,6 +93,7 @@ before the check starts.
     nix develop -c bash tests/m4-loop-emission.sh --return-attr
     nix develop -c bash tests/m4-loop-emission.sh --function-attr
     nix develop -c bash tests/m4-loop-emission.sh --declare-attr
+    nix develop -c bash tests/m4-loop-emission.sh --declare-param-attr
 
 ### E1 — the capture route regenerates the loop fixture from a Lean emission
 
@@ -186,3 +189,24 @@ before the check starts.
   caller, and `Decl` has no field for it; a driver that reads only to the
   closing parenthesis and writes the declaration back has accepted a contract
   the pipeline proved nothing about.
+
+### E5 — the driver refuses a declaration's parameter attribute, naming it
+
+- **Actor:** the IR transformation integrator.
+- **Given:** the same driver copy; a clean declaration input
+  `declare void @f(i32, i32)` carrying no attribute, which the same copied
+  driver rewrites verbatim and leaves an output file for; and a second
+  declaration input whose line is
+  `declare void @f(i32 range(i32 0, 8), i32)`, the parameter attribute and its
+  own argument list on the first parameter and nowhere else in the input.
+- **When:** the integrator invokes the copied driver once, as
+  `--passes none <input.ll> -o <output.ll>`.
+- **Then:** it exits nonzero, one diagnostic line names `range` and says that
+  parameter's attribute is unsupported or unmodelled, the diagnostic names
+  parameter 1 and does not report the second parameter as text after the
+  parameter list, and it creates no output file.
+- **Why:** the parameter attribute constrains the first parameter's value and
+  `Decl` carries parameter types and no constraint; reading to the attribute's
+  own `)` instead of the list's would either accept the declaration without the
+  constraint or refuse it for the wrong reason, and a diagnostic naming the
+  wrong tokens misdescribes the input it was given.

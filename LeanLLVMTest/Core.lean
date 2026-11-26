@@ -150,6 +150,30 @@ def declarationVarargSample : String :=
   | .error e => mentions e "..." && mentions e "not modelled"
   | .ok _ => false
 
+-- A parameter's attribute carries its own parenthesised argument list, so the
+-- close that follows that list is the attribute's and not the parameter
+-- list's.  The scanner reads to the `)` that matches the `(` it was entered
+-- after: a nested group, the comma and second parameter, the outer close, and
+-- the sentinel that follows all of it.  Only the sentinel is left over.
+#guard
+  takeParenGroup ["range", "(", "i32", "0", ",", "8", ")", ",", "i32", ")",
+      "sentinel"] =
+    .ok (["range", "(", "i32", "0", ",", "8", ")", ",", "i32"], ["sentinel"])
+
+def declarationNestedParamAttrSample : String :=
+"declare void @f(i32 range(i32 0, 8), i32)
+"
+
+-- The attribute's argument list therefore does not end the parameter list: the
+-- list splits at its own comma, and the refusal names the first parameter's
+-- attribute rather than reporting the rest of the list as trailing header text.
+#guard
+  match parseModule declarationNestedParamAttrSample with
+  | .error e =>
+      mentions e "parameter 1" && mentions e "range" && mentions e "not modelled" &&
+        !mentions e "after the parameter list"
+  | .ok _ => false
+
 -- A call is modelled end to end: it round-trips through the printer, the
 -- environment supplies its result, and an unresolved call is `ub`.
 def callSample : String :=

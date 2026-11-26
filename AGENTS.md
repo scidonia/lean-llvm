@@ -592,12 +592,12 @@ re-elaborating the delta.
   type, a function attribute or attribute group reference after the parameter
   list, and, on a declaration, a parameter attribute and a variable argument
   list are all refused (`tests/m4-loop-emission.sh --return-attr`,
-  `--function-attr`, `--declare-attr`).  Do not silently approximate an
-  unmodelled construct on those surfaces.  The only attribute-shaped tokens
-  accepted and dropped are the closed linkage, visibility and
-  calling-convention set `isHeaderSurface` names, on both headers, because the
-  model has none of their semantics; a token outside that set is refused
-  rather than dropped.
+  `--function-attr`, `--declare-attr`, `--declare-param-attr`).  Do not
+  silently approximate an unmodelled construct on those surfaces.  The only
+  attribute-shaped tokens accepted and dropped are the closed linkage,
+  visibility and calling-convention set `isHeaderSurface` names, on both
+  headers, because the model has none of their semantics; a token outside that
+  set is refused rather than dropped.
 - Five surfaces are accepted rather than refused, and each has its paired check
   in `LeanLLVMTest/Core.lean`.  Four are dropped because the model has nothing
   for them to affect: a function's linkage, visibility and calling convention,
