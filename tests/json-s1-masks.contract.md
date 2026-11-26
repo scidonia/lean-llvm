@@ -330,9 +330,11 @@ refusing a changed element size would refuse the emitted form itself.
 - **Actor:** `check.sh`, comparing the object's rows against the Lean body's
   rows, and the runner in `--expect` mode.
 - **Given:** a control object built from `kernel/json/s1_block.c`, and a defect
-  object built from a copy of that source with **bit 0 of `s1f_lo_tab[12]`
-  flipped** — the entry for the low nibble of `,`, whose bit 0 only the comma
-  class sets; and, separately, a tampered copy of the runner's own output.
+  object built from a copy of that unit with **bit 0 of `s1f_lo_tab[12]`
+  flipped** in `kernel/json/s1_block_impl.h`, the classifier header the unit
+  includes and the file the table lives in — the entry for the low nibble of
+  `,`, whose bit 0 only the comma class sets; and, separately, a tampered copy
+  of the runner's own output.
 - **When:** the defect object and the control object are each run over the
   corpus and the arms; and the runner is run with the tampered copy as its
   expectation.
@@ -406,6 +408,9 @@ are:
 
 - `kernel/json/s1_block.c` and `kernel/json/s1_block.h` — the extracted kernel
   and the ABI header it publishes;
+- `kernel/json/s1_block_impl.h` — the shared classifier header `s1_block.c`
+  includes, which defines `s1f_lo_tab` and is the file the defect mutation
+  edits;
 - `probes/install/ir/capture-s1-masks.sh` — the capture that regenerates the
   fixture from that source at the pinned flags;
 - `probes/install/ir/json-s1-masks.candidate.ll` — the committed fixture, and

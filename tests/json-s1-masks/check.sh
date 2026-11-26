@@ -71,6 +71,7 @@ fixture=$repo/probes/install/ir/json-s1-masks.candidate.ll
 capture=$repo/probes/install/ir/capture-s1-masks.sh
 driver_src=$repo/probes/json/s1_masks_driver.c
 kernel_src=$repo/kernel/json/s1_block.c
+impl_src=$repo/kernel/json/s1_block_impl.h
 runner=$repo/.lake/build/bin/leanllvm-json-s1-masks
 build_hint='nix develop -c lake build leanllvm-json-s1-masks'
 cc=clang
@@ -78,7 +79,7 @@ cc=clang
 # The measured compiler line (`build49.sh:17`).
 cflags=(-O3 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64)
 
-for path in "$corpus" "$fixture" "$capture" "$driver_src" "$kernel_src"; do
+for path in "$corpus" "$fixture" "$capture" "$driver_src" "$kernel_src" "$impl_src"; do
   [ -e "$path" ] || { printf 'SETUP: absent: %s\n' "$path" >&2; exit 3; }
 done
 
@@ -261,37 +262,52 @@ awk -F '\t' '
 #
 # `(& ^ 0x01)` is exactly a bit-0 flip of the entry, whatever its written value,
 # and it is a constant expression the compiler folds.  The substitution is
-# textual because the kernel source owns the table's spelling; a source without
-# `s1f_lo_tab`, or one whose initialiser is shorter than the twenty-nine entries
-# the modulo rule needs, is a failed mutation and not a silent pass.  The number
-# of mutations that land is counted and must equal the number of offsets
-# congruent to `idx` in the initialiser, so "changed one of two" fails here.
-if ! awk -v idx=12 '
+# textual because the header that defines the classifier owns the table's
+# spelling; a header without `s1f_lo_tab`, or one whose initialiser is shorter
+# than the twenty-nine entries the modulo rule needs, is a failed mutation and
+# not a silent pass.  The number of mutations that land is counted and must
+# equal the number of offsets congruent to `idx` in the initialiser, so
+# "changed one of two" fails here.
+#
+# The table is not in the unit the object is built from: `s1_block.c` includes
+# `s1_block_impl.h`, which is where `s1f_lo_tab` and the rest of the classifier
+# live.  The defect is therefore staged as its own small tree — a copy of the
+# unit and a mutated copy of that header beside it — because a quoted include
+# searches the including file's own directory before the `-I` paths, so the
+# unit copy compiles against the mutated header and nothing else; that
+# directory is also put first on the include path, so neither lookup can reach
+# the repository's copy.
+if ! { mkdir -p "$work/defect" && cp "$kernel_src" "$work/defect/s1_block.c"; }; then
+  printf 'SETUP: cannot stage the defect source\n' >&2
+  exit 3
+fi
+
+if ! awk -v idx=12 -v path="$impl_src" '
   { buf = buf $0 "\n" }
   END {
     p = index(buf, "s1f_lo_tab")
     if (p == 0) {
-      print "SETUP: s1f_lo_tab not found in the kernel source" > "/dev/stderr"
+      print "SETUP: s1f_lo_tab not found in " path > "/dev/stderr"
       exit 4
     }
     rest = substr(buf, p)
     b = index(rest, "{")
     if (b == 0) {
-      print "SETUP: s1f_lo_tab has no initialiser" > "/dev/stderr"
+      print "SETUP: s1f_lo_tab has no initialiser in " path > "/dev/stderr"
       exit 4
     }
     pre = substr(buf, 1, p + b - 1)
     after = substr(rest, b + 1)
     c = index(after, "}")
     if (c == 0) {
-      print "SETUP: s1f_lo_tab initialiser is not terminated" > "/dev/stderr"
+      print "SETUP: s1f_lo_tab initialiser is not terminated in " path > "/dev/stderr"
       exit 4
     }
     inner = substr(after, 1, c - 1)
     post = substr(after, c)
     n = split(inner, items, ",")
     if (n < idx + 17) {
-      print "SETUP: s1f_lo_tab has " n " entries; the modulo rule needs " (idx + 17) > "/dev/stderr"
+      print "SETUP: s1f_lo_tab has " n " entries in " path "; the modulo rule needs " (idx + 17) > "/dev/stderr"
       exit 4
     }
     expected = 0
@@ -320,17 +336,18 @@ if ! awk -v idx=12 '
     }
     printf "%s%s%s", pre, out, post
   }
-' "$kernel_src" > "$work/s1_block.defect.c"; then
+' "$impl_src" > "$work/defect/s1_block_impl.h"; then
   printf 'SETUP: the table mutation did not apply\n' >&2
   exit 3
 fi
 
-if cmp -s "$kernel_src" "$work/s1_block.defect.c"; then
+if cmp -s "$impl_src" "$work/defect/s1_block_impl.h"; then
   printf 'SETUP: the table mutation changed nothing\n' >&2
   exit 3
 fi
 
-if ! "$cc" "${cflags[@]}" -I "$repo/kernel/json" -c "$work/s1_block.defect.c" \
+if ! "$cc" "${cflags[@]}" -I "$work/defect" -I "$repo/kernel/json" \
+    -c "$work/defect/s1_block.c" \
     -o "$work/kernel.defect.o" 2>"$work/cc.err"; then
   printf 'FAIL: the defect kernel did not compile\n' >&2
   cat "$work/cc.err" >&2
