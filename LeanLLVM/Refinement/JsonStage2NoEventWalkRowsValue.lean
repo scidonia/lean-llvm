@@ -335,7 +335,8 @@ structure Stage2NoEventWalkValueArmRoute (calls : Calls) (mem : Mem)
 /-! ### The document slice
 
 The raw read at `[lane, q)` is derivable from `Inv.docAt` and `readBytes_split`;
-it is the document's slice, not yet the arm's `d.lexeme` (see the module header). -/
+it is the document's own slice, and the number arm carries that slice as its
+`lex` (see the module header). -/
 
 /-- **The document's bytes at `[lane, q)`.** -/
 theorem Stage2NoEventWalkInv.readBytes_slice {K : Stage2NoEventWalkCarry} {mem : Mem}
@@ -568,7 +569,8 @@ and fills `Stage2NoEventWalkValueArmRoute`.  `hbase` is the provider's new
 /-- **The number arm's route half.** -/
 noncomputable def stage2NoEventWalkValueArmRoute_number {calls gap : Calls} {mem : Mem}
     {K : Stage2NoEventWalkCarry} {k : Nat} {e : State} {σ : Nat → UInt8}
-    {lane q cond knext : Nat} {frb : BitVec 8} {spb : BitVec 32} {d : Decimal}
+    {lane q cond knext : Nat} {frb : BitVec 8} {spb : BitVec 32}
+    {lex : List UInt8} {d : Decimal}
     (hpc : e.pc = "if.then471")
     (hInv : Stage2NoEventWalkInv K mem e)
     (hd : lookupName e.env "%d" = some (.ptr K.d))
@@ -577,8 +579,9 @@ noncomputable def stage2NoEventWalkValueArmRoute_number {calls gap : Calls} {mem
     (hidx : lookupName e.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 lane)))
     (harr : lookupName e.env "%arrayidx6.le1046" = some (.ptr (K.b + lane)))
     (hlaneq : lane ≤ q) (hq64 : q < 2 ^ 64) (hqleK : q ≤ K.n)
-    (hlex : readBytes e.mem (K.b + lane) (q - lane) = some d.lexeme.data.toList)
-    (hwf : d.wellFormed) (hscan : (numLexScan d.lexeme.data.toList).2 = true)
+    (hlex : readBytes e.mem (K.b + lane) (q - lane) = some lex)
+    (hread : StrtodReader.reader (ByteString.literal lex) = some d)
+    (hwf : d.wellFormed)
     (hframe : lookupName e.env "%frame.0.lcssa1097" = some (.int 8 frb))
     (hsp : lookupName e.env "%sp.0.lcssa1091.wide" = some (.int 32 spb))
     (hk : lookupName e.env "%inc.lcssa" = some (.int 64 (BitVec.ofNat 64 knext)))
@@ -599,8 +602,8 @@ noncomputable def stage2NoEventWalkValueArmRoute_number {calls gap : Calls} {mem
           (wordBytes 8 (strtodSpec d).toBits)) (K.b + i) = some (σ i))
     (hws : ∀ i, q ≤ i → i < cond →
       stage2SkipWs (BitVec.ofNat 8 (σ i).toNat) = true)
-    (hstop : q = lane + d.lexeme.length)
-    (hslice : (K.bs.drop lane).take (q - lane) = d.lexeme.data.toList)
+    (hstop : q = lane + lex.length)
+    (hslice : (K.bs.drop lane).take (q - lane) = lex)
     (htrace : Stage2NoEventWalkTrace K)
     (hknext : knext = k + 1) (hklt : k + 2 < K.nep)
     (hcount : Stage2NoEventWalkCount K k)
@@ -619,7 +622,7 @@ noncomputable def stage2NoEventWalkValueArmRoute_number {calls gap : Calls} {mem
     stage2NoEventWalkValueNumber (gap := gap) (K := K) (mem := mem) (σ := σ)
       (lane := lane) (q := q) (cond := cond) (knext := knext) (frb := frb)
       (spb := spb) (d := d) hInv hpc hd hei hee hidx harr hlaneq hq64 hqleK
-      hlex hwf hscan hframe hsp hk halen harena hbk htk0 htm0 hcond hqle hcond63
+      hlex hread hwf hframe hsp hk halen harena hbk htk0 htm0 hcond hqle hcond63
       hbytes hws hstop hslice htrace htokn hbase hfrNe hspNe
   have hrun : ∀ n, runFuel calls (j + n) stage2NoEventBody e =
       runFuel calls n stage2NoEventBody s' := by
@@ -1251,7 +1254,8 @@ noncomputable def stage2NoEventWalkValueRow_cont_literalNull {calls : Calls} {me
 
 /-- **The number arm's row**, from the head and the class facts. -/
 noncomputable def stage2NoEventWalkValueRow_number {calls gap : Calls} {mem : Mem} {F : Nat}
-    {K : Stage2NoEventWalkCarry} {k : Nat} {s : State} {σ : Nat → UInt8} {d : Decimal}
+    {K : Stage2NoEventWalkCarry} {k : Nat} {s : State} {σ : Nat → UInt8}
+    {lex : List UInt8} {d : Decimal}
     (h : Stage2NoEventWalkHead K mem k s)
     (htrace : Stage2NoEventWalkTrace K)
     (hclass : Stage2NoEventWalkHeadValueClass K k s)
@@ -1271,17 +1275,17 @@ noncomputable def stage2NoEventWalkValueRow_number {calls gap : Calls} {mem : Me
       (K.b + (stage2NoEventWalkValueProv_of_head (calls := calls) h hclass).lane)
       ((stage2NoEventWalkValueProv_of_head (calls := calls) h hclass).q -
         (stage2NoEventWalkValueProv_of_head (calls := calls) h hclass).lane) =
-      some d.lexeme.data.toList)
+      some lex)
+    (hread : StrtodReader.reader (ByteString.literal lex) = some d)
     (hwf : d.wellFormed)
-    (hscan : (numLexScan d.lexeme.data.toList).2 = true)
     (hstop : (stage2NoEventWalkValueProv_of_head (calls := calls) h hclass).q =
       (stage2NoEventWalkValueProv_of_head (calls := calls) h hclass).lane +
-        d.lexeme.length)
+        lex.length)
     (hslice : (K.bs.drop
       (stage2NoEventWalkValueProv_of_head (calls := calls) h hclass).lane).take
       ((stage2NoEventWalkValueProv_of_head (calls := calls) h hclass).q -
         (stage2NoEventWalkValueProv_of_head (calls := calls) h hclass).lane) =
-      d.lexeme.data.toList)
+      lex)
     (hbytes : ∀ i, i <
       (stage2NoEventWalkValueProv_of_head (calls := calls) h hclass).cond →
       readByte
@@ -1306,7 +1310,7 @@ noncomputable def stage2NoEventWalkValueRow_number {calls gap : Calls} {mem : Me
     (q := prov.q) (cond := prov.cond) (knext := k + 1)
     (frb := BitVec.ofNat 8 prov.fr) (spb := BitVec.ofNat 32 prov.sp) (d := d)
     hpc prov.seg.inv' prov.regs.d prov.regs.ei prov.regs.ee prov.regs.idx
-    prov.regs.arr hlaneq hq64 hqleK hlex hwf hscan prov.regs.frame prov.regs.sp
+    prov.regs.arr hlaneq hq64 hqleK hlex hread hwf prov.regs.frame prov.regs.sp
     prov.regs.inc prov.regs.alen prov.regs.arena prov.regs.b prov.regs.tokens
     prov.regs.terms prov.regs.cond prov.qLeCond prov.condLt63 hbytes hws hstop
     hslice htrace rfl hk2 h.count prov.base h.bPos hfrNe hspNe hcomma hcalls

@@ -32,11 +32,12 @@ slice can reach, and it says which part that is:
   position as its offset.  `stage2NumFast` answers the conversion at an accepted
   lexeme and a written refusal offset at a rejected one, and `od_scalar_value`'s
   number branch takes the same decision, writing `od_fail`'s record where the
-  source's nested call refuses.  The scan's acceptance is the *emitted function's*,
-  not a proof that a token the scanner classifies as a number is RFC 8259 §6's:
-  that step is the scanner's token-extent obligation and is recorded as such in
-  `docs/contract.md`.  The malformed tokens the assessment names (`1e`, `01`,
-  `-`) are refused here, with accepted controls beside them.
+  source's nested call refuses.  The scan's acceptance is the emitted function's
+  own, and `numLexScan_accepts_iff_numLexB` ties it to the tree's structural
+  scanner, which `LeanLLVM.JSON.numLexB_iff` carries to `RfcNumber`; what token
+  extent the emitted function is handed remains the scanner's obligation, and
+  `docs/contract.md` records it as such.  The malformed tokens the assessment
+  names (`1e`, `01`, `-`) are refused here, with accepted controls beside them.
 * **the event cursor's write-back.**  `out_raw`'s `o->len += n` is modelled: every
   emitting path of `od_scalar_value` writes the advanced cursor at `o + 8`, which
   is the word the walk reloads after the call.  A model that dropped it would make
@@ -2456,9 +2457,10 @@ part (`0`, or `digit1-9` and its digit tail), the optional fraction with at leas
 one digit, the optional exponent with an optional sign and at least one digit, and
 the end-of-input test.  Its output is the pair the function's two observables
 carry: the offset (`*err`) and whether the lexeme was accepted.  The acceptance
-predicate is the emitted function's own, not a claim that a token classified as a
-number by the scanner is one: that step is the scanner's token-extent obligation,
-and `docs/contract.md` records it as such.
+predicate is the emitted function's own; `numLexScan_accepts_iff_numLexB` below
+ties it to the tree's structural scanner, which `LeanLLVM.JSON.numLexB_iff`
+carries to `RfcNumber`.  What token extent the emitted function is handed remains
+the scanner's obligation, and `docs/contract.md` records it as such.
 
 `IsDigitB` is `LeanLLVM.JSON`'s, the same predicate the reference grammar's
 `Digits` uses, so the scan's digit run and the specification's agree by
@@ -2668,6 +2670,581 @@ theorem numLexScan_fst_le (lex : List UInt8) : (numLexScan lex).1 ≤ lex.length
   · rename_i h
     have hi := numSignStart_le lex
     omega
+
+/-! #### The scan's acceptance is the reference grammar's
+
+`numLexScan` is the emitted control flow, reading the lexeme at an index;
+`LeanLLVM.JSON.numLexB` is the tree's structural scan of the same grammar, and
+`reader_isSome_eq_numLexB` carries the reader's decision to it.  The two disagree
+in shape — one asks `lex[i]?` and advances an index, the other recurses on the
+carrier's list — so the proofs below read the index scan as the structural scan
+applied to the suffix the index names: every stage moves with the drop
+(`numExpTail_drop`, `numFracTail_drop`), which leaves the structural scan at zero
+to case on (`numExpTail_zero_iff`, `numFracTail_zero_iff`).
+
+The reference's stages are private to `LeanLLVM.JSON`, so the mirrors below
+restate their bodies on the list view; `numLexB_literal` is the bridge, and it is
+the reference's own recursion read at the literal, not a second definition.  -/
+
+private def refAllDigits : List UInt8 → Bool
+  | [] => true
+  | b :: rest => IsDigitB b && refAllDigits rest
+
+private def refDigits1 : List UInt8 → Bool
+  | [] => false
+  | b :: rest => IsDigitB b && refAllDigits rest
+
+private def refExp : List UInt8 → Bool
+  | [] => false
+  | b :: rest => if b = 0x2B ∨ b = 0x2D then refDigits1 rest else refDigits1 (b :: rest)
+
+private def refExpTail : List UInt8 → Bool
+  | [] => true
+  | b :: rest => if decide (b = 0x65) || decide (b = 0x45) then refExp rest else false
+
+private def refNumSuffix : List UInt8 → Bool
+  | [] => true
+  | b :: rest =>
+      if decide (b = 0x2E) then
+        refDigits1 (List.takeWhile IsDigitB rest) && refExpTail (List.dropWhile IsDigitB rest)
+      else if decide (b = 0x65) || decide (b = 0x45) then refExp rest
+      else false
+
+private def refNumBody : List UInt8 → Bool
+  | [] => false
+  | b :: rest =>
+      if decide (b = 0x30) then refNumSuffix rest
+      else if 0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39 then
+        refNumSuffix (List.dropWhile IsDigitB rest)
+      else false
+
+private def refNumLex : List UInt8 → Bool
+  | [] => refNumBody []
+  | b :: rest => if decide (b = 0x2D) then refNumBody rest else refNumBody (b :: rest)
+
+private def refHeadDigit : List UInt8 → Bool
+  | [] => false
+  | b :: _ => IsDigitB b
+
+private theorem refExp_cons (c : UInt8) (rest : List UInt8) :
+    refExp (c :: rest) = if c = 0x2B ∨ c = 0x2D then refDigits1 rest else refDigits1 (c :: rest) := by
+  by_cases h : c = 0x2B ∨ c = 0x2D <;> simp [refExp, h]
+
+private theorem refExpTail_cons (c : UInt8) (rest : List UInt8) :
+    refExpTail (c :: rest) = if c = 0x65 ∨ c = 0x45 then refExp rest else false := by
+  by_cases h : c = 0x65 ∨ c = 0x45 <;> simp [refExpTail, h]
+
+private theorem refNumSuffix_cons (c : UInt8) (rest : List UInt8) :
+    refNumSuffix (c :: rest) =
+      if c = 0x2E then
+        refDigits1 (rest.takeWhile IsDigitB) && refExpTail (rest.dropWhile IsDigitB)
+      else if c = 0x65 ∨ c = 0x45 then refExp rest else false := by
+  by_cases h1 : c = 0x2E <;> by_cases h2 : c = 0x65 ∨ c = 0x45 <;>
+    simp [refNumSuffix, h1, h2]
+
+private theorem refNumBody_cons (c : UInt8) (rest : List UInt8) :
+    refNumBody (c :: rest) =
+      if c = 0x30 then refNumSuffix rest
+      else if 0x31 ≤ c.toNat ∧ c.toNat ≤ 0x39 then refNumSuffix (rest.dropWhile IsDigitB)
+      else false := by
+  by_cases h1 : c = 0x30 <;> by_cases h2 : 0x31 ≤ c.toNat ∧ c.toNat ≤ 0x39 <;>
+    simp [refNumBody, h1, h2]
+
+private theorem refNumLex_cons (c : UInt8) (rest : List UInt8) :
+    refNumLex (c :: rest) = if c = 0x2D then refNumBody rest else refNumBody (c :: rest) := by
+  by_cases h : c = 0x2D <;> simp [refNumLex, h]
+
+private theorem numDigitAt_eq_refHeadDigit (lex : List UInt8) (i : Nat) :
+    numDigitAt lex i = refHeadDigit (lex.drop i) := by
+  unfold numDigitAt
+  rw [← List.head?_drop]
+  cases h : lex.drop i <;> rfl
+
+private theorem refAllDigits_iff (l : List UInt8) :
+    refAllDigits l = true ↔ (l.takeWhile IsDigitB).length = l.length := by
+  induction l with
+  | nil => simp [refAllDigits]
+  | cons b rest ih =>
+      cases h : IsDigitB b with
+      | false => simp [refAllDigits, h]
+      | true =>
+          simp only [refAllDigits, h, Bool.true_and, List.takeWhile_cons, if_true,
+            List.length_cons]
+          rw [ih]
+          omega
+
+private theorem refAllDigits_takeWhile (l : List UInt8) :
+    refAllDigits (l.takeWhile IsDigitB) = true := by
+  induction l with
+  | nil => rfl
+  | cons b rest ih =>
+      cases h : IsDigitB b with
+      | false => simp [refAllDigits, h]
+      | true => simp [refAllDigits, h, ih]
+
+private theorem refDigits1_eq (l : List UInt8) :
+    refDigits1 l = (refHeadDigit l && refAllDigits (l.drop 1)) := by
+  cases l with
+  | nil => rfl
+  | cons b rest => simp [refDigits1, refHeadDigit]
+
+private theorem refDigits1_takeWhile (l : List UInt8) :
+    refDigits1 (l.takeWhile IsDigitB) = refHeadDigit l := by
+  cases l with
+  | nil => rfl
+  | cons b rest =>
+      cases h : IsDigitB b with
+      | false => simp [refDigits1, refHeadDigit, h]
+      | true =>
+          have := refAllDigits_takeWhile rest
+          simp [refDigits1, refHeadDigit, h, this]
+
+/-! ### The mirrors are the reference scan at the literal -/
+
+private theorem allDigitsB_literal (l : List UInt8) :
+    allDigitsB (ByteString.literal l) = refAllDigits l := by
+  induction l with
+  | nil => rfl
+  | cons b rest ih =>
+      rw [show ByteString.literal (b :: rest) = b +: ByteString.literal rest from rfl,
+        allDigitsB_cons, ih]
+      rfl
+
+private theorem digits1B_literal (l : List UInt8) :
+    digits1B (ByteString.literal l) = refDigits1 l := by
+  induction l with
+  | nil => rfl
+  | cons b rest ih =>
+      rw [show ByteString.literal (b :: rest) = b +: ByteString.literal rest from rfl,
+        digits1B_cons, allDigitsB_literal]
+      rfl
+
+private theorem expB_literal (l : List UInt8) :
+    expB (ByteString.literal l) = refExp l := by
+  induction l with
+  | nil => rfl
+  | cons b rest ih =>
+      rw [show ByteString.literal (b :: rest) = b +: ByteString.literal rest from rfl,
+        expB_cons, refExp_cons]
+      by_cases h : b = 0x2B ∨ b = 0x2D
+      · rw [if_pos h, if_pos h, digits1B_literal]
+      · rw [if_neg h, if_neg h,
+          show b +: ByteString.literal rest = ByteString.literal (b :: rest) from rfl,
+          digits1B_literal]
+
+private theorem expTailB_literal (l : List UInt8) :
+    expTailB (ByteString.literal l) = refExpTail l := by
+  induction l with
+  | nil => rfl
+  | cons b rest ih =>
+      rw [show ByteString.literal (b :: rest) = b +: ByteString.literal rest from rfl,
+        expTailB_cons, refExpTail_cons]
+      by_cases h : b = 0x65 ∨ b = 0x45
+      · rw [if_pos (by simp [h]), if_pos h, expB_literal]
+      · rw [if_neg (by simp [h]), if_neg h]
+
+private theorem numSuffixB_literal (l : List UInt8) :
+    numSuffixB (ByteString.literal l) = refNumSuffix l := by
+  induction l with
+  | nil => rfl
+  | cons b rest ih =>
+      rw [show ByteString.literal (b :: rest) = b +: ByteString.literal rest from rfl,
+        numSuffixB_cons, refNumSuffix_cons]
+      by_cases h1 : b = 0x2E
+      · rw [if_pos (by simp [h1]), if_pos h1,
+          show ByteString.takeWhile (ByteString.literal rest) IsDigitB
+            = ByteString.literal (rest.takeWhile IsDigitB) from rfl,
+          show ByteString.dropWhile (ByteString.literal rest) IsDigitB
+            = ByteString.literal (rest.dropWhile IsDigitB) from rfl,
+          digits1B_literal, expTailB_literal]
+      · rw [if_neg (by simp [h1]), if_neg h1]
+        by_cases h2 : b = 0x65 ∨ b = 0x45
+        · rw [if_pos (by simp [h2]), if_pos h2, expB_literal]
+        · rw [if_neg (by simp [h2]), if_neg h2]
+
+private theorem numBodyB_literal (l : List UInt8) :
+    numLexB.numBodyB (ByteString.literal l) = refNumBody l := by
+  induction l with
+  | nil => rfl
+  | cons b rest ih =>
+      rw [show ByteString.literal (b :: rest) = b +: ByteString.literal rest from rfl,
+        numLexB.numBodyB_cons, refNumBody_cons]
+      by_cases h1 : b = 0x30
+      · rw [if_pos (by simp [h1]), if_pos h1, numSuffixB_literal]
+      · rw [if_neg (by simp [h1]), if_neg h1]
+        by_cases h2 : 0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39
+        · rw [if_pos (by simp [h2]), if_pos h2,
+            show ByteString.dropWhile (ByteString.literal rest) IsDigitB
+              = ByteString.literal (rest.dropWhile IsDigitB) from rfl,
+            numSuffixB_literal]
+        · rw [if_neg (by simp [h2]), if_neg h2]
+
+private theorem numLexB_literal (l : List UInt8) :
+    numLexB (ByteString.literal l) = refNumLex l := by
+  induction l with
+  | nil =>
+      rw [show ByteString.literal ([] : List UInt8) = (ByteString.empty : ByteString) from rfl,
+        numLexB_empty, numLexB.numBodyB_empty]
+      rfl
+  | cons b rest ih =>
+      rw [show ByteString.literal (b :: rest) = b +: ByteString.literal rest from rfl,
+        numLexB_cons, refNumLex_cons]
+      by_cases h : b = 0x2D
+      · rw [if_pos (by simp [h]), if_pos h, numBodyB_literal]
+      · rw [if_neg (by simp [h]), if_neg h,
+          show b +: ByteString.literal rest = ByteString.literal (b :: rest) from rfl,
+          numBodyB_literal]
+
+/-! ### The digit run -/
+
+private theorem drop_takeWhile_length (l : List UInt8) :
+    l.drop (l.takeWhile IsDigitB).length = l.dropWhile IsDigitB := by
+  induction l with
+  | nil => rfl
+  | cons b rest ih =>
+      cases h : IsDigitB b with
+      | false => simp [List.takeWhile_cons, List.dropWhile_cons, h]
+      | true =>
+          simp only [List.takeWhile_cons, h, if_true, List.length_cons]
+          rw [List.drop_succ_cons, ih, List.dropWhile_cons, if_pos h]
+
+private theorem numDigitsFrom_eq : ∀ (bs : List UInt8) (n : Nat),
+    numDigitsFrom bs n = n + (bs.takeWhile IsDigitB).length
+  | [], n => by simp [numDigitsFrom]
+  | b :: bs, n => by
+      simp only [numDigitsFrom, List.takeWhile_cons]
+      cases h : IsDigitB b <;> simp [h, numDigitsFrom_eq bs (n + 1)] <;> omega
+
+private theorem numDigits_eq (lex : List UInt8) (i : Nat) :
+    numDigits lex i = i + ((lex.drop i).takeWhile IsDigitB).length := by
+  rw [numDigits, numDigitsFrom_eq]
+
+private theorem numDigits_eq_length_iff {lex : List UInt8} {i : Nat} (hi : i ≤ lex.length) :
+    (numDigits lex i = lex.length) ↔
+      ((lex.drop i).takeWhile IsDigitB).length = (lex.drop i).length := by
+  have h := numDigits_bounds (lex := lex) (i := i) hi
+  rw [numDigits_eq]
+  have hd : (lex.drop i).length = lex.length - i := List.length_drop
+  omega
+
+private theorem numDigits_dropWhile (lex : List UInt8) (i : Nat) :
+    lex.drop (numDigits lex i) = (lex.drop i).dropWhile IsDigitB := by
+  rw [numDigits_eq,
+    ← List.drop_drop (i := ((lex.drop i).takeWhile IsDigitB).length) (j := i) (l := lex)]
+  exact drop_takeWhile_length (lex.drop i)
+
+/-- The first fraction digit's run ends at the suffix's dropped digits. -/
+private theorem drop_numDigits_two (c d : UInt8) (rest : List UInt8) (hd : IsDigitB d = true) :
+    (c :: d :: rest).drop (numDigits (c :: d :: rest) 2) = (d :: rest).dropWhile IsDigitB := by
+  rw [numDigits_eq]
+  have hd2 : (c :: d :: rest).drop 2 = rest := rfl
+  rw [hd2]
+  rw [show 2 + (rest.takeWhile IsDigitB).length
+      = (1 + (rest.takeWhile IsDigitB).length) + 1 by omega]
+  rw [List.drop_succ_cons, Nat.add_comm 1 (rest.takeWhile IsDigitB).length,
+    List.drop_succ_cons]
+  rw [drop_takeWhile_length, List.dropWhile_cons, if_pos hd]
+
+private theorem numDigitAt_drop (lex : List UInt8) (j m : Nat) :
+    numDigitAt lex (j + m) = numDigitAt (lex.drop j) m := by
+  rw [numDigitAt_eq_refHeadDigit, numDigitAt_eq_refHeadDigit, List.drop_drop]
+
+private theorem numExpStart_drop (lex : List UInt8) (j m : Nat) :
+    numExpStart lex (j + m) = j + numExpStart (lex.drop j) m := by
+  unfold numExpStart
+  rw [show lex[j + m + 1]? = (lex.drop j)[m + 1]? by
+    rw [show j + m + 1 = j + (m + 1) by omega, List.getElem?_drop]]
+  by_cases h : (lex.drop j)[m + 1]? = some 0x2B ∨ (lex.drop j)[m + 1]? = some 0x2D
+  · rw [if_pos h, if_pos h]; omega
+  · rw [if_neg h, if_neg h]; omega
+
+private theorem numDigits_drop (lex : List UInt8) (j m : Nat) :
+    numDigits lex (j + m) = j + numDigits (lex.drop j) m := by
+  rw [numDigits_eq, numDigits_eq, List.drop_drop]
+  omega
+
+private theorem numExpTail_drop (lex : List UInt8) (j m : Nat) :
+    numExpTail lex (j + m) =
+      (j + (numExpTail (lex.drop j) m).1, (numExpTail (lex.drop j) m).2) := by
+  have hm : (lex[j + m]? = some 0x65 ∨ lex[j + m]? = some 0x45) ↔
+      ((lex.drop j)[m]? = some 0x65 ∨ (lex.drop j)[m]? = some 0x45) := by
+    rw [List.getElem?_drop]
+  by_cases h : lex[j + m]? = some 0x65 ∨ lex[j + m]? = some 0x45
+  · have h' : (lex.drop j)[m]? = some 0x65 ∨ (lex.drop j)[m]? = some 0x45 := hm.mp h
+    have hstart := numExpStart_drop lex j m
+    have hdig : numDigitAt lex (j + numExpStart (lex.drop j) m)
+        = numDigitAt (lex.drop j) (numExpStart (lex.drop j) m) := by
+      rw [numDigitAt_drop]
+    by_cases hD : numDigitAt (lex.drop j) (numExpStart (lex.drop j) m) = true
+    · simp only [numExpTail, if_pos h, if_pos h', hstart, hdig, if_pos hD]
+      rw [show numDigits lex (j + numExpStart (lex.drop j) m + 1)
+          = j + numDigits (lex.drop j) (numExpStart (lex.drop j) m + 1) by
+        rw [show j + numExpStart (lex.drop j) m + 1
+            = j + (numExpStart (lex.drop j) m + 1) by omega, numDigits_drop]]
+    · simp only [numExpTail, if_pos h, if_pos h', hstart, hdig, if_neg hD]
+  · have h' : ¬ ((lex.drop j)[m]? = some 0x65 ∨ (lex.drop j)[m]? = some 0x45) :=
+      fun hh => h (hm.mpr hh)
+    simp only [numExpTail, if_neg h, if_neg h']
+
+private theorem numFracTail_drop (lex : List UInt8) (j m : Nat) :
+    numFracTail lex (j + m) =
+      (j + (numFracTail (lex.drop j) m).1, (numFracTail (lex.drop j) m).2) := by
+  have hdot : (lex[j + m]? = some 0x2E) ↔ ((lex.drop j)[m]? = some 0x2E) := by
+    rw [List.getElem?_drop]
+  by_cases h : lex[j + m]? = some 0x2E
+  · have h' : (lex.drop j)[m]? = some 0x2E := hdot.mp h
+    have hdig : numDigitAt lex (j + m + 1) = numDigitAt (lex.drop j) (m + 1) := by
+      rw [show j + m + 1 = j + (m + 1) by omega, numDigitAt_drop]
+    by_cases hD : numDigitAt (lex.drop j) (m + 1) = true
+    · have hb : numDigits lex (j + m + 2) = j + numDigits (lex.drop j) (m + 2) := by
+        rw [show j + m + 2 = j + (m + 2) by omega, numDigits_drop]
+      simp only [numFracTail, if_pos h, if_pos h', hdig, if_pos hD, hb]
+      exact numExpTail_drop lex j (numDigits (lex.drop j) (m + 2))
+    · simp only [numFracTail, if_pos h, if_pos h', hdig, if_neg hD]
+      rfl
+  · have h' : ¬ ((lex.drop j)[m]? = some 0x2E) := fun hh => h (hdot.mpr hh)
+    simp only [numFracTail, if_neg h, if_neg h']
+    exact numExpTail_drop lex j m
+
+private theorem numExpTail_shift (lex : List UInt8) (j : Nat) :
+    numExpTail lex j = (j + (numExpTail (lex.drop j) 0).1, (numExpTail (lex.drop j) 0).2) := by
+  simpa using numExpTail_drop lex j 0
+
+private theorem numFracTail_shift (lex : List UInt8) (j : Nat) :
+    numFracTail lex j = (j + (numFracTail (lex.drop j) 0).1, (numFracTail (lex.drop j) 0).2) := by
+  simpa using numFracTail_drop lex j 0
+
+private theorem numEnd_add (s : Nat × Bool) (j n : Nat) :
+    (numEnd (j + s.1, s.2) (j + n)).2 = (numEnd s n).2 := by
+  unfold numEnd
+  by_cases h : s.2 = true <;> simp [h, Nat.add_left_cancel_iff]
+
+private theorem numEnd_true (a n : Nat) : (numEnd (a, true) n).2 = decide (a = n) := rfl
+
+private theorem numEnd_false (a n : Nat) : (numEnd (a, false) n).2 = false := rfl
+
+/-! ### The stages at zero -/
+
+private theorem refExp_eq_and (c : UInt8) (rest : List UInt8) :
+    refExp rest =
+      (refHeadDigit ((c :: rest).drop (numExpStart (c :: rest) 0)) &&
+       refAllDigits ((c :: rest).drop (numExpStart (c :: rest) 0 + 1))) := by
+  cases rest with
+  | nil =>
+      have hk : numExpStart (c :: []) 0 = 1 := by simp [numExpStart]
+      rw [hk]
+      simp [refExp, refHeadDigit]
+  | cons b rest' =>
+      by_cases hb : b = 0x2B ∨ b = 0x2D
+      · have hk : numExpStart (c :: b :: rest') 0 = 2 := by simp [numExpStart, hb]
+        rw [hk, refExp_cons, if_pos hb, refDigits1_eq]
+        simp [refHeadDigit]
+      · have hk : numExpStart (c :: b :: rest') 0 = 1 := by simp [numExpStart, hb]
+        rw [hk, refExp_cons, if_neg hb, refDigits1_eq]
+        simp
+
+private theorem numExpTail_zero_iff (l : List UInt8) :
+    (numEnd (numExpTail l 0) l.length).2 = true ↔ refExpTail l = true := by
+  cases l with
+  | nil =>
+      have h0 : numExpTail [] 0 = ((0, true) : Nat × Bool) := rfl
+      rw [h0, numEnd_true, refExpTail]
+      simp
+  | cons c rest =>
+      rw [refExpTail_cons]
+      have hc : ((c :: rest)[0]? = some 0x65 ∨ (c :: rest)[0]? = some 0x45) ↔
+          (c = 0x65 ∨ c = 0x45) := by simp
+      by_cases hm : c = 0x65 ∨ c = 0x45
+      · have hm' : (c :: rest)[0]? = some 0x65 ∨ (c :: rest)[0]? = some 0x45 := hc.mpr hm
+        rw [if_pos hm]
+        by_cases hD : numDigitAt (c :: rest) (numExpStart (c :: rest) 0) = true
+        · have hB : refHeadDigit ((c :: rest).drop (numExpStart (c :: rest) 0)) = true := by
+            rw [← numDigitAt_eq_refHeadDigit]; exact hD
+          simp only [numExpTail, if_pos hm', if_pos hD]
+          rw [numEnd_true, decide_eq_true_eq,
+            numDigits_eq_length_iff (lex := c :: rest) (i := numExpStart (c :: rest) 0 + 1)
+              (by have := numDigitAt_true hD; omega),
+            refExp_eq_and c rest, ← refAllDigits_iff
+              ((c :: rest).drop (numExpStart (c :: rest) 0 + 1))]
+          simp [hB]
+        · have hB : refHeadDigit ((c :: rest).drop (numExpStart (c :: rest) 0)) = false := by
+            rw [← numDigitAt_eq_refHeadDigit]
+            cases h : numDigitAt (c :: rest) (numExpStart (c :: rest) 0) <;> simp_all
+          simp only [numExpTail, if_pos hm', if_neg hD]
+          rw [refExp_eq_and c rest, hB, numEnd_false]
+          simp
+      · have hm' : ¬ ((c :: rest)[0]? = some 0x65 ∨ (c :: rest)[0]? = some 0x45) :=
+          fun hh => hm (hc.mp hh)
+        rw [if_neg hm]
+        simp only [numExpTail, if_neg hm']
+        rw [numEnd_true]
+        simp
+
+private theorem numExpTail_end_iff (lex : List UInt8) {j : Nat} (hj : j ≤ lex.length) :
+    (numEnd (numExpTail lex j) lex.length).2 = true ↔ refExpTail (lex.drop j) = true := by
+  have hlen : lex.length = j + (lex.drop j).length := by
+    rw [List.length_drop]; omega
+  rw [numExpTail_shift lex j, hlen, numEnd_add (j := j)]
+  exact numExpTail_zero_iff (lex.drop j)
+
+private theorem numFracTail_zero_iff (l : List UInt8) :
+    (numEnd (numFracTail l 0) l.length).2 = true ↔ refNumSuffix l = true := by
+  cases l with
+  | nil =>
+      have h0 : numFracTail [] 0 = ((0, true) : Nat × Bool) := rfl
+      rw [h0, numEnd_true, refNumSuffix]
+      simp
+  | cons c rest =>
+      by_cases hdot : c = 0x2E
+      · rw [refNumSuffix_cons, if_pos hdot, refDigits1_takeWhile]
+        have hdot' : (c :: rest)[0]? = some 0x2E := by simp [hdot]
+        have hdig : numDigitAt (c :: rest) 1 = refHeadDigit rest := by
+          rw [numDigitAt_eq_refHeadDigit]; simp
+        by_cases hD : refHeadDigit rest = true
+        · cases rest with
+          | nil => simp [refHeadDigit] at hD
+          | cons d rest' =>
+              have hd : IsDigitB d = true := hD
+              simp only [numFracTail, if_pos hdot', hdig, if_pos hD]
+              have hlen2 : numDigits (c :: d :: rest') 2 ≤ (c :: d :: rest').length := by
+                have h2 : 2 ≤ (c :: d :: rest').length := by simp
+                exact (numDigits_bounds (lex := c :: d :: rest') (i := 2) h2).2
+              rw [numExpTail_end_iff (c :: d :: rest') hlen2, drop_numDigits_two c d rest' hd]
+              simp [hD]
+        · simp only [numFracTail, if_pos hdot', hdig, if_neg hD]
+          rw [numEnd_false]
+          simp [hD]
+      · rw [refNumSuffix_cons, if_neg hdot]
+        have hhead : numFracTail (c :: rest) 0 = numExpTail (c :: rest) 0 := by
+          simp [numFracTail, hdot]
+        rw [hhead, numExpTail_zero_iff, refExpTail_cons]
+
+private theorem numFracTail_end_iff (lex : List UInt8) {j : Nat} (hj : j ≤ lex.length) :
+    (numEnd (numFracTail lex j) lex.length).2 = true ↔ refNumSuffix (lex.drop j) = true := by
+  have hlen : lex.length = j + (lex.drop j).length := by
+    rw [List.length_drop]; omega
+  rw [numFracTail_shift lex j, hlen, numEnd_add (j := j)]
+  exact numFracTail_zero_iff (lex.drop j)
+
+private theorem digit_test_iff (b : UInt8) :
+    (decide (0x31 ≤ b) && decide (b ≤ 0x39)) = true ↔ (0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39) := by
+  simp only [Bool.and_eq_true, decide_eq_true_eq, UInt8.le_iff_toNat_le, UInt8.toNat_ofNat]
+
+/-! ### The scan's body, and the main tie -/
+
+private theorem numScanBody_iff (lex : List UInt8) (i : Nat) (b : UInt8) (r : List UInt8)
+    (hd : lex.drop i = b :: r) :
+    ((if b = 0x30 then (numEnd (numLexTail lex (i + 1)) lex.length).2
+      else if (decide (0x31 ≤ b) && decide (b ≤ 0x39)) = true then
+        (numEnd (numLexTail lex (numDigits lex (i + 1))) lex.length).2
+      else false) ↔ refNumBody (b :: r)) := by
+  have hdrop1 : lex.drop (i + 1) = r := by
+    rw [← List.drop_drop (i := 1) (j := i) (l := lex), hd]
+    rfl
+  have hlen1 : i + 1 ≤ lex.length := by
+    have hp : 0 < (lex.drop i).length := by rw [hd]; simp
+    rw [List.length_drop] at hp
+    omega
+  rw [refNumBody_cons]
+  by_cases h0 : b = 0x30
+  · rw [if_pos h0, if_pos h0, numLexTail, numFracTail_end_iff lex hlen1, hdrop1]
+  · rw [if_neg h0, if_neg h0]
+    by_cases hd' : (decide (0x31 ≤ b) && decide (b ≤ 0x39)) = true
+    · have hdp : 0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39 := (digit_test_iff b).mp hd'
+      rw [if_pos hd', if_pos hdp]
+      have hlen : numDigits lex (i + 1) ≤ lex.length :=
+        (numDigits_bounds (lex := lex) (i := i + 1) hlen1).2
+      rw [numLexTail, numFracTail_end_iff lex hlen, numDigits_dropWhile, hdrop1]
+    · have hdp : ¬ (0x31 ≤ b.toNat ∧ b.toNat ≤ 0x39) :=
+        fun hh => hd' ((digit_test_iff b).mpr hh)
+      rw [if_neg hd', if_neg hdp]
+
+private theorem numLexScan_snd_sign (b : UInt8) (rest : List UInt8) :
+    (numLexScan (0x2D :: b :: rest)).2 =
+      (if b = 0x30 then
+          (numEnd (numLexTail (0x2D :: b :: rest) (1 + 1)) ((0x2D :: b :: rest).length)).2
+       else if (decide (0x31 ≤ b) && decide (b ≤ 0x39)) = true then
+         (numEnd (numLexTail (0x2D :: b :: rest) (numDigits (0x2D :: b :: rest) (1 + 1)))
+           ((0x2D :: b :: rest).length)).2
+       else false) := by
+  have g0 : (0x2D :: b :: rest)[0]? = some 0x2D := rfl
+  have g1 : (0x2D :: b :: rest)[1] = b := rfl
+  have gs : numSignStart (0x2D :: b :: rest) = 1 := by simp [numSignStart, g0]
+  simp only [numLexScan, gs, List.length_cons]
+  rw [dif_pos (by omega)]
+  simp only [g1]
+  by_cases hb : b = 0x30
+  · simp [hb]
+  · simp only [if_neg hb]
+    by_cases hd : (decide (0x31 ≤ b) && decide (b ≤ 0x39)) = true
+    · simp [hd]
+    · simp [hd]
+
+private theorem numLexScan_snd_sign_nil : (numLexScan ([0x2D] : List UInt8)).2 = false := by
+  have g0 : ([0x2D] : List UInt8)[0]? = some 0x2D := rfl
+  have gs : numSignStart ([0x2D] : List UInt8) = 1 := by simp [numSignStart, g0]
+  simp only [numLexScan, gs, List.length_cons]
+  rw [dif_neg (by simp)]
+
+private theorem numLexScan_snd_nosign (c : UInt8) (rest : List UInt8) (hc : ¬ c = 0x2D) :
+    (numLexScan (c :: rest)).2 =
+      (if c = 0x30 then (numEnd (numLexTail (c :: rest) (0 + 1)) ((c :: rest).length)).2
+       else if (decide (0x31 ≤ c) && decide (c ≤ 0x39)) = true then
+         (numEnd (numLexTail (c :: rest) (numDigits (c :: rest) (0 + 1)))
+           ((c :: rest).length)).2
+       else false) := by
+  have g0 : (c :: rest)[0]? = some c := rfl
+  have g1 : (c :: rest)[0] = c := rfl
+  have gs : numSignStart (c :: rest) = 0 := by simp [numSignStart, g0, hc]
+  simp only [numLexScan, gs, List.length_cons]
+  rw [dif_pos (by simp)]
+  simp only [g1]
+  by_cases hb : c = 0x30
+  · simp [hb]
+  · simp only [if_neg hb]
+    by_cases hd : (decide (0x31 ≤ c) && decide (c ≤ 0x39)) = true
+    · simp [hd]
+    · simp [hd]
+
+private theorem numLexScan_snd_nil : (numLexScan ([] : List UInt8)).2 = false := by
+  have gs : numSignStart ([] : List UInt8) = 0 := by simp [numSignStart]
+  simp only [numLexScan, gs]
+  rw [dif_neg (by simp)]
+
+/-- **The scan's acceptance is the reference grammar's.**  The emitted control
+flow's index-based scan accepts a lexeme exactly when the tree's structural
+`numLexB` does, so the two agree at every lexeme. -/
+theorem numLexScan_accepts_iff_numLexB (lex : List UInt8) :
+    (numLexScan lex).2 = true ↔ numLexB (ByteString.literal lex) = true := by
+  rw [numLexB_literal]
+  match lex with
+  | [] =>
+      rw [numLexScan_snd_nil, refNumLex]
+      rfl
+  | c :: rest =>
+      by_cases hminus : c = 0x2D
+      · subst hminus
+        rw [refNumLex_cons, if_pos rfl]
+        cases rest with
+        | nil =>
+            rw [numLexScan_snd_sign_nil]
+            rfl
+        | cons b rest' =>
+            rw [numLexScan_snd_sign]
+            exact numScanBody_iff (0x2D :: b :: rest') 1 b rest' rfl
+      · rw [refNumLex_cons, if_neg hminus, numLexScan_snd_nosign c rest hminus]
+        exact numScanBody_iff (c :: rest) 0 c rest rfl
+
+/-- **A lexeme the reader reads is one the scan accepts.**  The reader's decision
+is `numLexB`'s (`reader_isSome_eq_numLexB`) and `numLexB`'s is the scan's, so a
+reader witness at the document's lexeme carries the scan's acceptance with it —
+the direction the number arm needs, since its premises already include the
+reader. -/
+theorem numLexScan_accepts_of_reader {lex : List UInt8} {d : Decimal}
+    (hread : StrtodReader.reader (ByteString.literal lex) = some d) :
+    (numLexScan lex).2 = true := by
+  rw [numLexScan_accepts_iff_numLexB, ← StrtodReader.reader_isSome_eq_numLexB, hread]
+  rfl
 
 -- The three malformed tokens the assessment names, and valid tokens as the
 -- control that the same test accepts: the scan refuses where the emitted

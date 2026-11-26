@@ -557,10 +557,12 @@ close.
 
 Second, **the number path's two agreements are separate and both stay visible**.
 The conversion's agreement is `strtodSpec`'s, proved for every well-formed
-lexeme: `numFastEmitted_strtodSpec`.  The *lexical* agreement is not: which
-lexemes reach a conversion is the emitted function's own scan, modelled as
-`numLexScan` and checked by `#guard`s at the three malformed tokens the
-assessment names and at accepted controls —
+lexeme: `numFastEmitted_strtodSpec`.  The *lexical* agreement is the scan's:
+`numLexScan_accepts_iff_numLexB` reads the emitted function's index scan as the
+tree's structural scan, and `LeanLLVM.JSON.numLexB_iff` carries that to
+`RfcNumber`, so the lexemes the scan accepts are the grammar's — checked by the
+`#guard`s at the three malformed tokens the assessment names and at accepted
+controls —
 
 ```
 #guard numLexScan [0x31, 0x65] = (2, false)              -- "1e"
@@ -570,8 +572,8 @@ assessment names and at accepted controls —
 #guard numLexScan [0x2D, 0x30, 0x2E, 0x35] = (4, true)   -- "-0.5", control
 ```
 
-The scan's acceptance is the *emitted function's*, not a proof that a token the
-stage-1 scanner classifies as a number is RFC 8259 §6's: that step is the
+What is *not* proved is the extent the stage-1 scanner hands the scan: that a
+token the scanner classifies as a number is exactly RFC 8259 §6's token is the
 scanner's token-extent obligation, and it is stated here rather than assumed.  A
 model that converted every readable lexeme would answer a value where the emitted
 function answers a refusal, which is why the refusal is modelled and not skipped.

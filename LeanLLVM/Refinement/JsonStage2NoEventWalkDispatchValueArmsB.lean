@@ -24,6 +24,11 @@ The number payload is the model's: `stage2NumFast`'s accepted answer writes
 `strtodSpec`'s bits into `%d`, and the arm reads that word back.  The helper
 body's faithfulness (`num_fast_el1`/`od_scalar_value`) is not claimed here.
 
+The arm's lexeme is the document's own bytes, not the reader's normal form: the
+call is `stage2NumFast_writes_strtodSpec_of_reader`, so the premises name `lex`
+and read it with `StrtodReader.reader`; `d.lexeme` would have no witness at a
+document that spells its exponent `E` or `+`.
+
 Each block is one generic step: its denotation binds exactly the cells it writes
 over an abstract incoming environment, parameterised by the incoming values, and
 the loop is an induction on the distance from the token's end to `%cond`.  No
@@ -35,6 +40,7 @@ import LeanLLVM.Refinement.JsonStage2NoEventLiteral
 import LeanLLVM.Refinement.JsonStage2Hsem
 import LeanLLVM.Refinement.JsonStage2NoEventWalkCycleA
 import LeanLLVM.Refinement.JsonStage2NoEventWalkContainers
+import LeanLLVM.Refinement.JsonStage2NumberPayload
 
 set_option autoImplicit false
 set_option maxRecDepth 20000
@@ -1564,10 +1570,11 @@ theorem valueArms_numberRoute {gap : Calls} {K : Stage2NoEventWalkCarry}
 
 /-- **The model's accepted number word.** -/
 theorem valueArms_numFast_model {gap : Calls} {K : Stage2NoEventWalkCarry} {mem : Mem}
-    {s : State} {lane q : Nat} {d : Decimal}
+    {s : State} {lane q : Nat} {lex : List UInt8} {d : Decimal}
     (hInv : Stage2NoEventWalkInv K mem s) (hlaneq : lane ≤ q) (hqle : q ≤ K.n)
-    (hlex : readBytes s.mem (K.b + lane) (q - lane) = some d.lexeme.data.toList)
-    (hwf : d.wellFormed) (hscan : (numLexScan d.lexeme.data.toList).2 = true) :
+    (hlex : readBytes s.mem (K.b + lane) (q - lane) = some lex)
+    (hread : StrtodReader.reader (ByteString.literal lex) = some d)
+    (hwf : d.wellFormed) :
     stage2NoEventCalls gap "num_fast_el1"
       [.ptr (K.b + lane), .int 64 (BitVec.ofNat 64 (q - lane)), .ptr K.d,
         .ptr (K.next0 + 24)]
@@ -1585,19 +1592,19 @@ theorem valueArms_numFast_model {gap : Calls} {K : Stage2NoEventWalkCarry} {mem 
       rw [Nat.add_assoc, Nat.add_sub_of_le hlaneq]
     have h2 : K.b + q ≤ K.next0 := by omega
     omega
-  have hread : readBytes (writeBytes s.mem (K.next0 + 24) (natToBytes 0 8))
-      (K.b + lane) (q - lane) = some d.lexeme.data.toList := by
+  have hreadw : readBytes (writeBytes s.mem (K.next0 + 24) (natToBytes 0 8))
+      (K.b + lane) (q - lane) = some lex := by
     rw [readBytes_writeBytes_below s.mem (natToBytes 0 8) (q - lane) (K.b + lane)
       (K.next0 + 24) hbound]
     exact hlex
   have hreadn : readBytes (writeBytes s.mem (K.next0 + 24) (natToBytes 0 8))
-      (K.b + lane) (BitVec.ofNat 64 (q - lane)).toNat = some d.lexeme.data.toList := by
+      (K.b + lane) (BitVec.ofNat 64 (q - lane)).toNat = some lex := by
     rw [BitVec.toNat_ofNat,
       Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (Nat.sub_le q lane)
         (Nat.lt_of_le_of_lt hqle hInv.nLt))]
-    exact hread
+    exact hreadw
   rw [valueArms_num_fast_calls]
-  exact stage2NumFast_writes_strtodSpec hwf hreadn hscan
+  exact stage2NumFast_writes_strtodSpec_of_reader hreadn hread hwf
 
 /-- **The arena bound is preserved by a number event.** -/
 theorem valueArms_arenaBound_number (arena : List UInt8) (bits : Nat) :
@@ -1608,11 +1615,14 @@ theorem valueArms_arenaBound_number (arena : List UInt8) (bits : Nat) :
   simp only [ConsumerEvent.number, stage2TagNum] at htag
   rcases htag with h | h <;> exact absurd h (by decide)
 
-/-- **The number event appends to a trace.** -/
+/-- **The number event appends to a trace.**  The event's lexeme is the
+document's own slice `lex`, read by the reader: no `d.lexeme` normal form is
+needed, so two spellings of one decimal both append the same payload. -/
 theorem valueArms_trace_number {K K' : Stage2NoEventWalkCarry}
-    (h : Stage2NoEventWalkTrace K) {start stop : Nat} {d : Decimal}
-    (hwf : d.wellFormed) (hstop : stop = start + d.lexeme.length)
-    (hslice : (K.bs.drop start).take (stop - start) = d.lexeme.data.toList)
+    (h : Stage2NoEventWalkTrace K) {start stop : Nat} {d : Decimal} {lex : List UInt8}
+    (hread : StrtodReader.reader (ByteString.literal lex) = some d)
+    (hstop : stop = start + lex.length)
+    (hslice : (K.bs.drop start).take (stop - start) = lex)
     (hbs : K'.bs = K.bs) (harena : K'.arena = K.arena)
     (htok : K'.tok = K.tok + 1)
     (hterms : K'.terms = K.terms + (7 + (strtodSpec d).toBits)) :
@@ -1620,7 +1630,10 @@ theorem valueArms_trace_number {K K' : Stage2NoEventWalkCarry}
   refine h.step (K' := K')
     (evs := [ConsumerEvent.number (strtodSpec d).toBits])
     (toks := [Token.number ⟨start, stop⟩]) ?_ ?_ hbs harena htok hterms
-  · exact Stage2NoEvent.number (StrtodReader.reader_lexeme hwf) hstop hslice Stage2NoEvent.nil
+  · refine Stage2NoEvent.number (lex := ByteString.literal lex) hread ?_ ?_
+      Stage2NoEvent.nil
+    · simpa using hstop
+    · simpa only [ByteString.data_toList_literal] using hslice
   · exact valueArms_arenaBound_number K.arena _
 
 /-! ### The number arm's export -/
@@ -1632,7 +1645,7 @@ separator skip, and the trace's one number event.  The run is inside
 `3 + 5 * (cond - q)`, this slice's own count; the preceding provider slice's count is separate, and this is not the class price. -/
 theorem stage2NoEventWalkValueNumber {gap : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {σ : Nat → UInt8} {lane q cond knext : Nat}
-    {frb : BitVec 8} {spb : BitVec 32} {d : Decimal}
+    {frb : BitVec 8} {spb : BitVec 32} {lex : List UInt8} {d : Decimal}
     {s : State}
     (hInv : Stage2NoEventWalkInv K mem s)
     (hpc : s.pc = "if.then471")
@@ -1642,8 +1655,9 @@ theorem stage2NoEventWalkValueNumber {gap : Calls} {K : Stage2NoEventWalkCarry}
     (hidx : lookupName s.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 lane)))
     (harr : lookupName s.env "%arrayidx6.le1046" = some (.ptr (K.b + lane)))
     (hlaneq : lane ≤ q) (hq64 : q < 2 ^ 64) (hqleK : q ≤ K.n)
-    (hlex : readBytes s.mem (K.b + lane) (q - lane) = some d.lexeme.data.toList)
-    (hwf : d.wellFormed) (hscan : (numLexScan d.lexeme.data.toList).2 = true)
+    (hlex : readBytes s.mem (K.b + lane) (q - lane) = some lex)
+    (hread : StrtodReader.reader (ByteString.literal lex) = some d)
+    (hwf : d.wellFormed)
     (hframe : lookupName s.env "%frame.0.lcssa1097" = some (.int 8 frb))
     (hsp : lookupName s.env "%sp.0.lcssa1091.wide" = some (.int 32 spb))
     (hk : lookupName s.env "%inc.lcssa" = some (.int 64 (BitVec.ofNat 64 knext)))
@@ -1664,8 +1678,8 @@ theorem stage2NoEventWalkValueNumber {gap : Calls} {K : Stage2NoEventWalkCarry}
           (wordBytes 8 (strtodSpec d).toBits)) (K.b + i) = some (σ i))
     (hws : ∀ i, q ≤ i → i < cond →
       stage2SkipWs (BitVec.ofNat 8 (σ i).toNat) = true)
-    (hstop : q = lane + d.lexeme.length)
-    (hslice : (K.bs.drop lane).take (q - lane) = d.lexeme.data.toList)
+    (hstop : q = lane + lex.length)
+    (hslice : (K.bs.drop lane).take (q - lane) = lex)
     (htrace : Stage2NoEventWalkTrace K)
     (htokn : K.tok < K.n)
     (hbase : Stage2NoEventWalkBaseLookups K s)
@@ -1696,7 +1710,7 @@ theorem stage2NoEventWalkValueNumber {gap : Calls} {K : Stage2NoEventWalkCarry}
       [.ptr (K.b + lane), .int 64 (BitVec.ofNat 64 (q - lane)), .ptr K.d,
         .ptr (K.next0 + 24)]
       (writeBytes s.mem (K.next0 + 24) (natToBytes 0 8)) s.next = some rout :=
-    valueArms_numFast_model hInv hlaneq hqleK hlex hwf hscan
+    valueArms_numFast_model hInv hlaneq hqleK hlex hread hwf
   have hload : readBytes rmem K.d 8 = some (natToBytes (BitVec.ofNat 64 bits).toNat 8) := by
     have h := readBytes_writeBytes_same
       (writeBytes s.mem (K.next0 + 24) (natToBytes 0 8)) (wordBytes 8 bits) (addr := K.d)
@@ -1744,7 +1758,7 @@ theorem stage2NoEventWalkValueNumber {gap : Calls} {K : Stage2NoEventWalkCarry}
       (by simpa only [rmem, rout] using hmemEnd)
   refine ⟨s', j, K', by omega, hrun, hafter, ?_, hK'tok, hK'terms, hK'bs, hK'arena,
     rfl, rfl, rfl, rfl, rfl,
-    valueArms_trace_number htrace hwf hstop hslice hK'bs hK'arena hK'tok hK'terms,
+    valueArms_trace_number htrace hread hstop hslice hK'bs hK'arena hK'tok hK'terms,
     frb.isLt, (fun h => hfrNe (BitVec.eq_of_toNat_eq (by simp [h]))),
     spb.isLt, (fun h => hspNe (BitVec.eq_of_toNat_eq (by simp [h]))), hbaseEnd⟩
   exact Stage2NoEventWalkInv.count (h := hInvAt) (t := 1)
@@ -2476,7 +2490,7 @@ theorem stage2NoEventWalkValueLiteralFalse {gap : Calls} {K : Stage2NoEventWalkC
 -- It is not a composed class price and does not add the provider slice's count.
 theorem stage2NoEventWalkValueNumber_classBound {gap : Calls} {K : Stage2NoEventWalkCarry}
     {mem : Mem} {σ : Nat → UInt8} {lane q cond knext : Nat}
-    {frb : BitVec 8} {spb : BitVec 32} {d : Decimal}
+    {frb : BitVec 8} {spb : BitVec 32} {lex : List UInt8} {d : Decimal}
     {s : State}
     (hInv : Stage2NoEventWalkInv K mem s)
     (hpc : s.pc = "if.then471")
@@ -2486,8 +2500,9 @@ theorem stage2NoEventWalkValueNumber_classBound {gap : Calls} {K : Stage2NoEvent
     (hidx : lookupName s.env "%idxprom.lcssa" = some (.int 64 (BitVec.ofNat 64 lane)))
     (harr : lookupName s.env "%arrayidx6.le1046" = some (.ptr (K.b + lane)))
     (hlaneq : lane ≤ q) (hq64 : q < 2 ^ 64) (hqleK : q ≤ K.n)
-    (hlex : readBytes s.mem (K.b + lane) (q - lane) = some d.lexeme.data.toList)
-    (hwf : d.wellFormed) (hscan : (numLexScan d.lexeme.data.toList).2 = true)
+    (hlex : readBytes s.mem (K.b + lane) (q - lane) = some lex)
+    (hread : StrtodReader.reader (ByteString.literal lex) = some d)
+    (hwf : d.wellFormed)
     (hframe : lookupName s.env "%frame.0.lcssa1097" = some (.int 8 frb))
     (hsp : lookupName s.env "%sp.0.lcssa1091.wide" = some (.int 32 spb))
     (hk : lookupName s.env "%inc.lcssa" = some (.int 64 (BitVec.ofNat 64 knext)))
@@ -2508,8 +2523,8 @@ theorem stage2NoEventWalkValueNumber_classBound {gap : Calls} {K : Stage2NoEvent
           (wordBytes 8 (strtodSpec d).toBits)) (K.b + i) = some (σ i))
     (hws : ∀ i, q ≤ i → i < cond →
       stage2SkipWs (BitVec.ofNat 8 (σ i).toNat) = true)
-    (hstop : q = lane + d.lexeme.length)
-    (hslice : (K.bs.drop lane).take (q - lane) = d.lexeme.data.toList)
+    (hstop : q = lane + lex.length)
+    (hslice : (K.bs.drop lane).take (q - lane) = lex)
     (htrace : Stage2NoEventWalkTrace K)
     (htokn : K.tok < K.n)
     (hbase : Stage2NoEventWalkBaseLookups K s)
@@ -2532,7 +2547,7 @@ theorem stage2NoEventWalkValueNumber_classBound {gap : Calls} {K : Stage2NoEvent
   obtain ⟨s', j, K', hj, hrun, hafter, hinv', htok, hterms, hbs, harena,
     hstat1, hstat2, hstat3, hstat4, hstat5, htrace, hfrLt', hfrNe', hspLt', hspNe',
     hbaseEnd⟩ :=
-    stage2NoEventWalkValueNumber (mem := mem) hInv hpc hd hei hee hidx harr hlaneq hq64 hqleK hlex hwf hscan hframe hsp hk halen harena hb htk0 htm0 hcond hqle hcond63 hbytes hws hstop hslice htrace htokn hbase hfrNe hspNe
+    stage2NoEventWalkValueNumber (mem := mem) hInv hpc hd hei hee hidx harr hlaneq hq64 hqleK hlex hread hwf hframe hsp hk halen harena hb htk0 htm0 hcond hqle hcond63 hbytes hws hstop hslice htrace htokn hbase hfrNe hspNe
   exact ⟨s', j, K', by omega, hrun, hafter, hinv', htok, hterms, hbs, harena,
     hstat1, hstat2, hstat3, hstat4, hstat5, htrace, hfrLt', hfrNe', hspLt', hspNe',
     hbaseEnd⟩
