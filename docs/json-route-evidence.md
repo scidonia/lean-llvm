@@ -892,7 +892,13 @@ the length is relation-determined (`Stage2NoEvent.length_nonSeparators`), the
 term sum is not (`countsTieDoc_terms_two_derivations` gives two `ArenaBound`
 derivations at `"\/"` with equal lengths and term sums 6 and 7), and the tie is
 exactly the pair of register-versus-data comparisons
-(`stage2NoEventWalkAccept_counts_iff`).
+(`stage2NoEventWalkAccept_counts_iff`).  The walk's accumulated output evidence
+— the event list, the tokens, the derivation and the two counts — is the run's
+own induction invariant, not a caller's witness: `Stage2NoEventWalkTrace_iff_report`
+reduces it to a flat report plus the arena bound, `of_zeros` inhabits it at the
+seed, `Stage2NoEventWalkTrace.step` extends it along each route, and the
+terminal rebuilds it from the exit (`stage2NoEventWalkTrace_of_accept`,
+`stage2NoEventWalkExit_trace`).
 
 What that claim stands on, and does not include:
 
@@ -903,11 +909,16 @@ What that claim stands on, and does not include:
 - **the native admission agrees with `admission`** where the probe compares the
   two-phase decision, as its own agreement check states; that agreement is not
   modelled in Lean.
-- **the rows and the head are produced by the caller.**  The per-class producers
-  build the rows and the accept terminal is built at the reference parser's own
-  tape; the head with its trace is the seed run's evidence.  No theorem in this
-  tree connects the compiled entry's argument and memory words to a state the
-  head premise describes.
+- **the rows' class producers and the seed head are produced by the caller.**  The
+  per-class producers build the rows and the accept terminal is built at the
+  reference parser's own tape.  The trace is **not** caller data: at the seed it
+  is `Stage2NoEventWalkTrace.of_zeros`, along a segment the preceding segment's
+  `trace'`, and at a terminal the exit's own report
+  (`stage2NoEventWalkTrace_of_accept`, `stage2NoEventWalkExit_trace`), with
+  `Stage2NoEventWalkTrace_iff_report` saying a trace is a flat report plus the
+  arena bound and nothing else.  What no theorem supplies is the connection from
+  the compiled entry's argument and memory words to the seed head and to the
+  producers' rows.
 - **the number payload's reading is the emitted scanner's.**  `StrtodReader`
   proves the reader's field extraction from a lexeme; that the C loops'
   accumulators (`ip`, `fr`, `idig`, `fdig`, `exp10`, the sticky window) hold the
@@ -944,37 +955,51 @@ none of the relation, and their observations are untouched by the restatement.
 The stage-2 observations are the C entries and the compiled route, whose bytes
 did not change.
 
-The table's revision column names the source digest each row was taken on.
-`4a8f20e` is the tree the runs below were made on; the bytes this section ships
-with carry later proof-module edits, so the rows are labelled provisional for
-that reason.  The route's emitted-C cone — the 69 modules
-`probes/json/route/build.sh` lists — is identical at `4a8f20e` and at
-`e88ee2d`, so the route and C observations are about those bytes and not about
-the proof modules that moved afterwards.
+The table's revision column names the freeze each row belongs to.  The runs
+were first made at `4a8f20e`; the frozen code is `ea641ebc…`.  The freeze
+digest is `git diff e88ee2d 65a26b4 --binary -- LeanLLVM LeanLLVMTest
+LeanLLVM.lean`, over committed bytes only, so this document's own text does not
+move it.  The diff from the observed tree to the frozen one is Lean proof
+modules, the umbrella's import lines and the test pins: it touches no test
+script, kernel source, corpus or fixture, and the route's emitted-C cone — the
+69 modules `probes/json/route/build.sh` lists — is identical at both.  The rows
+whose instruments read C units or corpora therefore stand on inputs the freeze
+does not change, and the Lean-side rows and the two Lean test files were re-run
+at the frozen bytes; the commands below are the frozen runs where they were
+repeated.
 
-Re-verified on the current bytes, whose source manifest — the same set with
-this document excluded, so a later edit to this section does not move it — is
-`5453410143012525c891916c7b925d6cad62ec375093c176f02f37c43b8df69c`:
-`nix develop -c lake build` exits 0 at 2,516 jobs; the route link exits 0 and
-produces the byte-identical binary (sha256 `56291191…`); `nix develop -c
-bash tests/json-noevent/check.sh` exits 0 with the same 23 `ok` lines; and
-`tests/stage2-noevent-rows.lean` and `tests/json-noevent.lean` each exit 0.
-Earlier in the same sequence, on source digests `5f4993af…` and `dd07572d…`,
-the same four commands gave 2,516 and 2,518 jobs and the same binary hash.
+On the frozen bytes (`65a26b4`, Lean 4.35.0 and clang/LLVM 21.1.8 from the
+flake), from a checkout whose source hashes match the commit:
+`nix develop -c lake build` exits 0 at 2,518 jobs with zero `^error` lines
+(`LeanLLVMTest`'s guarded pins included); `nix develop -c bash
+probes/json/route/build.sh` exits 0 and writes the byte-identical binary
+(sha256 `56291191…`); `nix develop -c bash tests/json-noevent/check.sh` exits 0
+with the same 23 `ok` lines; and `tests/stage2-noevent-rows.lean` and
+`tests/json-noevent.lean` each exit 0.
+
+One provenance note, because a freeze digest is worth what the build behind it
+covers: the first freeze digest named a commit whose `LeanLLVM.lean` — at the
+repository root, outside the two directories staged — lacked the three
+registration imports, so the new modules were unimported and
+`nix develop -c lake build LeanLLVMTest` exited 1 with `Unknown constant
+'LeanLLVM.Refinement.stage2NoEvent_step_terms_delta_not_relation_determined'`.
+The corrected commits `557f5c8` and `65a26b4` add the imports and the trace
+module; the digest above is over those bytes, and the build and checks above
+were run on them.
 
 | Claim | Instrument | Revision | Corpus / arms | What it does not cover |
 |---|---|---|---|---|
 | The reference runner's renderings agree with a hand-written manifest, and a tampered row is a mismatch | `nix develop -c bash tests/json/check.sh` | `e88ee2d` + tree above | 130 manifest rows over `tests/json/corpus`; tampered-manifest arm | The stage-2 relation or the walk; the manifest is hand-written, not the runner's own output |
-| The pinned classifier fixture, the Lean body and the installed object agree; the defect detector bites | `nix develop -c bash tests/json-classify/check.sh` | `4a8f20e` (provisional) | 71 windows (9 manifest rows, 70 corpus windows over 130 files, mixed block); object sha256 `95a38141…` | The relation; the object's behaviour on an unaligned pointer |
-| The mask unit's object and the Lean body agree on the rows the run reaches | `nix develop -c bash tests/json-s1-masks/check.sh` | `4a8f20e` (provisional) | exits 3 with `SETUP: s1f_lo_tab not found in the kernel source`; the run reaches the row comparison (a mismatch would print `FAIL` and exit 1) and then stops at its defect-mutation step, which searches `kernel/json/s1_block.c` while the table lives in `s1_block_impl.h` — the same at `e88ee2d` (`grep -c s1f_lo_tab` is 0 in the `.c` at both) | Whether the rows are right: the check ends with a setup fault and prints no `ok` line, so its negative control is unexercised at this tree |
-| The no-event stage-2 and pipeline entries agree with the certified entry and the unchanged fold | `nix develop -c bash tests/json-noevent/check.sh` | `4a8f20e` (provisional) | 69 documents, 68 stage-2-route and 69 pipeline-route, `both`/`list`/`pipeline` arms; 183 frozen event rows; 13 value documents | That the compiled stage-2 call equals the reference decoder on all admitted documents; see the boundary below |
-| The entry unit's three kernels agree with the Lean bodies, row for row | `nix develop -c bash tests/json-entry/check.sh` | `4a8f20e` (provisional) | 197 595 rows from 6 corpus streams and 65 859 arm streams; object sha256 `f712e98a…` | The stage-2 walk; the relation; each detector is one class's rows |
-| The UTF-8 stage's object, Lean body and measured statements agree, and the stage's behaviour matrix is re-derived | `nix develop -c bash tests/json-utf8/check.sh` | `4a8f20e` (provisional) | 73 610 rows per gate value (27 corpus + 73 583 arm); 13 `ok` lines; defect object moves 144 rows | The stage-2 walk; the relation; the timing arm was not re-run |
-| The driver refuses an unmodelled return and function attribute, and the loop fixture is emitted with the relation's block roles | `nix develop -c bash tests/m4-loop-emission.sh --capture`, `--return-attr`, `--function-attr` | `4a8f20e` (provisional) | three modes, each exit 0 (`all assertions held`) | The stage-2 walk; the C-to-object step |
-| The stage-2 unit's text is the measured text, modulo its declared deletions and new text | `nix develop -c bash kernel/json/identity/source-identity.sh --unit stage2` | `4a8f20e` (provisional) | 45 entities, walk deleted arms | exits 1 at one entity: `s2_walk` differs by one token (`p` for `n` at the quote arm's `od_fail`), the deliberate "report the opening quote for unterminated strings" change; the identity list does not yet accommodate it, and the difference is present at `e88ee2d` (the file is unmodified) |
-| The pipeline unit's source and emitted-code identities hold | `kernel/json/identity/source-identity.sh --unit pipeline`; `ir-identity.sh --unit pipeline` | `4a8f20e` (provisional) | call census and emission | The stage-2 walk's rows; each arm is a text/emission identity, not a semantic refinement |
-| The relation's axiom footprint is exactly `propext` and `Quot.sound` after the restatement | `#guard_msgs` breaks in `LeanLLVM/Refinement/JsonStage2Spec.lean`, checked by `nix develop -c lake build` | `4a8f20e` (provisional) | 9 pins (`Stage2EventRel` and its constructors) | Not a check of the rows' content, only of the proof's footprint |
-| The no-event relation's witness pins and the row tier's interface | `nix develop -c lake env lean tests/json-noevent.lean`; `nix develop -c lake env lean tests/stage2-noevent-rows.lean` | `4a8f20e` (provisional) | relation instances at the null and true-tag witnesses; 9 `#check`s and 9 axiom pins | The str and number rows: neither file exercises them |
+| The pinned classifier fixture, the Lean body and the installed object agree; the defect detector bites | `nix develop -c bash tests/json-classify/check.sh` | `ea641ebc…` | 71 windows (9 manifest rows, 70 corpus windows over 130 files, mixed block); object sha256 `95a38141…` | The relation; the object's behaviour on an unaligned pointer |
+| The mask unit's object and the Lean body agree on the rows the run reaches | `nix develop -c bash tests/json-s1-masks/check.sh` | `ea641ebc…` | exits 3 with `SETUP: s1f_lo_tab not found in the kernel source`; the run reaches the row comparison (a mismatch would print `FAIL` and exit 1) and then stops at its defect-mutation step, which searches `kernel/json/s1_block.c` while the table lives in `s1_block_impl.h` — the same at `e88ee2d` (`grep -c s1f_lo_tab` is 0 in the `.c` at both) | Whether the rows are right: the check ends with a setup fault and prints no `ok` line, so its negative control is unexercised at this tree |
+| The no-event stage-2 and pipeline entries agree with the certified entry and the unchanged fold | `nix develop -c bash tests/json-noevent/check.sh` | `ea641ebc…` | 69 documents, 68 stage-2-route and 69 pipeline-route, `both`/`list`/`pipeline` arms; 183 frozen event rows; 13 value documents | That the compiled stage-2 call equals the reference decoder on all admitted documents; see the boundary below |
+| The entry unit's three kernels agree with the Lean bodies, row for row | `nix develop -c bash tests/json-entry/check.sh` | `ea641ebc…` | 197 595 rows from 6 corpus streams and 65 859 arm streams; object sha256 `f712e98a…` | The stage-2 walk; the relation; each detector is one class's rows |
+| The UTF-8 stage's object, Lean body and measured statements agree, and the stage's behaviour matrix is re-derived | `nix develop -c bash tests/json-utf8/check.sh` | `ea641ebc…` | 73 610 rows per gate value (27 corpus + 73 583 arm); 13 `ok` lines; defect object moves 144 rows | The stage-2 walk; the relation; the timing arm was not re-run |
+| The driver refuses an unmodelled return and function attribute, and the loop fixture is emitted with the relation's block roles | `nix develop -c bash tests/m4-loop-emission.sh --capture`, `--return-attr`, `--function-attr` | `ea641ebc…` | three modes, each exit 0 (`all assertions held`) | The stage-2 walk; the C-to-object step |
+| The stage-2 unit's text is the measured text, modulo its declared deletions and new text | `nix develop -c bash kernel/json/identity/source-identity.sh --unit stage2` | `ea641ebc…` | 45 entities, walk deleted arms | exits 1 at one entity: `s2_walk` differs by one token (`p` for `n` at the quote arm's `od_fail`), the deliberate "report the opening quote for unterminated strings" change; the identity list does not yet accommodate it, and the difference is present at `e88ee2d` (the file is unmodified) |
+| The pipeline unit's source and emitted-code identities hold | `kernel/json/identity/source-identity.sh --unit pipeline`; `ir-identity.sh --unit pipeline` | `ea641ebc…` | call census and emission | The stage-2 walk's rows; each arm is a text/emission identity, not a semantic refinement |
+| The relation's axiom footprint is exactly `propext` and `Quot.sound` after the restatement | `#guard_msgs` breaks in `LeanLLVM/Refinement/JsonStage2Spec.lean`, checked by `nix develop -c lake build` | `ea641ebc…` | 9 pins (`Stage2EventRel` and its constructors) | Not a check of the rows' content, only of the proof's footprint |
+| The no-event relation's witness pins and the row tier's interface | `nix develop -c lake env lean tests/json-noevent.lean`; `nix develop -c lake env lean tests/stage2-noevent-rows.lean` | `ea641ebc…` | relation instances at the null and true-tag witnesses; 9 `#check`s and 9 axiom pins | The str and number rows: neither file exercises them |
 
 The stage-2 unit has no emitted-code identity arm: `ir-identity.sh --unit stage2`
 exits 3 with `SETUP: unit stage2 has no IR identity arm; implemented units: s1
@@ -1046,20 +1071,23 @@ reference decoder's on the admitted domain — is not a theorem at any document.
 The gap between the theorems and the executable observations is these three
 things, and no fourth:
 
-1. **No row or head producer from an executable start state.**  Every decision
-   and boundary theorem is stated at `hrows : Stage2NoEventWalkRows calls mem F`,
-   `hhead : Stage2NoEventWalkHead K mem k s` and `htrace`.  The per-class
-   producers build the rows and the accept terminal at the parser's tape; the
-   head is the seed run's evidence.  Nothing connects the compiled entry's
-   argument registers and memory words to such a state, so no theorem's
-   conclusion is about the binary the route runs.
+1. **No row producer and no seed head from an executable start state.**  Every
+   decision and boundary theorem is stated at `hrows : Stage2NoEventWalkRows
+   calls mem F` and `hhead : Stage2NoEventWalkHead K mem k s`; the trace is
+   earned at those heads (`of_zeros` at the seed, `trace'` along a segment, the
+   exit's report at a terminal), so it is not a third caller-supplied premise.
+   The per-class producers build the rows and the accept terminal at the
+   parser's tape.  Nothing connects the compiled entry's argument registers and
+   memory words to the seed head or the producers, so no theorem's conclusion is
+   about the binary the route runs.
 2. **The acceptance's read-back identity is carried, not derived.**  The term
    equation is stated at `consumeRecords bs arena rs`, and the relation does not
    determine that list (nor its term sum) — `stage2NoEvent_str_len_free` realised
-   at the `"\/"` witness with two `ArenaBound` derivations.  The deployment must
-   supply the trace and the identity; the tie is exactly the two register
-   comparisons (`stage2NoEventWalkAccept_counts_iff`), and nothing in the tree
-   computes the counted-token register from a document.
+   at the `"\/"` witness with two `ArenaBound` derivations.  The two traces at
+   the same tokens are not one by any relation-side theorem, so the deployment
+   must supply that identity; the tie is exactly the two register comparisons
+   (`stage2NoEventWalkAccept_counts_iff`), and nothing in the tree computes the
+   counted-token register from a document.
 3. **The number payload's reading stops at a hypothesis.**  `StrtodReader`
    proves the reader's field extraction from a lexeme and that the compiled
    scanner's loops *as a body* compute it; that the C accumulators hold those
