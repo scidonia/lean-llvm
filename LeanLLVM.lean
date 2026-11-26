@@ -375,3 +375,4 @@ import LeanLLVM.Refinement.JsonEventIndexed
 import LeanLLVM.Refinement.JsonNumberPremises
 import LeanLLVM.Refinement.JsonEventIndexedStep
 import LeanLLVM.Refinement.JsonNumberExtentAssumed
+import LeanLLVM.Refinement.JsonNumFastAssumed
