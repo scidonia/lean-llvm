@@ -99,7 +99,8 @@ recursion `Stage2NoEventWalkBracketInnerAll`.  The window and the recursion are
 the caller's — the tree's class producers are rooted at `NodeBlock5` heads, and
 the inner leaves are the dispatch's `.loopexit` chains. -/
 structure Stage2NoEventWalkBracketDescendSupply (calls : Calls) (mem : Mem) where
-  /-- The descend's own staging: the push's stack discipline and the room. -/
+  /-- The descend's own staging: the pinned depth (its cell, width and the
+  push's two bounds) and the stream's room. -/
   branch : ∀ (K : Stage2NoEventWalkCarry) (k : Nat) (s : State) (next : Nat)
       (nextByte : UInt8),
     Stage2NoEventWalkHead K mem k s →
@@ -141,16 +142,17 @@ The empty pair's committed producer (`JsonStage2NoEventWalkRowsReady`'s
 `stage2NoEventWalkBracketRow_of_head`) is the row at a closer byte, given the
 pair branch's staging (`Stage2NoEventWalkPairBranch`).  Its separator field asks
 the entry at `k + 2` to be a comma — the shape named here.  The producer below is
-that row at the five staging facts, so the closer arm's `hcloser` premise is
+that row at one `Stage2NoEventWalkPairBranch` (the five facts survive inside
+it), so the closer arm's `hcloser` premise is
 inhabited on the comma continuation.  The complement (the entry at `k + 2` is a
 parent's `]`/`}`) is `JsonStage2NoEventWalkRowsParentCloser`'s
 `Stage2NoEventWalkParentSep` shape and is not produced here. -/
 
 /-- **The bracket closer arm's row on the comma continuation.**  The pair branch's
-five facts are the push's depth and room, the frame's non-zero, the separator at
-`k + 2` (`hcomma`: the document's byte there is `,`, `44`) and the next head's
-liveness; the closer's byte `93` is the arm's own.  Every other argument of the
-committed empty-pair row is derived from `Head`. -/
+staging is its own argument now (the pinned depth, the frame's non-zero, the
+separator at `k + 2`, the next head's liveness); the closer's byte `93` is the
+arm's own.  Every other argument of the committed empty-pair row is derived from
+`Head`. -/
 noncomputable def stage2NoEventWalkBracketCloserRow_of_comma
     {calls : Calls} {mem : Mem} {F : Nat} {K : Stage2NoEventWalkCarry}
     {k : Nat} {s : State} {next : Nat} {nextByte : UInt8}
@@ -159,17 +161,9 @@ noncomputable def stage2NoEventWalkBracketCloserRow_of_comma
     (hclass : Stage2NoEventWalkHeadBracketClass K k s)
     (hk1 : K.ent[k + 1]? = some next) (hbs1 : K.bs[next]? = some nextByte)
     (hcl : nextByte.toNat = 93)
-    (hspNe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
-      some (.int 32 (BitVec.ofNat 32 sp)) → sp ≠ 0)
-    (hspLe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
-      some (.int 32 (BitVec.ofNat 32 sp)) → sp ≤ 519)
-    (hfrNe : ∀ fr, lookupName s.env "%frame.0.ph1402" =
-      some (.int 8 (BitVec.ofNat 8 fr)) → fr ≠ 0)
-    (hcomma : ∀ q, K.ent[k + 2]? = some q → K.bs.getD q 0 = 44)
-    (hlive : k + 3 < K.nep) :
+    (hg : Stage2NoEventWalkPairBranch K k s) :
     Stage2NoEventWalkRow calls mem F K k s :=
-  stage2NoEventWalkBracketRow_of_head h htrace hclass
-    ⟨hspNe, hspLe, hfrNe, hcomma, hlive⟩
+  stage2NoEventWalkBracketRow_of_head h htrace hclass hg
     (fun n b hn hb => by
       have hn' : n = next := by
         rw [hk1] at hn
@@ -298,7 +292,7 @@ noncomputable def stage2NoEventWalkBracketReady_of_discharged {calls : Calls}
       by_cases hcl : nextByte.toNat = 93
       · by_cases hg : Stage2NoEventWalkPairBranch K k s
         · exact ⟨stage2NoEventWalkBracketCloserRow_of_comma h htrace hclass
-            hk1 hbs1 hcl hg.spNe hg.spLe hg.frNe hg.comma hg.live⟩
+            hk1 hbs1 hcl hg⟩
         · exact ⟨hcloserOther K k s sp next nextByte h htrace hclass hspH
             hk1 hbs1 hcl hg⟩
       · exact ⟨stage2NoEventWalkBracketDescendRow_of_windowAll h hclass

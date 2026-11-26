@@ -27,7 +27,9 @@ document byte — `hk1 : K.ent[k + 1]? = some next`, `hbs1 : K.bs[next]? = some
 nextByte` — are **hypotheses** of every statement here; `Inv` supplies only their
 existence (`Head.entSucc`/`…closerEntry` derive it from room), never the value.
 The descend's staging (`Stage2NoEventWalkDescendBranch`) is a route fact in the
-same sense: the seed head has depth and frame zero, so no head carries it.
+same sense: the seed head has depth zero, so no head carries it.  Its depth is
+pinned as one `Nat` with its cell and bounds, not quantified over the cell's
+representatives.
 
 **What is proved here.**
 
@@ -51,8 +53,9 @@ same sense: the seed head has depth and frame zero, so no head carries it.
 **What is named, not proved.**
 
 * `Stage2NoEventWalkDescendBranch` — the descend's own staging: the push's stack
-  discipline and the stream's room.  It is a route fact: the seed head has depth
-  zero, so no head carries it.
+  discipline and the stream's room, with the depth pinned (`sp`, its cell,
+  `sp < 2^32`, `sp ≠ 0`, `sp ≤ 519`).  It is a route fact: the seed head has
+  depth zero, so no head carries it.
 * `Stage2NoEventWalkBracketInner` — the bracket descend's inner element's
   producer.  The tree's class producers are rooted at `NodeBlock5` heads; from
   `NodeBlock15`'s `.loopexit` leaves only the dispatch chains exist, so the
@@ -130,28 +133,76 @@ theorem ifEndAllCells_dispatch (v7 : BitVec 8) (v8 : BitVec 32)
 
 /-! ### The descend's own staging
 
-The push branch's facts, at the depth and frame a head carries.  None is a
-consequence of `Head`: the seed head's depth and frame are zero
-(`loopHeadPhiCellsAt K 0 0 0 0 520`), so `1 ≤ sp` and `1 ≤ fr` are false there, and
-the branch names them by exclusion.  The names are `…PairBranch`'s (the push
-branch is one branch), minus its `comma`, which is the closer's separator and
-not the descend's: at a descend head the entry at `k + 2` is the inner element's
-byte, not necessarily a comma. -/
+The push branch's facts, at the depth a head carries.  None is a consequence of
+`Head`: the seed head's depth is zero (`loopHeadPhiCellsAt K 0 0 0 0 520`), so
+`1 ≤ sp` is false there, and the branch names the depth by exclusion.
 
-/-- **The descend arm's staging**: the push's stack discipline, the frame, and the
-next entry's room. -/
+**The depth is pinned, not quantified.**  The cell is `ofNat 32` of a `Nat`, and
+`ofNat 32` names one word with infinitely many representatives: `sp + 2^32` has
+the same cell.  A field of the form `∀ sp, cell = ofNat 32 sp → sp ≤ 519` is
+therefore refutable at that representative, and a predicate quantified that way
+is uninhabited at every state with a depth cell.  The predicate carries one
+witness instead — its cell, its width and its two bounds — as an existential
+field, because a `Prop` structure cannot project a `Nat` (that would make it a
+`Type`, and this predicate occurs under `¬` in the instance's premises).  The
+compatibility lemmas below recover the old fields at any representative the
+caller's own cell equation names. -/
+
+/-- **The descend arm's staging**: the pinned depth and the next entry's room. -/
 structure Stage2NoEventWalkDescendBranch (K : Stage2NoEventWalkCarry) (k : Nat)
     (s : State) : Prop where
-  /-- The push's stack guard: a non-zero depth (`if.end45.peel`'s test). -/
-  spNe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
-    some (.int 32 (BitVec.ofNat 32 sp)) → sp ≠ 0
-  /-- The push's room (`%exitcond.peel`): the route continues below 519 bytes. -/
-  spLe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
-    some (.int 32 (BitVec.ofNat 32 sp)) → sp ≤ 519
+  /-- The depth word the state carries, its cell, and the push's bounds. -/
+  spH : ∃ sp : Nat,
+    lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp)) ∧
+      sp < 2 ^ 32 ∧ sp ≠ 0 ∧ sp ≤ 519
   /-- The next head's room: the descend reads two entries past `k` and the
   cycle then needs the head at `k + 4`'s neighbourhood, so the stream must run at
   least to `k + 3`. -/
   live : k + 3 < K.nep
+
+/-- **The pinned depth at any representative**: a second cell equation names a
+`Nat` congruent to the pinned witness, which travels with its bounds. -/
+theorem Stage2NoEventWalkDescendBranch.sp_mod {K : Stage2NoEventWalkCarry}
+    {k : Nat} {s : State} (h : Stage2NoEventWalkDescendBranch K k s) {sp' : Nat}
+    (h' : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp'))) :
+    ∃ sp : Nat, sp' % 2 ^ 32 = sp ∧ sp < 2 ^ 32 ∧ sp ≠ 0 ∧ sp ≤ 519 := by
+  obtain ⟨sp, hsp, hlt, hne, hle⟩ := h.spH
+  refine ⟨sp, ?_, hlt, hne, hle⟩
+  have heq : BitVec.ofNat 32 sp' = BitVec.ofNat 32 sp := by
+    have hh := Option.some.inj (h'.symm.trans hsp)
+    simpa using hh
+  have := congrArg BitVec.toNat heq
+  rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlt] at this
+  exact this
+
+/-- **The pinned depth's room at any representative.** -/
+theorem Stage2NoEventWalkDescendBranch.sp_mod_le {K : Stage2NoEventWalkCarry}
+    {k : Nat} {s : State} (h : Stage2NoEventWalkDescendBranch K k s) {sp' : Nat}
+    (h' : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp'))) :
+    sp' % 2 ^ 32 ≤ 519 := by
+  obtain ⟨sp, hmod, -, -, hle⟩ := h.sp_mod h'
+  rw [hmod]
+  exact hle
+
+/-- **The pinned depth's non-zero guard at any representative.** -/
+theorem Stage2NoEventWalkDescendBranch.sp_ne {K : Stage2NoEventWalkCarry}
+    {k : Nat} {s : State} (h : Stage2NoEventWalkDescendBranch K k s) {sp' : Nat}
+    (h' : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp'))) :
+    sp' ≠ 0 := by
+  obtain ⟨sp, hmod, -, hne, -⟩ := h.sp_mod h'
+  intro h0
+  rw [h0, Nat.zero_mod] at hmod
+  exact hne hmod.symm
+
+/-- **The pinned depth's room at a bounded representative.**  A `Nat` below
+`2^32` is its own residue, so this is the form every caller with a
+`spPhiBounded` witness uses. -/
+theorem Stage2NoEventWalkDescendBranch.sp_le {K : Stage2NoEventWalkCarry}
+    {k : Nat} {s : State} (h : Stage2NoEventWalkDescendBranch K k s) {sp' : Nat}
+    (h' : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp')))
+    (hlt : sp' < 2 ^ 32) : sp' ≤ 519 := by
+  have hmod := h.sp_mod_le h'
+  rwa [Nat.mod_eq_of_lt hlt] at hmod
 
 /-! ### The post-push reads
 
@@ -282,8 +333,8 @@ theorem stage2NoEventWalkBracketDescendStep {calls : Calls}
   classical
   obtain ⟨lane, byte, hent, hbs, -, -, hb⟩ := hclass
   obtain ⟨sp, fr, hspH, hfrH, h1H, hspLt, -⟩ := h.spPhiBounded
-  have hspPos : 1 ≤ sp := by have := hbranch.spNe sp hspH; omega
-  have hspLe : sp ≤ 519 := hbranch.spLe sp hspH
+  have hspPos : 1 ≤ sp := by have := hbranch.sp_ne hspH; omega
+  have hspLe : sp ≤ 519 := hbranch.sp_le hspH hspLt
   have h3 : lookupName s.env "%3" = some (.int 8 (BitVec.ofNat 8 91)) :=
     h.bracketCell hent hbs hb
   let S := stage2NoEventWalkAt
@@ -790,6 +841,11 @@ def stage2NoEventWalkBraceDescendRow_of_refusal {calls : Calls}
 
 /-! ### Axiom footprints -/
 
+#print axioms Stage2NoEventWalkDescendBranch
+#print axioms Stage2NoEventWalkDescendBranch.sp_mod
+#print axioms Stage2NoEventWalkDescendBranch.sp_mod_le
+#print axioms Stage2NoEventWalkDescendBranch.sp_ne
+#print axioms Stage2NoEventWalkDescendBranch.sp_le
 #print axioms ifEndAllCells_dispatch
 #print axioms stage2NoEventWalkBracketDescendReads
 #print axioms stage2NoEventWalkBracketDescendStep

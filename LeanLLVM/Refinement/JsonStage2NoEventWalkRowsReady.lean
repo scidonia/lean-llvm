@@ -264,19 +264,22 @@ route — no term in this tree produces a row on the `if.end` branch — so the
 producers below take it as a byte-restricted route premise. -/
 
 /-- **The pair routes' shared branch facts.**  Both container routes push one
-frame byte and pop it back; the facts here are the push branch's. -/
+frame byte and pop it back; the facts here are the push branch's.
+
+The depth is pinned.  The cell is `ofNat 32` of a `Nat`, and `ofNat 32` names one
+word with infinitely many representatives (`sp + 2^32` has the same cell), so
+`∀ sp, cell = ofNat 32 sp → sp ≤ 519` is refutable at that representative; the
+predicate carries one witness with its cell, its width and its two bounds, as an
+existential field (a `Prop` structure cannot project a `Nat` — that would make it
+a `Type`, and this predicate occurs under `¬` in the instance's premises).  The
+frame's `fr ≠ 0` needs no pin: it is a negative predicate, and a representative
+that is `0` never satisfies the cell equation when the word is non-zero. -/
 structure Stage2NoEventWalkPairBranch (K : Stage2NoEventWalkCarry) (k : Nat)
     (s : State) : Prop where
-  /-- The push's stack guard: a non-zero depth.  At `sp = 0` the push at
-  `if.then47.peel` (bracket) or `if.then20` (brace) is bypassed, so this row's
-  stack staging is false at that head; the terminal lane is reached later, at
-  `after_value`'s `%cmp355 = icmp eq %sp.4, 0`. -/
-  spNe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
-    some (.int 32 (BitVec.ofNat 32 sp)) → sp ≠ 0
-  /-- The push's stack room (`%exitcond.peel`'s bracket test, `%cmp10`'s brace
-  test): the route continues only below the stack's 520 bytes. -/
-  spLe : ∀ sp, lookupName s.env "%sp.0.ph1403" =
-    some (.int 32 (BitVec.ofNat 32 sp)) → sp ≤ 519
+  /-- The depth word the state carries, its cell, and the push's bounds. -/
+  spH : ∃ sp : Nat,
+    lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp)) ∧
+      sp < 2 ^ 32 ∧ sp ≠ 0 ∧ sp ≤ 519
   /-- The frame is non-zero on the pair branch, the frame-zero head being the
   depth-zero terminal lane's.  The route pushes `fr` and pops it back; the
   committed row also takes `1 ≤ fr`, which is this predicate's `Nat` form
@@ -287,6 +290,47 @@ structure Stage2NoEventWalkPairBranch (K : Stage2NoEventWalkCarry) (k : Nat)
   comma : ∀ q, K.ent[k + 2]? = some q → K.bs.getD q 0 = 44
   /-- The next head exists. -/
   live : k + 3 < K.nep
+
+/-- **The pinned depth at any representative.** -/
+theorem Stage2NoEventWalkPairBranch.sp_mod {K : Stage2NoEventWalkCarry}
+    {k : Nat} {s : State} (h : Stage2NoEventWalkPairBranch K k s) {sp' : Nat}
+    (h' : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp'))) :
+    ∃ sp : Nat, sp' % 2 ^ 32 = sp ∧ sp < 2 ^ 32 ∧ sp ≠ 0 ∧ sp ≤ 519 := by
+  obtain ⟨sp, hsp, hlt, hne, hle⟩ := h.spH
+  refine ⟨sp, ?_, hlt, hne, hle⟩
+  have heq : BitVec.ofNat 32 sp' = BitVec.ofNat 32 sp := by
+    have hh := Option.some.inj (h'.symm.trans hsp)
+    simpa using hh
+  have := congrArg BitVec.toNat heq
+  rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlt] at this
+  exact this
+
+/-- **The pinned depth's room at any representative.** -/
+theorem Stage2NoEventWalkPairBranch.sp_mod_le {K : Stage2NoEventWalkCarry}
+    {k : Nat} {s : State} (h : Stage2NoEventWalkPairBranch K k s) {sp' : Nat}
+    (h' : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp'))) :
+    sp' % 2 ^ 32 ≤ 519 := by
+  obtain ⟨sp, hmod, -, -, hle⟩ := h.sp_mod h'
+  rw [hmod]
+  exact hle
+
+/-- **The pinned depth's non-zero guard at any representative.** -/
+theorem Stage2NoEventWalkPairBranch.sp_ne {K : Stage2NoEventWalkCarry}
+    {k : Nat} {s : State} (h : Stage2NoEventWalkPairBranch K k s) {sp' : Nat}
+    (h' : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp'))) :
+    sp' ≠ 0 := by
+  obtain ⟨sp, hmod, -, hne, -⟩ := h.sp_mod h'
+  intro h0
+  rw [h0, Nat.zero_mod] at hmod
+  exact hne hmod.symm
+
+/-- **The pinned depth's room at a bounded representative.** -/
+theorem Stage2NoEventWalkPairBranch.sp_le {K : Stage2NoEventWalkCarry}
+    {k : Nat} {s : State} (h : Stage2NoEventWalkPairBranch K k s) {sp' : Nat}
+    (h' : lookupName s.env "%sp.0.ph1403" = some (.int 32 (BitVec.ofNat 32 sp')))
+    (hlt : sp' < 2 ^ 32) : sp' ≤ 519 := by
+  have hmod := h.sp_mod_le h'
+  rwa [Nat.mod_eq_of_lt hlt] at hmod
 
 /-- **The closer arm's byte, for the `[]` pair.**  The entry after the opener is
 the closer `]`: `if.end327.peel`'s `%cmp332.peel` test. -/
@@ -332,8 +376,8 @@ noncomputable def stage2NoEventWalkBracketRow_of_head {calls : Calls} {mem : Mem
   have hb1 : nextByte.toNat = 93 := hclose next nextByte hk1 hbs1
   -- the head's stack cells and their widths
   obtain ⟨sp, fr, hspH, hfrH, h1H, hspLt, hfrLt⟩ := h.spPhiBounded
-  have hspPos : 1 ≤ sp := by have := hg.spNe sp hspH; omega
-  have hspLe : sp ≤ 519 := hg.spLe sp hspH
+  have hspPos : 1 ≤ sp := by have := hg.sp_ne hspH; omega
+  have hspLe : sp ≤ 519 := hg.sp_le hspH hspLt
   have hfrPos : 1 ≤ fr := by have := hg.frNe fr hfrH; omega
   -- the push's and the pop's one address
   have hpush : bracketPushAddr K (BitVec.ofNat 64 sp) = K.stk + (sp - 1) :=
@@ -448,8 +492,8 @@ noncomputable def stage2NoEventWalkBraceRow_of_head {calls : Calls} {mem : Mem} 
   have hnextLt : next < K.n := h.inv.inside next (List.mem_of_getElem? hk1)
   have hb1 : nextByte.toNat = 125 := hclose next nextByte hk1 hbs1
   obtain ⟨sp, fr, hspH, hfrH, -, hspLt, hfrLt⟩ := h.spPhiBounded
-  have hspPos : 1 ≤ sp := by have := hg.spNe sp hspH; omega
-  have hspLe : sp ≤ 519 := hg.spLe sp hspH
+  have hspPos : 1 ≤ sp := by have := hg.sp_ne hspH; omega
+  have hspLe : sp ≤ 519 := hg.sp_le hspH hspLt
   have hfrPos : 1 ≤ fr := by have := hg.frNe fr hfrH; omega
   have hpush : bracePushAddr K (BitVec.ofNat 32 sp) = K.stk + (sp - 1) :=
     stage2NoEventWalkBracePushAddr_eq K hspPos hspLt
@@ -665,6 +709,11 @@ noncomputable def stage2NoEventWalkBraceReady_of_routes {calls : Calls} {mem : M
 
 /-! ### Axiom footprints -/
 
+#print axioms Stage2NoEventWalkPairBranch
+#print axioms Stage2NoEventWalkPairBranch.sp_mod
+#print axioms Stage2NoEventWalkPairBranch.sp_mod_le
+#print axioms Stage2NoEventWalkPairBranch.sp_ne
+#print axioms Stage2NoEventWalkPairBranch.sp_le
 #print axioms Stage2NoEventWalkHead.spPhiBounded
 #print axioms Stage2NoEventWalkHead.closerEntry
 #print axioms stage2NoEventWalkBracketRow_of_head

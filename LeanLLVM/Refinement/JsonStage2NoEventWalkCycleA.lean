@@ -1317,11 +1317,17 @@ comma) and the entry at the next index (the head's lane); both are the caller's
 staging, kept by the run's frame, and the second one's byte is the head's `%3`.
 -/
 
-/-- **The cycle, from the class lane's endpoint.** -/
-theorem stage2NoEventWalkCycle_of_afterValue {calls : Calls} {mem : Mem}
+/-- **The cycle, from the class lane's endpoint, with the target head's depth
+word.**  The head's `phi` layer binds `%sp.0.ph1403` at the endpoint's own `sp`
+(the backedge's `%sp.0.ph.be` is the endpoint's `%sp.4`), so the produced head's
+depth cell is the endpoint's, not merely some 32-bit word.  `Head` alone does not
+tie the two: its layer existential gives *a* depth word. -/
+theorem stage2NoEventWalkCycle_of_afterValue_sp {calls : Calls} {mem : Mem}
     {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
     (h : Stage2NoEventWalkCycleSrc calls mem K k s) :
-    ∃ (s' : State) (p : Nat), Stage2NoEventWalkCycle calls mem K k s 1 s' p := by
+    ∃ (s' : State) (p : Nat), Stage2NoEventWalkCycle calls mem K k s 1 s' p ∧
+      lookupName s'.env "%sp.0.ph1403" =
+        some (.int 32 (BitVec.ofNat 32 h.sp)) := by
   obtain ⟨inv, hpc, fr, hfrLt, hfrNe, sp, hspLt, hspNe, hkAddr, hklt, hcount, hphi,
     hbase, hbpos, htrace, hcomma⟩ := h
   obtain ⟨pEdge, hpre, hsel⟩ := hphi
@@ -1551,7 +1557,20 @@ theorem stage2NoEventWalkCycle_of_afterValue {calls : Calls} {mem : Mem}
             (K.bs.getD laneNX 0))
           (names := loopHeadReadCellNames) rfl (by decide)
         exact h8 }
-  exact ⟨r8, 8, ⟨⟨⟨hrun, l8.inv'⟩, hhead, htrace⟩, hcred⟩⟩
+  refine ⟨r8, 8, ⟨⟨⟨hrun, l8.inv'⟩, hhead, htrace⟩, hcred⟩, ?_⟩
+  show lookupName r8.env "%sp.0.ph1403" =
+    some (.int 32 (BitVec.ofNat 32 sp))
+  simp only [r8, stage2NoEventWalkNext]
+  cycle_lk
+
+/-- **The cycle, from the class lane's endpoint.**  The priced head segment
+from the endpoint at `k` to the next head at `k + 1`, at the endpoint's carry. -/
+theorem stage2NoEventWalkCycle_of_afterValue {calls : Calls} {mem : Mem}
+    {K : Stage2NoEventWalkCarry} {k : Nat} {s : State}
+    (h : Stage2NoEventWalkCycleSrc calls mem K k s) :
+    ∃ (s' : State) (p : Nat), Stage2NoEventWalkCycle calls mem K k s 1 s' p := by
+  obtain ⟨s', p, hc, -⟩ := stage2NoEventWalkCycle_of_afterValue_sp h
+  exact ⟨s', p, hc⟩
 
 /-! ### Axiom footprints -/
 
@@ -1574,5 +1593,6 @@ theorem stage2NoEventWalkCycle_of_afterValue {calls : Calls} {mem : Mem}
 #print axioms stage2NoEventWalkPotential_add
 #print axioms stage2NoEventCycleBase
 #print axioms stage2NoEventWalkCycle_of_afterValue
+#print axioms stage2NoEventWalkCycle_of_afterValue_sp
 
 end LeanLLVM.Refinement
