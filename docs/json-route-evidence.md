@@ -1100,3 +1100,322 @@ boundary, the record supply, the counts classification) or assumed as stated
 above (compiler correctness for the C-to-IR and IR-to-object steps, and the
 native admission's agreement).
 
+
+## The number spelling, the read-back split and the rows from the start, observed at `34dcec1`
+
+The five commits between `f24a048` and `34dcec1` do not touch the emitted C.  They
+change the Lean side the deployment argument stands on: the number arm now names
+the document's own lexeme and derives its acceptance from the reader; the two
+counters the acceptance carries are split into a length that is a theorem and a
+term sum that is not; the rows bundle, its head and its trace are produced from
+the record's own start state; and the depth-zero case those producers cannot
+reach is proved empty rather than described.  This section records what the
+tree's instruments say at those bytes, and where the boundary between theorem and
+observation still lies.
+
+The frozen code is `34dcec1` (`34dcec1e6cc778492d0b764e2339d8151afd6423`), and
+the freeze digest is
+`sha256 (git diff f24a048 34dcec1 --binary -- LeanLLVM LeanLLVMTest LeanLLVM.lean)`
+= `78f7bcd59f8ffea385f10a06d9ac65a2f2f554017cde3b629d185ad066a2f261`, over
+committed bytes only.  The range is nine files, 2,295 insertions and 53
+deletions: the three new modules (`JsonStage2NumberPayload`, `JsonStage2NoEventWalkReadbackIdentity`,
+`JsonStage2NoEventWalkRowsAssembly`), the restatements in `JsonStage2Body`, two
+row modules, `LeanLLVM.lean`, `LeanLLVMTest/Refinement.lean` and
+`docs/contract.md`.  The digest's cone is the eight files inside its three
+paths.
+
+**What the freeze does not touch.**  `git diff f24a048 34dcec1 -- kernel probes
+tests` prints nothing: every kernel source, every harness script, every corpus,
+manifest, fixture and frozen row file is byte-identical at both revisions.
+Consequently the emitted-C cone `probes/json/route/build.sh` links — the six
+certified kernel units, the two additive no-event units, the depth-counter
+fixture, the policy scan and the 69 Lean modules whose C the link consumes — is
+the same text at `f24a048` and at `34dcec1`, and the instruments below are the
+same scripts.  Their *inputs under the Lean library* moved, which is why the rows
+of the earlier section, which belong to `ea641ebc…`, are not reused here: every
+number below was produced on the frozen bytes.
+
+**The bytes observed.**  The tree was shipped as `git archive 34dcec1`
+(archive sha256 `f6a6f26b95ca0cc0b80d313ba312ac5e655440956fcc720df5e724752d1f8a74`),
+extracted into an empty directory, and registered with `git init -q && git add
+-A`.  The commit that produced has no relation to the project's history, but its
+tree does: `git rev-parse HEAD^{tree}` is
+`6438609d070ff6cfb324960f40a66281b3a7ade8`, the value of `34dcec1^{tree}`.  All
+commands ran on a Compute Engine instance (`lp-c4-01a21253`, `europe-west1-b`, 8
+vCPU, 62 GB, Lean and clang from the flake) from that tree; no command ran on the
+development machine, and nothing was copied back except the outputs quoted here.
+Disk was the binding resource on that instance.  It completed the default
+target before being reclaimed: exit 0 at 2,524 jobs on the archive above, and its
+tree hash equalled `34dcec1^{tree}`.  Its route and check runs were lost with
+its disk.  The instance the remaining rows were measured on
+(`evidence-c5-01a21253`, same zone and shape, 100 GB) received the same archive
+byte for byte — `sha256sum` of the shipped tar is the same
+`f6a6f26b95ca0cc0b80d313ba312ac5e655440956fcc720df5e724752d1f8a74` — and
+produced the same tree hash.  So the default-target row below has two independent
+observations on one set of bytes; every other row is from the second instance.
+
+**A prerequisite the archive does not carry.**  `tests/json-noevent/check.sh`
+guards its protected-artefact comparison with
+`git cat-file -e 66159e24b93d7f78139d08a8d1794f32ae12e777^{commit}`, so a tree
+made only by extracting the archive and running `git init -q && git add -A` exits
+3 with `SETUP: the pinned base 66159e24b93d7f78139d08a8d1794f32ae12e777 is not in
+this repository` — measured on a second copy of the same tree, with the route
+binary and driver pointed at by `ROUTE`/`NOEVENT_DRIVER`.  The base commit's
+objects were fetched into the shipped tree's repository from a bare repository
+holding that commit; no working file changed (`git status --short` empty), and
+the comparison then ran against the base revision's blobs rather than being
+skipped.  The no-event row is therefore over the shipped bytes plus the history
+the check requires, not over the archive alone.
+
+The route binary's digest is an identifier, not a reproducibility claim:
+`strings` on it shows the absolute build root on its library path, so the same
+sources at a different checkout path yield a different hash.  It is recorded for
+this artefact and is not compared with the earlier section's `56291191…`.
+
+### The four proved items, and what each changes
+
+**The number path reads the document's spelling, and its acceptance is derived.**
+The walk's number arm had asked the document's slice to be `d.lexeme`.  `Decimal`
+renders the exponent marker as `0x65` and the sign as `0x2D` or nothing, so no
+well-formed decimal spells `1E5`, and the arm's premise had no witness at a
+document the scanner accepts: `lexeme_no_upperE`, `lexeme_no_plus`,
+`lexeme_ne_eDoc`, and the former premise's emptiness at `1E5` as
+`numberSlice_ne_eDoc`.  The arm now quantifies over the document's own `lex` with
+the reader's witness, and the payload follows from the reader at that spelling:
+`numFastEmitted_of_reader`, `numberPayload_of_reader`,
+`numberPayload_spelling_invariant`, `stage2NumFast_writes_strtodSpec_of_reader`,
+with `eDoc_payload` and `eDoc_numberArm_witness` inhabiting the restated premise
+at `1E5`.  Separately, the emitted index scan's acceptance had been a hypothesis
+at six sites; `numLexScan_accepts_iff_numLexB` identifies it with the tree's
+structural `numLexB`, `LeanLLVM.JSON.numLexB_iff` carries that to `RfcNumber`, and
+`numLexScan_accepts_of_reader` composes it with the reader's own tie, so the six
+`hscan` binders are gone and the acceptance is derived where it is used.
+`docs/contract.md` is restated to match: the lexical agreement is now proved, and
+what remains the scanner's obligation is the token's *extent*.
+
+What this changes for the deployment half is narrow and worth stating exactly:
+the number arm no longer carries either a false premise or an undischarged
+acceptance.  It does not connect the C function to `numLexScan`.  `numLexScan` is
+a model of the emitted control flow written in the same module as the proofs; it
+has no `@[implemented_by]` annotation and no C reads it.  The theorem is about the
+model.
+
+**The read-back splits at what the walk carries.**  `Stage2NoEventWalkCountsTie`
+states the acceptance's two equations.  `consumeRecords_length_eq_nonSeparators`
+makes the first a theorem of the relation and the document's non-separator count;
+`stage2NoEventWalkCountsTie_step` and `…_steps` compose the pair along the trace's
+own step deltas, so the walk's accounting produces the pair at the event list it
+accumulates.  The second equation does not survive: at the records of `"\/"` with
+a two-byte arena there are two `Stage2Records` derivations of equal length and
+term sums 6 and 7 (`stage2NoEventRecords_terms_two_derivations`,
+`stage2NoEventWalkRecordsSupply_terms_two_derivations`), and no function of the
+document, the arena and the tokens returns the read-back's term sum
+(`stage2NoEventReadback_terms_not_functionable`,
+`stage2NoEventWalkCountsTie_readback_not_determined`).  At an acceptance the pair
+is the boundary's `consume` field at the reference's read-back
+(`stage2NoEventWalkReferenceAccept_countsTie`).
+
+What this changes: the deployment no longer supplies the length equation — it is
+derived — and the term-sum equation is no longer an unexplained carrier but a
+proved non-functionability.  The consumer still supplies the chosen records and
+the read-back identity.
+
+**The rows are assembled from the state the program reaches.**
+`Stage2NoEventWalkRows` was a caller-supplied function-per-head.  Now
+`stage2NoEventWalkRows_of_start` takes the record's precondition and the four
+staged objects and returns the carry (`K.tok = 0`, `K.terms = 0`, `K.arena = []`),
+the entry-state invariant, the two base reads (`readLanes32` on the entry stream,
+`readBytes` on the document), and a bundle `R` that *is*
+`stage2NoEventWalkRowsAtStart`; on the nonempty-stream branch it also returns the
+seed head `NodeBlock5`, its run, its zero depth and frame, and the fact that
+`R.row` there is `stage2NoEventWalkSeedRow` at `Stage2NoEventWalkTrace.of_zeros`.
+`stage2NoEventWalkReferenceRun_of_start` hands that bundle to
+`stage2NoEventWalkReferenceRun_spec`.  So the bundle, the head and the trace are
+produced; the consumer supplies the four class producers
+(`…StringReady`, `…BracketReady`, `…BraceReady`, `…ValueReady`) — each with its
+route staging and terminal exit — and the terminal exits' carried facts.
+
+**The depth-zero case is proved empty.**  The seed head's `phi` layer is
+`%sp.0.ph1403 = 0` and `%frame.0.ph1402 = 0`
+(`stage2NoEventWalkSeedHead_sp`, `…_fr`).  Every container producer needs a
+positive depth: the pair rows take `1 ≤ sp`, `sp < 2 ^ 32`, `1 ≤ fr`, `fr < 2 ^ 8`,
+and the descend branches carry `sp ≠ 0`.  `stage2NoEventWalkSeedHead_noPosDepth`,
+`…_noPosFrame`, `…_noDescend`, `…_noPair`, `…_noPairWords` and
+`…_noContainer` refute each at zero.  The consequence is not a proof gap papered
+over: at the start state the rows function's container coverage excludes a
+document whose first entry opens `[` or `{` and whose next entry is not the
+closer.  The depth-zero pair cases (`[]`, `{}`) are the `…ZeroRow` reductions and
+do have terminal producers.
+
+### The claim table
+
+Every row was re-run on the frozen bytes from the shipped tree.  The digest column
+names the artefact the row is about where the instrument produces one, otherwise
+the instrument's own bytes.  The default target does not build the five JSON
+executables the stage-1 checks drive, so the table's stage-1 rows were measured
+after `nix develop -c bash probes/install/lake-locked.sh build leanllvm-json
+leanllvm-json-classify leanllvm-json-s1-masks leanllvm-json-entry
+leanllvm-json-utf8` (exit 0, 2,528 jobs); that build is a prerequisite of those
+rows, not part of the default target's claim.
+
+| Claim | Instrument | Digest | Corpus / arms | What it does not cover |
+|---|---|---|---|---|
+| The default target elaborates, the new pins among it | `nix develop -c bash probes/install/lake-locked.sh build` | 2,524 jobs, exit 0 in 1,246 s (the first observation, on the reclaimed instance, also 2,524 jobs in 1,365 s); freeze `78f7bcd5…` | the whole library and `LeanLLVMTest`; 1,876 `#guard_msgs` blocks, 81 of them new | Nothing about the C; a widened footprint fails here, not a proof of the rows |
+| The route links the six kernel units and the two no-event entries | `nix develop -c bash probes/json/route/build.sh` | binary sha256 `c1541bbb24a6efbe6e40c9fc414758de952bc7f78e86070317831004d25d301d`; adapter `f060411c2737cd8505aedaacf27590a41ad9393d0857c60d0cb673e58922bb4e` | 69 Lean modules' C, 8 C units, `RouteMain.lean` | Not a semantic check: the link's own symbol assertions only |
+| The two no-event entries agree with the certified entry and the fold | `nix develop -c bash tests/json-noevent/check.sh` | 23 `ok` lines, exit 0 in 261 s; manifest sha256 `f5565f83…` | 69 documents (68 stage-2, 69 pipeline), `both`/`list`/`pipeline` arms, 183 frozen event rows, 13 value documents | The relation, the walk proofs; the corpus is a sample |
+| The relation's witness pins and the gap/literal tables | `nix develop -c lake env lean tests/json-noevent.lean` | sha256 `eb82cbf5…`; exit 0, 41 lines in 3 s | null/true witnesses at the empty arena; six gap rows plus a guarded mutant; eleven literal rows plus two mutation controls | The number path, the arm and the new modules: no declaration from them is named |
+| The rows tier's interface and the F1 refusal | `nix develop -c lake env lean tests/stage2-noevent-rows.lean` | sha256 `88c0aae3…`; exit 0, 211 lines in 1 s | 9 `#check`s and 9 axiom pins over `RowsAssemble`/`ContainerB`/`Brace` | `JsonStage2NoEventWalkRowsAssembly`'s start-state theorem and its depth-zero lemmas are not named |
+| The reference runner's renderings agree with the manifest | `nix develop -c bash tests/json/check.sh` | sha256 `9eef09f8…`; exit 0 in 1 s; 1 `ok` line | 130 corpus files and manifest rows; tampered arm | The stage-2 relation and the walk |
+| The classifier fixture, the Lean body and the object agree | `nix develop -c bash tests/json-classify/check.sh` | sha256 `34c69ff0…`; object sha256 `95a38141fe3e9558d744c5762f6f81a6b79437424302dd121fc3662361d94a7f`; exit 0 in 5 s; 6 `ok` lines | 9 manifest rows; 70 corpus windows over 130 files; 71 windows compared with the object; the mixed block | The relation; the object on an unaligned pointer |
+| The mask unit's object and the Lean body agree | `nix develop -c bash tests/json-s1-masks/check.sh` | sha256 `563103ba…`; runner sha256 `7b3d24f42597495882298d6b9aba2cfc97c0f7bd345f58dd9f5fda4aa73b4af4`; exit 3 in 240 s; no `ok` line | the row comparison runs; the check then stops in its defect-mutation step with `SETUP: s1f_lo_tab not found in the kernel source` and `SETUP: the table mutation did not apply` | the rows' correctness: the negative control is unexercised, so a row agreement is unchecked and the run is not evidence for the mask table |
+| The entry unit's three kernels agree row for row | `nix develop -c bash tests/json-entry/check.sh` | sha256 `0b7835ff…`; object sha256 `f712e98adb996c4501560cdb90dd811376994b880144daedde1b56dbf4da4e91`; exit 0 in 1,414 s; 8 `ok` lines | 197,595 rows from 6 corpus streams and 65,859 arm streams; 2,091/65,544/65,545 rows moved by the three detectors | The stage-2 walk; the relation |
+| The UTF-8 stage's object, body and behaviour matrix agree | `nix develop -c bash tests/json-utf8/check.sh` | sha256 `99e6ed87…`; exit 0 in 29 s; 13 `ok` lines | 73,610 rows per gate value (27 corpus + 73,583 arm); 144 rows moved by the defect object | The stage-2 walk; the relation; the timing arm |
+| The relation's and the new modules' footprints are the pinned ones | the 81 new `#guard_msgs` blocks in `LeanLLVMTest/Refinement.lean`, checked by the build | 1,876 blocks, 81 new; exit 0 at the build above | 70 declarations in three modules plus the earlier 11; `JsonStage2Spec`'s nine relation pins unchanged | A footprint pin is not a statement about the rows' content |
+
+
+### Commands, exits and output tails
+
+All commands ran from the tree root; the last line of each output is quoted, with
+`…` for elision.
+
+```
+nix develop -c bash probes/install/lake-locked.sh build            exit 0  Build completed successfully (2524 jobs).
+nix develop -c bash probes/install/lake-locked.sh build leanllvm-json …  exit 0  Build completed successfully (2528 jobs).
+nix develop -c bash probes/json/route/build.sh                     exit 0  ok: …/probes/json/route/build/leanllvm-json-route
+nix develop -c bash tests/json-noevent/check.sh                    exit 0  ok: the no-event entries agree with the certified routes; the sentinel separates refusals; the census and the byte identity are pinned
+nix develop -c lake env lean tests/json-noevent.lean               exit 0  runFuel calls k JsonStage2NoEventIR.stage2NoEventBody e
+nix develop -c lake env lean tests/stage2-noevent-rows.lean       exit 0  'LeanLLVM.Refinement.stage2NoEventWalkF1_notRows' depends on axioms: [propext, Quot.sound]
+nix develop -c bash tests/json/check.sh                            exit 0  ok: the corpus agrees with the manifest; a tampered expectation is a mismatch
+nix develop -c bash tests/json-classify/check.sh                   exit 0  ok: a tampered expectation is a mismatch
+nix develop -c bash tests/json-s1-masks/check.sh                   exit 3  SETUP: the table mutation did not apply
+nix develop -c bash tests/json-entry/check.sh                      exit 0  ok: a tampered expectation is a mismatch naming its row
+nix develop -c bash tests/json-utf8/check.sh                       exit 0  ok: a tampered expectation is a mismatch naming its row
+```
+
+`probes/install/lake-locked.sh build` without arguments is the default target
+(`leanllvm`, `ITree`, `LeanLLVMTest`); the second line's five names are the
+executables the stage-1 checks drive and are listed in full in the paragraph
+above the table.  Wall times were 1,246 s and 14 s for the two builds, 101 s for the
+route build and 261 s for the no-event check; the Lean files took 3 s and 1 s; the stage-1
+checks took 1 s, 5 s, 240 s, 1,414 s and 29 s in the table's order.
+
+### Which checks' claims rest on the new theorems
+
+Measured by importing them, the answer is less than the change's title suggests,
+and it is worth recording that precisely:
+
+- **The executable routes rest on none of them.**  `tests/json-noevent/check.sh`
+  observes the two C entries and the binary built from them; no C reads a Lean
+  theorem.  Its `--value` arm reaches `StrtodReader.reader` through
+  `canonValue`, and the reader is unchanged by this freeze.
+- **`tests/json-noevent.lean` does not name any new declaration.**  Its subjects
+  are the relation obstruction at `null`/`true`, the gap-recovery rule's six
+  rows and the literal chain's eleven rows; all predate the freeze.  It is re-run
+  here because the umbrella `LeanLLVM` it imports moved underneath it — a
+  regression check, not a dependency.
+- **`tests/stage2-noevent-rows.lean` checks the older interface.**  It imports
+  `JsonStage2NoEventWalkRowsAssemble`, `…RowsContainerB` and `…RowsBrace`, and
+  pins `stage2NoEventWalkRows_of_ready`, `…_of_classes` and the F1 refusal.  It
+  does **not** import `JsonStage2NoEventWalkRowsAssembly`, so
+  `stage2NoEventWalkRows_of_start` and the six depth-zero lemmas are covered only
+  by that module's own `#print axioms` (which the build elaborates) and by the
+  new `#guard_msgs` pins, not by this test file.
+- **None of `json-classify/check.sh`, `json-s1-masks/check.sh`,
+  `json-entry/check.sh` or `json-utf8/check.sh` touches the number path or the
+  arm.**  Grepping each for `noevent`, `stage2`, `num_fast`, `numLex` and
+  `json/route` returns nothing: they are stage-1 routes over the classifier, the
+  mask unit, the entry unit and the UTF-8 gate, and they read none of the
+  restated relation.  They were re-run anyway, because the same `lake build`
+  produces the oleans their Lean bodies are compared against, so a green run is a
+  statement about the touched library as well as about the C.
+- **What does carry the new theorems is the build's pins.**  `LeanLLVMTest/
+  Refinement.lean` gained 81 `#guard_msgs` blocks in the freeze (11 in
+  `168df2e`, 70 in `34dcec1`), pinning 70 declarations across the three new
+  modules and the restatements.  They are the instrument that fails when a
+  footprint widens.  The measurement corrected three docstrings: the
+  accepted-answer lemma carries `Classical.choice`, six declarations carry
+  nothing, and `JsonStage2Body`'s comment claiming `numFastEmitted_refines`
+  inherits `Classical.choice` is wrong — its footprint is `[propext,
+  Quot.sound]`.  The comment is not corrected in the freeze.
+
+### The restatement's executable footprint
+
+The question is whether any executable check now depends on
+`numLexScan_accepts_iff_numLexB`, and whether the `1E5`/`eDoc` witnesses have an
+executable counterpart.  Measured on these bytes:
+
+- **No executable check depends on the theorem.**  `numLexScan` is a plain
+  definition in `JsonStage2Body` with no `@[implemented_by]`; the C function it
+  models is not built from it.  The `#guard`s beside it — the three malformed
+  tokens, the accepted controls, the empty lexeme — evaluate the *model*, and
+  they are the same guards that existed before the theorem; what changed is that
+  the guards' subject now has a proof tying it to `numLexB`.  The theorem's
+  consumers are the six Lean declarations that dropped `hscan`, not a route.
+- **`1E5` has no corpus document.**  `eDoc = [0x31,0x45,0x35]`, and
+  `eDoc_numberArm_witness` inhabits the arm's premises with it at the model.
+  The nearest executable spellings are `tests/json/corpus/num-exp-plus.json`
+  (`1E+3`, accepted by the reference runner) and `tests/json/corpus/
+  num-negexp.json` (`-1.5E-7`), plus `2.5E-3` inside the value arm's
+  `numbers-noncanonical`; none is `1E5`, and none reads the Lean model.  The
+  no-event corpus's exponent document is the refusing `1e`.
+- **The proof that the C scan is the model scan is not in this freeze.**  What is
+  proved is that two Lean definitions agree.  That the emitted `num_fast_el1`
+  loop computes `numLexScan` is the C-to-model step, and it remains assumed the
+  same way the other installed units' refinements are assumed.
+
+### What the green no-event run supports, and what it does not
+
+`tests/json-noevent/check.sh` exits 0 with all 23 `ok` lines.  Its support is
+unchanged from the earlier section and is not restated as new evidence: the two
+no-event actors agree on 68 admitted documents, those readings equal the
+certified event arm's, the manifest's pins hold per document and arm, the
+refusals carry the declared zeros and offsets, the in-run defect objects fire,
+the event arm reproduces all 183 base rows, and the value arm carries the
+reference's values on its 13 documents.  What this freeze adds is that the same
+script, run over the restated library, still does so; what it does not add is a
+row about the relation, the walk, or any document outside the corpus.
+
+The earlier section's owed C-observable run is discharged.  `xxd` is absent from
+the instance's dev shell (`command -v xxd` prints nothing), and the check passes
+because `hex_to_bin` reads the event payloads with `sed`/`printf` instead
+(`3cef886`, "take the event digests without xxd").  The run above therefore does
+not depend on a tool the Lean evidence lane lacked.
+
+### What remains unproved
+
+The north star's equality — the compiled stage-2 call's run equals the reference
+decoder's on the admitted domain — is still not a theorem at any document.  After
+this freeze the gap is these five things:
+
+1. **The compiled entry's words are not connected to the start state.**  The
+   rows, the head and the trace are now produced from `Γ_stage2_noevent.pre` and
+   the four staged objects, but nothing connects the compiled entry's argument
+   registers and memory to that precondition.  The theorem's conclusion is about
+   a `Mem` and an argument list, not about the binary the route runs.
+2. **The container classes have no producer at depth zero.**  The seed head has
+   `sp = fr = 0`; the pair and descend rows need positive depth, and the six
+   lemmas above refute every one of them there.  A document whose first entry
+   opens `[` or `{` and whose next entry is not the closer is therefore outside
+   the tree's row coverage at the start state.  This is a proved *limit*, not a
+   missing case that could be supplied by a stronger premise: no producer of this
+   tree covers it.
+3. **The accept terminal's facts are still carried.**  `Stage2NoEventWalk
+   ReferenceFacts` carries the parse equality, the record trace, the read-back
+   identity and the value equation, and the four class producers' terminal rows
+   supply them.  The length equation is now derived
+   (`consumeRecords_length_eq_nonSeparators`), but the term-sum identity is not,
+   and its non-derivability is proved
+   (`stage2NoEventReadback_terms_not_functionable`), not assumed.
+4. **The number arm's reading stops at the reader's model.**  The conversion is
+   `strtodSpec`'s and the acceptance is `numLexB`'s at the model, but that the C
+   accumulators hold the fields `StrtodReader` returns is still the reader
+   module's stated assumption, and the C scan's equality to `numLexScan` is
+   unproved.
+5. **The scanner's token extent is stated, not proved.**  `docs/contract.md` now
+   says so: a token the stage-1 scanner classifies as a number is RFC 8259 §6's
+   token only if the extent the scanner hands the number path is the grammar's
+   extent; that obligation is not discharged here.
+
+The two standing assumptions are unchanged: the C-to-IR and IR-to-object steps
+for the installed units are compiler correctness, and the native admission's
+agreement with `admission` is a check, not a theorem.
