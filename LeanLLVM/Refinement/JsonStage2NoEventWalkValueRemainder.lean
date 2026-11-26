@@ -28,13 +28,15 @@ kernel `decide` over `Fin 256`, and the three literal tests are `0` by their own
 zero lemmas), the three literal leaves' steps
 landing at `if.else510` from the committed denotations, the head predicate's
 embedding into `Stage2NoEventWalkHeadValueClass`, the route's price
-`23 + 5·(q − lane) ≤ Φ K k`, and the refusal row from the route's tail.  It does
-**not** produce the row: `if.else510`'s own `denoteCode` chain is absent from the
-tree.  `JsonStage2NoEventWalkTerminalA` pins the block
-(`stage2NoEventIfElse510Block_find`) but derives neither its `denoteCode` nor the
-`gapElse` evidence — its header says so ("their evidence is the route's to
-supply") — so `step510` and `evidence` below are the missing premises, not
-consequences of anything committed.
+`23 + 5·(q − lane) ≤ Φ K k`, and the refusal row from the route's tail.
+
+The tail's two data fields are no longer premises: `JsonStage2NoEventWalkIfElse510`
+derives `if.else510`'s eight-instruction `denoteCode`/`step`
+(`stage2NoEventIfElse510_denote`/`_step`) and builds the `gapElse` evidence, and
+`…ValueRemainderTail.ofIfElse510`/`…ValueRemainderRow` instantiate this module's
+row without them.  The structure keeps `step510` and `evidence` as its generic
+data shape; the tail below is stated over that shape, which is what makes the
+instantiation a separate module.
 -/
 import LeanLLVM.Refinement.JsonStage2NoEventWalkRowsValue
 import LeanLLVM.Refinement.JsonStage2NoEventWalkTerminalA
@@ -299,16 +301,11 @@ budget spent.  `%idxprom.lcssa` becomes `%err`'s word.
   (`JsonStage2NoEventWalkDispatchValueArmsB`), `cleanup580`'s returning step
   (`JsonStage2NoEventWalkTerminal`'s `stage2NoEventCleanup_step`), and the refusal
   boundary (`JsonStage2NoEventWalkTerminal`'s `stage2NoEventBoundary_refusal`).
-* `not in this tree`: `if.else510`'s eight-instruction `denoteCode` chain.  The
-  block is pinned as data (`stage2NoEventIfElse510Block_find`) but no `step` binds
-  its five stores, the `od_gap_recover` call, the `%off` load and the `%err`
-  store, so its output
-  environment and memory are not available; and the `gapElse` evidence
-  (`Stage2NoEventWalkRefusalEvidence.gapElse`, `%eoff = %idxprom.lcssa`, the
-  `%off` slot at `K.e + 8` read at the call's memory) has no producer — the
-  terminal module's header says the two gap entries' evidence is the route's to
-  supply.  These two are the `step510` and `evidence` fields of
-  `Stage2NoEventWalkValueRemainderTail`; nothing else of the arm is missing.
+* `in another module`: `if.else510`'s eight-instruction `denoteCode` chain and
+  the `gapElse` evidence — `JsonStage2NoEventWalkIfElse510`
+  (`stage2NoEventIfElse510_denote`/`_step`, the `.gapElse` construction) — which
+  instantiate this module's `step510` and `evidence` fields.  Nothing of the arm
+  is missing from the tree.
 
 The four arm wrappers in `JsonStage2NoEventWalkRowsValue` also take the
 separator loop's whitespace run (`hws : ∀ i, q ≤ i → i < cond → …`) as a
@@ -324,8 +321,9 @@ The route is `NodeBlock5`'s value leaf, `scalar`, `cond.end`/`land.lhs.true`, th
 merge, `if.else495`, the literal leaves, `if.else510`, `cleanup580`.  The first
 segments are committed (`JsonStage2NoEventWalkValue`, and the leaves above), and
 so is `cleanup580`'s (`JsonStage2NoEventWalkTerminal`'s `stage2NoEventCleanup_step`);
-only `if.else510`'s denotation is absent, so the tail is stated as data: the run to
-`if.else510`'s entry, the block's step, `cleanup580`'s return, and the `gapElse`
+`if.else510`'s denotation and the `gapElse` evidence are supplied by
+`JsonStage2NoEventWalkIfElse510`, and the tail is stated over them as data: the
+run to `if.else510`'s entry, the block's step, `cleanup580`'s return, and the
 evidence.  The row is then the committed refusal seam
 (`stage2NoEventRefuse_exit`) under `Stage2NoEventWalkRow.terminal`. -/
 
@@ -353,13 +351,15 @@ structure Stage2NoEventWalkValueRemainderTail (gap : Calls) (mem : Mem) (F : Nat
     runFuel (stage2NoEventCalls gap) n stage2NoEventBody sE
   /-- The route plus the block's step is inside the potential. -/
   cost : j + 1 ≤ stage2NoEventWalkPotential K k + F
-  /-- **Not in this tree**: `if.else510`'s eight-instruction step. -/
+  /-- `if.else510`'s eight-instruction step, supplied by
+  `JsonStage2NoEventWalkIfElse510`'s `stage2NoEventIfElse510_step`. -/
   step510 : step (stage2NoEventCalls gap) stage2NoEventBody sE = .jump sT
   /-- `cleanup580`'s returning step, verdict zero. -/
   clean : step (stage2NoEventCalls gap) stage2NoEventBody sT =
     .ret (some (.int 64 0)) sR
   memR : sR.mem = m
-  /-- **Not in this tree**: the `gapElse` evidence at `cleanup580`'s entry. -/
+  /-- The `gapElse` evidence at `cleanup580`'s entry, supplied by
+  `JsonStage2NoEventWalkIfElse510`'s construction. -/
   evidence : Stage2NoEventWalkRefusalEvidence K sT
   report : Stage2NoEventRun K.a12 mem m
   trace : Stage2NoEventWalkTrace K

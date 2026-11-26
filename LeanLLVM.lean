@@ -352,3 +352,6 @@ import LeanLLVM.Refinement.JsonStage2NoEventWalkInstance
 import LeanLLVM.Refinement.JsonStage2NoEventWalkBraceCloseEntry
 import LeanLLVM.Refinement.JsonStage2NoEventWalkBracketParentCloser
 import LeanLLVM.Refinement.JsonStage2NoEventWalkDescendClasses
+import LeanLLVM.Refinement.JsonStage2NoEventWalkEntryRooted
+import LeanLLVM.Refinement.JsonStage2NoEventWalkTrailingDeep
+import LeanLLVM.Refinement.JsonStage2NoEventWalkIfElse510
