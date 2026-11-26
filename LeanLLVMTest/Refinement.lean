@@ -11663,3 +11663,320 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 /-- info: 'LeanLLVM.Refinement.Stage2NoEventAdmitted.referenceRecords' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.Stage2NoEventAdmitted.referenceRecords
+
+/-! ### The number payload at the document's lexeme
+
+`JsonStage2NumberPayload`'s footprint.  The payload lemmas and the obstruction sit
+at `[propext, Quot.sound]`; the emitted helper's accepted answer composes the three
+tier models and so carries `Classical.choice` beside them; the value-shape lemmas
+(`body_*`, `lexeme_eq`, `eDocMem_reads`) are definitional and carry nothing.
+`eDoc` is the concrete document the obstruction and the restated arm meet at.
+-/
+
+/-- info: 'LeanLLVM.Refinement.numFastEmitted_reader_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.numFastEmitted_reader_eq
+
+/-- info: 'LeanLLVM.Refinement.numFastEmitted_of_reader' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.numFastEmitted_of_reader
+
+/-- info: 'LeanLLVM.Refinement.numberPayload_of_reader' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.numberPayload_of_reader
+
+/-- info: 'LeanLLVM.Refinement.numberPayload_spelling_invariant' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.numberPayload_spelling_invariant
+
+/-- info: 'LeanLLVM.Refinement.stage2NumFast_writes_strtodSpec_of_reader' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NumFast_writes_strtodSpec_of_reader
+
+/-- info: 'LeanLLVM.Refinement.mem_cons_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.mem_cons_iff
+
+/-- info: 'LeanLLVM.Refinement.intPart_all' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.intPart_all
+
+/-- info: 'LeanLLVM.Refinement.body_none_none' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.body_none_none
+
+/-- info: 'LeanLLVM.Refinement.body_some_none' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.body_some_none
+
+/-- info: 'LeanLLVM.Refinement.body_none_some' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.body_none_some
+
+/-- info: 'LeanLLVM.Refinement.body_some_some' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.body_some_some
+
+/-- info: 'LeanLLVM.Refinement.lexeme_eq' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.lexeme_eq
+
+/-- info: 'LeanLLVM.Refinement.body_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.body_mem
+
+/-- info: 'LeanLLVM.Refinement.lexeme_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.lexeme_mem
+
+/-- info: 'LeanLLVM.Refinement.lexeme_no_upperE' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.lexeme_no_upperE
+
+/-- info: 'LeanLLVM.Refinement.lexeme_no_plus' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.lexeme_no_plus
+
+/-- info: 'LeanLLVM.Refinement.lexeme_ne_eDoc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.lexeme_ne_eDoc
+
+/-- info: 'LeanLLVM.Refinement.numberSlice_ne_eDoc' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.numberSlice_ne_eDoc
+
+/-- info: 'LeanLLVM.Refinement.eDecimal_wf' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eDecimal_wf
+
+/-- info: 'LeanLLVM.Refinement.eDoc_payload' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eDoc_payload
+
+/-- info: 'LeanLLVM.Refinement.eDocMem_reads' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eDocMem_reads
+
+/-- info: 'LeanLLVM.Refinement.eDoc_numberArm_witness' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.eDoc_numberArm_witness
+
+/-! ### The walk's counters against the reference's read-back
+
+`JsonStage2NoEventWalkReadbackIdentity`'s footprint.  The length and composition
+halves are `[propext, Quot.sound]`; the step equations and the zero/one
+consumption equations are `[propext]` alone; and the two width lemmas,
+`EventRecord.bounded_str` and `ConsumerEvent.bodiesWithin_str_arena`, depend on no
+axiom at all.
+-/
+
+/-- info: 'LeanLLVM.Refinement.consumeRecords_length_eq_nonSeparators' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.consumeRecords_length_eq_nonSeparators
+
+/-- info: 'LeanLLVM.Refinement.consumeRecords_length_functionable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.consumeRecords_length_functionable
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkCountsTie_step' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkCountsTie_step
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkCountsTie_steps' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkCountsTie_steps
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkReferenceAccept_countsTie' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkReferenceAccept_countsTie
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventRecords_terms_two_derivations' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventRecords_terms_two_derivations
+
+/-- info: 'LeanLLVM.Refinement.consumeRecords_terms_two_derivations' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.consumeRecords_terms_two_derivations
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventReadback_terms_not_functionable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventReadback_terms_not_functionable
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkCountsTie_readback_not_determined' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkCountsTie_readback_not_determined
+
+/-- info: 'LeanLLVM.Refinement.EventRecord.bounded_str' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.EventRecord.bounded_str
+
+/-- info: 'LeanLLVM.Refinement.ConsumerEvent.bodiesWithin_str_arena' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.ConsumerEvent.bodiesWithin_str_arena
+
+/-- info: 'LeanLLVM.Refinement.consume_countsTie_str_zero' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.consume_countsTie_str_zero
+
+/-- info: 'LeanLLVM.Refinement.consume_countsTie_str_one' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.consume_countsTie_str_one
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkRecordsSupply_terms_two_derivations' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkRecordsSupply_terms_two_derivations
+
+/-! ### The stage-2 body's stores, budget and modelled sub-units
+
+`JsonStage2Body`'s footprint, in the order the module prints it.  The two boundary
+turns (`stage2Boundary_of_parts`, `stage2Run_boundary`) inherit `Classical.choice`
+from the heap logic they compose; the region, reserve and budget arithmetic is
+`[propext]` or `[propext, Quot.sound]`; and `stage2AfterValue_answers` is
+`[Quot.sound]` alone.  Three of these declarations are also guarded where they are
+proved; they are repeated here so the group is the module's whole printed set.
+-/
+
+/-- info: 'LeanLLVM.Refinement.stage2Boundary_of_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Boundary_of_parts
+
+/-- info: 'LeanLLVM.Refinement.stage2Run_boundary' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Run_boundary
+
+/-- info: 'LeanLLVM.Refinement.ordered_sum_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.ordered_sum_le
+
+/-- info: 'LeanLLVM.Refinement.arenaLe_of_spans' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.arenaLe_of_spans
+
+/-- info: 'LeanLLVM.Refinement.evlen_le_of_records' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.evlen_le_of_records
+
+/-- info: 'LeanLLVM.Refinement.stage2Regions_arena_ev' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Regions_arena_ev
+
+/-- info: 'LeanLLVM.Refinement.owns_reserve_of_owns_extent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.owns_reserve_of_owns_extent
+
+/-- info: 'LeanLLVM.Refinement.Stage2Run.nep_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2Run.nep_le
+
+/-- info: 'LeanLLVM.Refinement.Stage2Run.arenaLe_of_spans' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2Run.arenaLe_of_spans
+
+/-- info: 'LeanLLVM.Refinement.Stage2Run.evLe_of_oneRecordPerEntry' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2Run.evLe_of_oneRecordPerEntry
+
+/-- info: 'LeanLLVM.Refinement.Stage2Run.walkPresent_of_written' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2Run.walkPresent_of_written
+
+/-- info: 'LeanLLVM.Refinement.Stage2Run.walkFrame_of_written' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2Run.walkFrame_of_written
+
+/-- info: 'LeanLLVM.Refinement.stage2Budget_at_abi' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Budget_at_abi
+
+/-- info: 'LeanLLVM.Refinement.stage2Budget_pos_of_pre' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Budget_pos_of_pre
+
+/-- info: 'LeanLLVM.Refinement.Γ_stage2at_budget' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Γ_stage2at_budget
+
+/-- info: 'LeanLLVM.Refinement.stage2WalkObligation_iff_completion' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2WalkObligation_iff_completion
+
+/-- info: 'LeanLLVM.Refinement.stage2WalkCompletes_mono' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2WalkCompletes_mono
+
+/-- info: 'LeanLLVM.Refinement.numFastEmitted_refines' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.numFastEmitted_refines
+
+/-- info: 'LeanLLVM.Refinement.numFastEmitted_strtodSpec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.numFastEmitted_strtodSpec
+
+/-- info: 'LeanLLVM.Refinement.stage2Body_retsValued_at_pin' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Body_retsValued_at_pin
+
+/-- info: 'LeanLLVM.Refinement.stage2Calls_s2_init' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Calls_s2_init
+
+/-- info: 'LeanLLVM.Refinement.stage2Calls_s2_value_pos' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Calls_s2_value_pos
+
+/-- info: 'LeanLLVM.Refinement.stage2Calls_s2_after_value' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Calls_s2_after_value
+
+/-- info: 'LeanLLVM.Refinement.stage2Calls_s2_string_body' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Calls_s2_string_body
+
+/-- info: 'LeanLLVM.Refinement.stage2Calls_od_scalar_value' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Calls_od_scalar_value
+
+/-- info: 'LeanLLVM.Refinement.stage2Calls_num_fast_el1' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Calls_num_fast_el1
+
+/-- info: 'LeanLLVM.Refinement.stage2Init_answers' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2Init_answers
+
+/-- info: 'LeanLLVM.Refinement.stage2ValuePos_answers' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2ValuePos_answers
+
+/-- info: 'LeanLLVM.Refinement.stage2AfterValue_answers' depends on axioms: [Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2AfterValue_answers
+
+/-- info: 'LeanLLVM.Refinement.stage2StringBody_answers' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2StringBody_answers
+
+/-- info: 'LeanLLVM.Refinement.stage2NumFast_answers' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NumFast_answers
+
+/-- info: 'LeanLLVM.Refinement.stage2WalkObligation_at_subCalls' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2WalkObligation_at_subCalls
+
+/-! #### The number scan's acceptance
+
+The two declarations the number arm's acceptance is derived from.  Neither module
+prints them; they are pinned beside the payload they serve, and both carry
+`Classical.choice` from the tier models the conversion composes.
+-/
+
+/-- info: 'LeanLLVM.Refinement.numLexScan_accepts_iff_numLexB' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.numLexScan_accepts_iff_numLexB
+
+/-- info: 'LeanLLVM.Refinement.numLexScan_accepts_of_reader' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.numLexScan_accepts_of_reader
