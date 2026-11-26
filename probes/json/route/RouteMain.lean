@@ -44,6 +44,7 @@ import LeanLLVM.JsonKernelDomain
 import LeanLLVM.JSON.Parse
 import LeanLLVM.JSON.Render
 import LeanLLVM.Refinement.JsonEventBytes
+import LeanLLVM.Refinement.JsonEventCursor
 import LeanLLVM.Refinement.JsonCanon
 import LeanLLVM.Refinement.JsonPipelineSpec
 
@@ -104,6 +105,7 @@ def usage : String :=
   "       leanllvm-json-route --consume-noevent <file> [reps]  (the same arm)\n" ++
   "       leanllvm-json-route --consume-events <file> [reps]   (the certified event arm)\n" ++
   "       leanllvm-json-route --value <file>                   (the decoded value)\n" ++
+  "       leanllvm-json-route --indexed-check <file>           (the two readers agree)\n" ++
   "       leanllvm-json-route --arm <events|noevent> --consume <file> [reps]"
 
 def hexByte (b : UInt8) : String :=
@@ -395,10 +397,11 @@ runs — the same `decodeResult`, `payloads`, `observationLine` and `payloadLine
 
 `decodeResult` is the header decode the route has always done: `be64` materialises
 `result.toList` at every byte it reads, so one word costs eight list traversals
-of the whole result and the seven words an observation needs cost fifty-six.
-`payloads` materialises the result's list once per payload.  Both are priced as
-they are rather than changed here; `--consume-events` below reads the same words
-through indexing, and the two numbers together are what those conversions cost.
+of the whole result and the seven words an observation needs cost fifty-six; that
+is the read `--consume-events` below replaces with indexing.  `payloads` cuts the
+arena and the events with `ByteArray.extract`: one copy per payload and no
+materialisation of the result, so `outcome_slice_ns` prices the cut rather than a
+list walk.
 -/
 
 /-- The observation's six words, decoded from the adapter's header. -/
@@ -446,11 +449,12 @@ lowercase hex digits per byte. -/
 def payloadLine (label : String) (bs : ByteArray) : String :=
   label ++ "=" ++ hex bs
 
-/-- The two payloads cut out of the result.  Each cut materialises the result's
-`toList` and walks it, so the stage is two list traversals per call. -/
+/-- The two payloads cut out of the result.  The cut is a byte range of the
+returned buffer: `extract` copies exactly the bytes the two lengths name, with
+no list materialisation of the result or of either payload. -/
 def payloads (result : ByteArray) (ndst nev : Nat) : ByteArray × ByteArray :=
-  (ByteArray.mk (Array.mk ((result.toList.drop headerBytes).take ndst)),
-   ByteArray.mk (Array.mk ((result.toList.drop (headerBytes + ndst)).take nev)))
+  (result.extract headerBytes (headerBytes + ndst),
+   result.extract (headerBytes + ndst) (headerBytes + ndst + nev))
 
 /-- Outcome handling: decode the adapter's tagged result, and either print the
 observation and the two payloads or report the failure class with its failed
@@ -811,12 +815,13 @@ def runFallback (doc : ByteArray) : IO UInt32 := do
 
 `--value <file>` answers a document with its decoded value rather than with the
 pipeline's observation.  On an admitted document it takes the native event call,
-reads the event stream back as events (`eventsOfBytes`), decodes those events as
-a value (`valueOfEvents`), and canonicalises the value's number lexemes the way
-the event side renders them.  Any of those steps that cannot read the stream as
-events — a truncated record, a string body outside its source — falls back to the
-reference parser, and so does a document the admission refuses: the fast path
-answers only what it can read, and the reference is the authority on everything
+reads the event stream back as events (`eventsOfBytesIndexed`), decodes those
+events as a value (`valueOfEvents`), and canonicalises the value's number
+lexemes the way the event side renders them.  Any of those steps that cannot
+read the stream as events — a truncated record, a string body outside its
+source — falls back to the reference parser, and so does a document the
+admission refuses: the fast path answers only what it can read, and the
+reference is the authority on everything
 else.  The report is one line either way, the value as lowercase hex of the
 rendering's UTF-8 bytes on acceptance and the reference's refusal class and
 offset on refusal.
@@ -874,7 +879,7 @@ def valueOf (doc : ByteArray) : IO RouteValue := do
           if o.verdict != 1 then fallbackValue doc
           else
             let (arena, events) := payloads result o.ndst o.nev
-            match eventsOfBytes doc.toList events.toList arena.toList with
+            match eventsOfBytesIndexed doc events arena with
             | some ces =>
                 match valueOfEvents ces with
                 | some v => return .value v
@@ -963,12 +968,12 @@ def stageUnfilled : Nat := 18446744073709551615
 
 /-! ### The value chain's probe
 
-The entry's consumption is `eventsOfBytes` then `valueOfEvents`; `--stages` prices
-those two calls in `value_bytes_ns` and `value_decode_ns`, outside every stage's
-timed window and after the outcome stage, so the existing fields keep the
-windows they always had.  The interval is the decoder's call; the `toList`
-conversions it takes are scaffolding before the clock read, reported by neither
-field.
+The entry's consumption is `eventsOfBytesIndexed` then `valueOfEvents`;
+`--stages` prices those two calls in `value_bytes_ns` and `value_decode_ns`,
+outside every stage's timed window and after the outcome stage, so the existing
+fields keep the windows they always had.  The reader runs on the returned
+`ByteArray`s directly, so its interval is the whole reading and no `toList`
+conversion is scaffolding outside the clock read.
 
 The probe is not a second parser: the decoded event list's digest folds every
 record's tag, length, payload and decoded code points, and the value's digest
@@ -1005,13 +1010,12 @@ structure ValueProbe where
   eventsSum : UInt64 := 0
   valueSum : UInt64 := 0
 
-/-- `eventsOfBytes` then `valueOfEvents`, each timed on its own. -/
+/-- `eventsOfBytesIndexed` then `valueOfEvents`, each timed on its own.  The
+reader takes the returned buffers directly; the list specification is not run
+here, only the reader the route's `valueOf` uses. -/
 def valueProbe (doc arena events : ByteArray) : IO ValueProbe := do
-  let bs := doc.toList
-  let evs := events.toList
-  let ar := arena.toList
   let b0 ← IO.monoNanosNow
-  let ces? := eventsOfBytes bs evs ar
+  let ces? := eventsOfBytesIndexed doc events arena
   let b1 ← IO.monoNanosNow
   match ces? with
   | none => return { bytes := b1 - b0, outcome := "events-none" }
@@ -1030,6 +1034,58 @@ def valueProbe (doc arena events : ByteArray) : IO ValueProbe := do
           return { bytes := b1 - b0, decode := d1 - d0, decodeRan := true,
                    outcome := "value", tokens := ces.length,
                    eventsSum := eventDigest ces, valueSum := valueDigest v }
+
+/-! ### The indexed reader's differential check
+
+`--indexed-check <file>` takes the value arm's native call and reads the
+returned buffers twice: once with the indexed reader (`eventsOfBytesIndexed`)
+and once with the list specification (`eventsOfBytes`).  Both readings, and the
+values the event decoders build from them, are compared and a disagreement is
+exit 5.  A document the fast path does not answer has no returned stream to
+compare, and the row says so rather than passing a comparison that never ran. -/
+
+/-- The two readers over one returned buffer triple, and the two values. -/
+def runIndexedCheck (path : String) : IO UInt32 := do
+  let doc ← try
+      IO.FS.readBinFile path
+    catch e =>
+      IO.eprintln s!"route: cannot read '{path}': {e}"
+      return 2
+  let name := (System.FilePath.fileName path).getD path
+  match ← decide2 doc with
+  | .failed status => return status
+  | .refused _ =>
+      IO.eprintln s!"indexed-check: doc={name} size={doc.size} path=fallback"
+      return 0
+  | .admitted f =>
+      let staged ← stage doc doc.size
+      let result ← call staged f.escapeSkip
+      match ← decodeResult result with
+      | .error status => return status
+      | .ok o =>
+          if o.verdict != 1 then
+            IO.eprintln s!"indexed-check: doc={name} size={doc.size} path=fallback"
+            return 0
+          let (arena, events) := payloads result o.ndst o.nev
+          let indexed := eventsOfBytesIndexed doc events arena
+          let listed := eventsOfBytes doc.toList events.toList arena.toList
+          if !(decide (indexed = listed)) then
+            IO.eprintln s!"indexed-check: doc={name} DISAGREE events={events.size} \
+              arena={arena.size}"
+            return 5
+          let valueIndexed := indexed.bind valueOfEvents
+          let valueListed := listed.bind valueOfEvents
+          if !(decide (valueIndexed = valueListed)) then
+            IO.eprintln s!"indexed-check: doc={name} value DISAGREE \
+              events={events.size} arena={arena.size}"
+            return 5
+          let count := match indexed with
+            | some ces => ces.length
+            | none => 0
+          IO.eprintln s!"indexed-check: doc={name} size={doc.size} path=fast \
+            events={events.size} arena={arena.size} decoded={count} \
+            value={if valueIndexed.isSome then 1 else 0}"
+          return 0
 
 /-- The fallback's two intervals: `decodeTape`, then `canonValue`.  They are the
 fallback branch's own fields and are never added to the fast path's. -/
@@ -1827,6 +1883,7 @@ def main (args : List String) : IO UInt32 := do
   | ["--consume-events", path] => runConsume path 11
   | ["--consume-events", path, reps] => runConsume path reps.toNat!
   | ["--value", path] => runValue path
+  | ["--indexed-check", path] => runIndexedCheck path
   | _ =>
       IO.eprintln usage
       return 1

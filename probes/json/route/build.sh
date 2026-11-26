@@ -153,6 +153,9 @@ cone_ir=("$repo/.lake/build/ir/LeanLLVM/JsonKernelDomain.c"
          "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeSpec.c"
          "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEscapeSteps.c"
          "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEventBytes.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEventCursor.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEventIndexed.c"
+         "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEventIndexedStep.c"
          "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonEventDecode.c"
          "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonPipelineContract.c"
          "$repo/.lake/build/ir/LeanLLVM/Refinement/JsonPipelineIR.c"
@@ -174,7 +177,7 @@ for f in "${cone_ir[@]}"; do
   [ -f "$f" ] || {
     echo "build: absent: $f" >&2
     echo "build: build the route's Lean modules first:" >&2
-    echo "  nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse LeanLLVM.JSON.Render LeanLLVM.Refinement.JsonEventBytes LeanLLVM.Refinement.JsonCanon LeanLLVM.Refinement.JsonPipelineSpec" >&2
+    echo "  nix develop -c bash probes/install/lake-locked.sh build LeanLLVM.JsonKernelDomain LeanLLVM.JSON.Parse LeanLLVM.JSON.Render LeanLLVM.Refinement.JsonEventBytes LeanLLVM.Refinement.JsonEventCursor LeanLLVM.Refinement.JsonCanon LeanLLVM.Refinement.JsonPipelineSpec" >&2
     exit 1
   }
 done

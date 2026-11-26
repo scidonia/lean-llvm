@@ -150,26 +150,32 @@ renderer's match at compile time.
 **Measured, with its limits on the row.**  On `pleiades` (Core Ultra 7 268V,
 `powersave`, load 2.4 falling to 2.0, shared and not quiet; clock reads, no
 PMU), one process, one binary, medians of three 21-repeat runs: admission
-214 ns (P-core) / 387 ns (E-core) and native execution 55 / 106 ns; consumption
-`value_bytes_ns` 378 / 625 ns around `eventsOfBytes` and `value_decode_ns`
-184 / 249 ns around `valueOfEvents` on the 65 accepted corpus rows; on the
-64 KiB documents `value_bytes` 1.523 s (dense), 57.7 ms (strings) and 193.0 ms
-(utf8) against native 95 µs, 45 µs and 23 µs.  **Consumption is the fast path's
-dominant cost, an order of magnitude above every other stage**, so a row
-reporting admission and native execution alone would misplace the time.  The
-fallback's canonicalisation is priced apart (`fallback_decode_ns`,
-`fallback_canon_ns`); its digest agreed with the fast branch's on the same
-document.  That agreement was observed once, in that session; it is not a
-committed check, and nothing else on this page rests on it.
+214 ns (P-core) / 387 ns (E-core) and native execution 55 / 106 ns; in that
+**pre-change** build, consumption `value_bytes_ns` 378 / 625 ns around the list
+walk `eventsOfBytes` and `value_decode_ns` 184 / 249 ns around `valueOfEvents` on
+the 65 accepted corpus rows; on the 64 KiB documents `value_bytes` 1.523 s
+(dense), 57.7 ms (strings) and 193.0 ms (utf8) against native 95 µs, 45 µs and
+23 µs.  **Consumption is the fast path's dominant cost, an order of magnitude
+above every other stage**, so a row reporting admission and native execution
+alone would misplace the time.  The fallback's canonicalisation is priced apart
+(`fallback_decode_ns`, `fallback_canon_ns`); its digest agreed with the fast
+branch's on the same document.  That agreement was observed once, in that
+session; it is not a committed check, and nothing else on this page rests on it.
 
-**The entry's scaling limit sits beside any advertisement of it.**  Its process
-wall is superlinear above about 32 KiB — 512 KiB takes 56 s and 1 MiB times out
-— so the entry demonstrates the decoded value at the route's own input bound;
-it is not a drop-in parser for documents at the corpus's larger sizes.  Wall
-figures and components are reported apart and never subtracted: on the dense row
-the component exceeds wall less start-up, because a 21-repeat probe and a single
-invocation do not compose there.  Re-measure in one session when the route's
-link or `eventsOfBytes` changes, on a quiet host where one is available.
+**The entry's earlier scaling limit has been lifted by the indexed reader.**
+Those figures measured the list reader, whose process wall is superlinear above
+about 32 KiB: 512 KiB took 56 s and 1 MiB timed out.  The shipped value arm reads
+the returned buffers by index instead.  On the worker `pl-r1-01a21253`
+(`n4-highmem-8`, 8 vCPU, Intel Emerald Rapids; `TIMING=1` route build, kernel
+`-O2`), one 64 KiB → 1 MiB dense sweep measured `--value` walls of 0.447, 0.569,
+0.780, 1.369 and 3.151 s (medians of three), with the reader itself at
+4.8/9.3/19.3/39.1/76.4 ms and zero fallbacks; the pre-change binary in the same
+session took 5.49/21.55/84.25/443.1 s on 64–512 KiB and did not finish 1 MiB
+inside 600 s.  Those are one session on a spot worker, not a quiet-host
+measurement, and wall figures and components are reported apart and never
+subtracted: on the dense row the component exceeds wall less start-up, because a
+21-repeat probe and a single invocation do not compose there.  Re-measure when
+the route's link or the reader changes, on a quiet host where one is available.
 
 That is why the correspondence is recorded rather than unified.  Linking the
 fixture would make the route call a twenty-one-argument body while the driver

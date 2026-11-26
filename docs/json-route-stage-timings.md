@@ -99,7 +99,7 @@ the numbers.
 | `hex_arena_ns`, `hex_events_ns` | instrument-only: the same two lines rebuilt with the write removed, after the stage's timed window, so each printed line's write is the difference between its part and its hex figure |
 | `total_ns` | admission's start to the end of outcome handling; the file read is outside it |
 | `adapter_wall_ns` | the interval the caller saw around the adapter; `copyin + native + copyout` less it is the precondition checks and the adapter's own clock reads |
-| `value_bytes_ns` | the `eventsOfBytes` walk over the emitted record bytes on the admitted fast path; the list scaffolding is outside the clock |
+| `value_bytes_ns` | the indexed reader (`eventsOfBytesIndexed`) over the returned document, event and arena buffers on the admitted fast path; it reads the buffers by index, so no list scaffolding sits outside the clock |
 | `value_decode_ns` | the `valueOfEvents` decode of that event list |
 | `value_outcome`, `value_tokens`, `value_events_sum`, `value_sum` | the probe's outcome (`value`, `value-none`, `events-none`, `refused`, `adapter-failed` or `-`), the event count, and the two per-repetition digests — the decoded value's canonical rendering and the event list |
 | `fallback_decode_ns` | `decodeTape` on the fallback branch |
@@ -515,11 +515,14 @@ byte through `Nat.toDigits 16`, then `join`.  Per event-stream byte that is
 documents; `hex_arena_ns` prices the escape documents' 1,000 arena bytes at
 56,986–63,178 ns, 56.99–63.18 ns per arena byte.
 
-**The slicing is the third cost.**  Two `toList` materialisations cut the payloads
-out: 83,842 ns at 6,229 result bytes (2.90% of the stage) and 1,514,090 ns at
-98,389 (2.99%), and 4.38–4.64% on the escape documents, whose arena is a
-megabyte-less 1,000 bytes but whose slice is still two materialisations.  The
-observation line is 815 ns and the empty arena's line 236 ns; neither is a lever.
+**The slicing was the third cost, in the pre-change build.**  Two `toList`
+materialisations cut the payloads out: 83,842 ns at 6,229 result bytes (2.90% of
+the stage) and 1,514,090 ns at 98,389 (2.99%), and 4.38–4.64% on the escape
+documents, whose arena is a megabyte-less 1,000 bytes but whose slice is still
+two materialisations.  The shipped `payloads` cuts with `ByteArray.extract` — one
+copy per payload, no materialisation of the result — so `outcome_slice_ns` now
+prices that copy; the figures here are the pre-change record.  The observation
+line is 815 ns and the empty arena's line 236 ns; neither is a lever.
 
 **What a consumer pays.**  A consumer that reads the same result and keeps
 values pays two orders of magnitude less than the printed path:
@@ -554,20 +557,20 @@ document and session; the printed figure is the `TIMING=1` build's and the
 consumer's the production build's, and the consumer's own code holds no clock
 read).
 
-**So the 2.9 ms is instrumentation.**  In this session the 4 KiB document's
-outcome stage is 2.89 ms, and 84.19% of it is a header reader that rebuilds the
-result's list for every byte it reads, 12.63% is the events line's hex
-conversion, and 2.90% is cutting the payloads out.  A consumer that reads the
-result and keeps values pays 18,771 ns on the same document — 27.40 ns per event
-and 3.05 ns per payload byte — and 348,888 ns at 64 KiB, without per-token values
-18.78–20.11 ns per event.  The honest production cost of reading this pipeline's
-result at these sizes is therefore tens of nanoseconds per token, not
-microseconds, and it is not the parser's cost either way: the object is 0.29–0.31%
-of the route's total on the three scalar arrays, 0.64–0.96% on the escape
-documents and 1.27% on the raw-UTF-8 one.  The fixes are a follow-up and they are
-all on the probe side — read the header by index (the consumer's `decodeIndexed`
-is the measured shape), build the hex without a list and a `String` per byte, and
-cut the payloads without materialising the result.
+**So the 2.9 ms is instrumentation.**  In the pre-change build this session's
+4 KiB document's outcome stage is 2.89 ms, and 84.19% of it is a header reader
+that rebuilds the result's list for every byte it reads, 12.63% is the events
+line's hex conversion, and 2.90% is cutting the payloads out.  A consumer that
+reads the result and keeps values pays 18,771 ns on the same document — 27.40 ns
+per event and 3.05 ns per payload byte — and 348,888 ns at 64 KiB, without
+per-token values 18.78–20.11 ns per event.  The honest production cost of reading
+this pipeline's result at these sizes is therefore tens of nanoseconds per token,
+not microseconds, and it is not the parser's cost either way: the object is
+0.29–0.31% of the route's total on the three scalar arrays, 0.64–0.96% on the
+escape documents and 1.27% on the raw-UTF-8 one.  The remaining fixes are on the
+probe side — read the header by index (the consumer's `decodeIndexed` is the
+measured shape) and build the hex without a list and a `String` per byte; cutting
+the payloads without materialising the result has shipped (`ByteArray.extract`).
 
 **The copy is cheap; the fill before it was not.**  For `fast-nums-65536` the
 adapter copies 1,442,742 bytes (entry 262,436; escape 262,432; arena 65,603;

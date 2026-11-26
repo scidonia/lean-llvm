@@ -125,7 +125,7 @@ object.
 
 The value probe runs after `total_ns` and `summed_stage_ns` are pushed, so every
 window above is unchanged; its fields are appended at the end of the row:
-`value_bytes_ns` (the `eventsOfBytes` walk), `value_decode_ns` (the
+`value_bytes_ns` (the indexed reader's walk over the returned buffers), `value_decode_ns` (the
 `valueOfEvents` decode), `value_outcome` (`value`, `value-none`,
 `events-none`, `refused`, `adapter-failed` or `-`), `value_tokens`,
 `value_events_sum`, `value_sum`, and the fallback's own `fallback_decode_ns`,
