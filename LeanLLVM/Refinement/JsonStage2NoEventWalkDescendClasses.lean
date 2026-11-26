@@ -73,9 +73,11 @@ tree, but rooted at a `NodeBlock5` head, not at the `.loopexit` entry:
 * `"` — `JsonStage2NoEventWalkRowsString`'s builders `…StringRoute_arena`/`…StringRoute_plain` over the committed `Stage2NoEventWalkStringRoute` (its
   `segHead` is the call's own eight-block slice, the dispatch included),
   `…StringRoute_arena`/`…StringRoute_plain` and the rows `…StringRow_arena`/
-  `…StringRow_plainArm`.  The route builder is segment-driven, but the row's
-  endpoint reads the head's consumed-count bound (`…StringRow_cont_of_route`'s
-  `h.count`), so no producer starts at `string_value.loopexit`.
+  `…StringRow_plainArm`.  The route builder is segment-driven; the row's
+  head-dependence is only the consumed-count bound, which
+  `JsonStage2NoEventWalkEntryRooted`'s `…StringRow_cont_of_route_count` replaces
+  by a supply, so the remaining obstacle at `string_value.loopexit` is the call
+  leg, not the row.
 * scalar — `JsonStage2NoEventWalkRowsValue`'s `…ValueRoute_of_head` and
   `…ValueRow_of_head`, over the four arms `…ValueArmRoute_number`/`_True`/`_Null`/
   `_False`.  The row is head-rooted, and the residue table's whitespace/remainder
