@@ -11579,3 +11579,43 @@ as the remaining obligation.  The pins are the proved two's footprints. -/
 /-- info: 'LeanLLVM.Refinement.stage2NoEvent_step_terms_delta_not_relation_determined' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms LeanLLVM.Refinement.stage2NoEvent_step_terms_delta_not_relation_determined
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkArenaBound_of_within' does not depend on any axioms -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkArenaBound_of_within
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkTrace_of_report' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkTrace_of_report
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkTrace_iff_report' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkTrace_iff_report
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkTrace_of_accept' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkTrace_of_accept
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkTrace_of_accept_self' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkTrace_of_accept_self
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkExit_trace' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkExit_trace
+
+/-- info: 'LeanLLVM.Refinement.Stage2NoEventWalkTrace.of_zeros' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.Stage2NoEventWalkTrace.of_zeros
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkSeedRow' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkSeedRow
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEvent_nil_of_bs_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEvent_nil_of_bs_nil
+
+/-- info: 'LeanLLVM.Refinement.stage2NoEventWalkTrace_not_of_bs_nil' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.Refinement.stage2NoEventWalkTrace_not_of_bs_nil
