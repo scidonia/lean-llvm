@@ -398,3 +398,4 @@ import LeanLLVM.Refinement.JsonNumFastSpine
 import LeanLLVM.Refinement.JsonStage2NumFastStkArith
 import LeanLLVM.Refinement.JsonStage2NumFastCalleeMulRun
 import LeanLLVM.Refinement.JsonStage2NumFastProducerCount
+import LeanLLVM.Refinement.JsonStage2NumFastIngestAppend
