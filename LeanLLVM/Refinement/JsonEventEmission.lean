@@ -46,15 +46,20 @@ What the post does **not** do is pin the contents:
 
 # What this means for the release
 
-`EvbEmission` cannot be supplied from the caller's staging and the post.  The
-missing piece is a fact about the walk's arena cursor at `[1]` (`ndstU = 0`),
-which the units post does not publish and the event walk's proof does not
-expose; equivalently, the arena's reported extent is not determined by anything
-the caller stages.  The event buffer is derived from the post
-(`evb_events_of_post`), so the residue is exactly the destination buffer's
-content, not the event stream.  The closing section states both ways to close it:
-assume the arena datum beside the compiler/ABI steps, or add the cursor-value
-conjunct to `Sigma_pipeline`/`Stage2OutcomeEvidence`.
+`EvbEmission` cannot be supplied from the caller's staging and the units post
+alone.  The missing piece is a fact about the walk's arena cursor at `[1]`
+(`ndstU = 0`), which the units post does not publish because it binds no record
+trace.  The event buffer is derived from the post (`evb_events_of_post`), so the
+residue is exactly the destination buffer's extent, not the event stream.
+
+The clause therefore lives at the one predicate that has the trace in scope:
+`Stage2OutcomeEvidence` now states the reported extent as the staged cursor plus
+`arenaExtent` of the trace, and at `[1]` that accounting is zero — so the arena
+the run reports is empty, and `EvbEmission` is a theorem of the slice
+(`evb_emission_of_evidence`) rather than an assumption.  `pipelineUnitsPost` and
+`Sigma_pipeline` cannot carry the clause for the same reason (neither binds a
+trace), so a release that consumes only the units post still takes the arena
+datum.
 
 There is no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/
@@ -419,52 +424,178 @@ theorem evb_events_of_post {m : Mem} {next : Nat}
     exact h'
   exact ⟨nev', evs, hev, evb_events_of_rel hrel'⟩
 
-/-! ### The finding, and the two ways out
+/-! ### The arena at `[1]`, from the evidence
 
-The arena's content at its reported extent is **not determined by the
+`arenaExtent` counts the escaped bodies the trace names, and `[1]`'s trace is
+three bodyless records: the opener's and the closer's tags and the number's
+payload.  So the accounting is zero, the evidence's extent equation reduces to
+the staged cursor, and the caller's staged cursor is zero.  The destination's
+reported prefix is therefore empty — the fact `EvbEmission.arena_eq` had to
+assume is a consequence of the evidence, not a further datum.
+
+The trace is `evbRecords` and not merely *some* three-record list: each
+`Stage2Records` constructor fixes its record's class and payload, the closer's
+tail is empty, and the number's lexeme is the span's one byte, so the reader's
+decimal is `evbDecimal` by determinism. -/
+
+/-- **`[1]`'s trace is `evbRecords`.**  The three constructors are consumed in
+order; the number's span is `1..2`, whose one byte is `0x31`, so the reader's
+decomposition is `evbDecimal` and the payload is `evbBits`. -/
+theorem evb_records_of_rel {arena : List UInt8} {rs : List EventRecord}
+    (h : Stage2Records evbDoc arena rs evbTokens) : rs = evbRecords := by
+  have htok : evbTokens = ([.punct .openBracket ⟨0, 1⟩, .number ⟨1, 2⟩,
+      .punct .closeBracket ⟨2, 3⟩] : List Token) := rfl
+  rw [htok] at h
+  obtain ⟨rs1, rfl, h1⟩ := inv_openBracket h
+  obtain ⟨rs2, d, lex, rfl, hread, -, hlex, h2⟩ := inv_number h1
+  obtain ⟨rs3, rfl, h3⟩ := inv_closeBracket h2
+  cases h3 with
+  | nil =>
+      have hdl : lex.data.toList = [0x31] := by
+        rw [← hlex]
+        decide
+      have hlexe : lex = evbLex := by
+        rw [← ByteString.literal_toList lex]
+        show ByteString.literal lex.toList = ByteString.literal [0x31]
+        rw [ByteString.toList_eq_data_toList, hdl]
+      subst hlexe
+      have hd : d = evbDecimal := by
+        have h' : some evbDecimal = some d := evbReader.symm.trans hread
+        exact (Option.some.inj h').symm
+      subst hd
+      rfl
+
+/-- **`[1]`'s trace accounts for no arena bytes.**  Three records, none in the
+escaped form. -/
+theorem evb_arenaExtent_nil : arenaExtent evbRecords = 0 := rfl
+
+/-- **The evidence pins `[1]`'s arena extent to zero.**  The trace's accounting
+is `0`, the staged cursor reads `0` in the caller's staging, and the recorded
+pair bounds the extent below `2 ^ 64`, so the extent equation forces `ndst' = 0`
+and every destination read at or below it is empty. -/
+theorem evb_arena_extent_zero_of_evidence {m : Mem} {ndst' nev' : Nat}
+    (hpre : routePre evbLayout evbDoc)
+    (hext : pipelineOutputExtents evbArgs (.ret (some (.int 64 1)) m) ndst' nev')
+    (h : Stage2OutcomeEvidence evbLayout.base evbArgs evbMem ndst' nev'
+      (.ret (some (.int 64 1)) m)) :
+    ∃ (arena : List UInt8),
+      ndst' = 0 ∧ readBytes m evbLayout.dst ndst' = some arena ∧ arena = [] ∧
+      (∀ (n : Nat) (a : List UInt8),
+        n ≤ ndst' → readBytes m evbLayout.dst n = some a → a = []) := by
+  obtain ⟨_, hb3, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep⟩ := hpre
+  simp only [pipelineOutputExtents, evbArgs, routeArgs] at hext
+  obtain ⟨hextLt, -, -, -⟩ := hext
+  simp only [Stage2OutcomeEvidence, evbArgs, routeArgs] at h
+  obtain ⟨bs, _, hread, hcase⟩ := h
+  rcases hcase with
+    ⟨-, -, t, rs, arena, evs, hparse, hdst, hev, hrecs, hrel,
+      ndst0, hndst0read, hndst0eq⟩ |
+    ⟨hv0, -, -⟩
+  · have hn : (BitVec.ofNat 64 evbDoc.length).toNat = evbDoc.length :=
+      bitVecOfNat_toNat (by decide)
+    rw [hn] at hread
+    have hbs : bs = evbDoc :=
+      Option.some.inj (hread.symm.trans (stagedDoc_read evbLayout evbDoc hsep hb3))
+    rw [hbs] at hparse
+    have ht : t = evbTape := ParseResult.ok.inj (hparse.symm.trans evb_parse)
+    have hrel' : Stage2Records evbDoc arena rs evbTokens := by
+      rw [hbs, ht] at hrel
+      exact hrel
+    have hrs : rs = evbRecords := evb_records_of_rel hrel'
+    have hzero : arenaExtent rs = 0 := by rw [hrs]; rfl
+    have hndst' : ndst' = ndst0 := by rw [hndst0eq, hzero, Nat.add_zero]
+    have hstage : readBytes evbMem evbLayout.ndst 8 = some (wordBytes 8 0) :=
+      evb_stage_ndst hsep
+    have hword : wordBytes 8 ndst0 = wordBytes 8 0 :=
+      Option.some.inj (hndst0read.symm.trans hstage)
+    have hres : ndst0 % 2 ^ 64 = 0 := by simpa using wordBytes_residue hword
+    have hndst0Lt : ndst0 < 2 ^ 64 := by omega
+    have hndst0 : ndst0 = 0 := by
+      have h := Nat.mod_eq_of_lt hndst0Lt
+      omega
+    have hz : ndst' = 0 := by omega
+    subst hz
+    have hnil : readBytes m evbLayout.dst 0 = some ([] : List UInt8) := rfl
+    refine ⟨arena, rfl, hdst, ?_, ?_⟩
+    · exact (Option.some.inj (hnil.symm.trans hdst)).symm
+    · intro n a hn hread'
+      have hn0 : n = 0 := by omega
+      subst hn0
+      exact (Option.some.inj (hnil.symm.trans hread')).symm
+  · exact absurd hv0 (by decide)
+
+/-- **`EvbEmission` at `[1]`, derived rather than assumed.**  The arena is the
+evidence's reported read — empty by its extent equation — and the event stream
+is the post's read, which `evb_events_of_post` fixes to the trace's encoding.  So
+the two buffers the emitter's residue named are read off the run's own evidence
+and postcondition. -/
+theorem evb_emission_of_evidence {m : Mem} {next ndstU nev' : Nat}
+    (hpre : routePre evbLayout evbDoc)
+    (hext : pipelineOutputExtents evbArgs (.ret (some (.int 64 1)) m) ndstU nev')
+    (hev : Stage2OutcomeEvidence evbLayout.base evbArgs evbMem ndstU nev'
+      (.ret (some (.int 64 1)) m))
+    (hpost : Sigma_pipeline stage2EventRel evbLayout.base evbArgs evbMem next
+      (.ret (some (.int 64 1)) m)) :
+    ∃ (arena evs : List UInt8), EvbEmission arena evs := by
+  obtain ⟨arena, -, -, rfl, -⟩ := evb_arena_extent_zero_of_evidence hpre hext hev
+  obtain ⟨-, evs, -, hevEq⟩ := evb_events_of_post hpre hpost
+  exact ⟨[], evs, ⟨rfl, by simpa [evbEvents] using hevEq⟩⟩
+
+/-! ### The finding, and the repair
+
+The arena's content at its reported extent is **not determined by the units
 postcondition**: `evb_arena_not_empty` exhibits a returned memory that satisfies
 every conjunct of `pipelineUnitsPost` at the accepted verdict with `ndst = 1` and
 `[0]` in the destination buffer at that extent, while the caller's own cursor
 slot reads `0` (`evb_stage_ndst`).  The event buffer is the opposite case:
-`evb_events_of_post` derives `evs = evbEvents` from the specification post.  So
-the residue is exactly one field, `EvbEmission.arena_eq`.
+`evb_events_of_post` derives `evs = evbEvents` from the specification post.
 
-The release theorem therefore has exactly two options:
+So the clause has to be added where a trace is in scope, and that is the outcome
+evidence:
 
-1. **Assume the arena datum.**  State `out = []` (equivalently `ndstU = 0`) as a
-   deployment fact beside the compiler/ABI steps — the object's run, at this
-   staging and this document, leaves the arena cursor at zero.  This is the
-   single field `EvbEmission.arena_eq`; the event half is a theorem
-   (`evb_events_of_post`).
-2. **Strengthen the postcondition to pin the destination.**  The conjunct to add
-   is the arena cursor's *value*, because `ndstU` is the only free number in
-   `readBytes m dst ndstU = some out`:
-   * in `Sigma_pipeline` (`JsonPipelineSpec.lean`), the acceptance tuple must
-     bind the record trace (it currently binds only the byte relation) and state
-     `readBytes m dst ndstU = some arena ∧ arena = arenaBytes rs`, where
-     `arenaBytes` is the concatenation of the decoded bodies the trace's string
-     records name; the extent `ndstU` then follows from `readBytes_length`;
-   * its supplier is `Stage2OutcomeEvidence` (`JsonStage2Hsem.lean`), whose
-     accepting disjunct already binds `rs` and `ndst'`: the conjunct to add there
-     is `ndst' = (arenaBytes rs).length`, or equivalently
-     `arena = arenaBytes rs` beside `readBytes m dst ndst' = some arena`;
-   * at `[1]`, `arenaBytes evbRecords = []`, so either form yields `ndstU = 0`
-     and `arena = []`;
-   * `pipelineUnitsPost` cannot carry the clause — it has no record trace — which
-     is why the strengthening belongs at the evidence/specification layer, and a
-     release theorem that consumes only the units post still takes the arena
-     datum.
+* `Stage2OutcomeEvidence` (`JsonStage2Hsem.lean`) now reads the staged arena
+  cursor off the starting memory and states `ndst' = ndst0 + arenaExtent rs`.
+  `arenaExtent` counts one `len` per record in the escaped form (`strArena`,
+  whose field is an arena offset); the plain form's body lives in the document
+  and appends nothing.  The *bytes* of each escaped body are not a function of
+  the trace — they are the decoder's output, which the record names by extent and
+  offset — so the accounting, not a reconstructed buffer, is what the trace can
+  state;
+* `pipelineUnitsPost` cannot carry the clause: it binds no trace.  Neither can
+  `Sigma_pipeline`'s acceptance tuple, for the same reason — it binds the byte
+  relation and not `rs` — so the clause lives at the evidence, which both the
+  specification and the units record are released against
+  (`pipeline_satisfies_stage2_of_evidence`);
+* at `[1]` the trace is `evbRecords` (`evb_records_of_rel`), its accounting is
+  `0` (`evb_arenaExtent_nil`), and the staged cursor is `0` (`evb_stage_ndst`), so
+  the recorded extent is `0` (`evb_arena_extent_zero_of_evidence`) and every
+  destination read at or below it is `[]`.  `EvbEmission` at the slice is then a
+  theorem (`evb_emission_of_evidence`) rather than an assumption: the arena half
+  comes from the evidence and the event half from the post.
 
 The arena is free *at the relation* too (`evb_rel_arena_free`: every arena
 satisfies `Stage2EventRel` at `[1]`'s records, because none of the three
 constructors reads a body), so the relation itself cannot constrain it; the
 arena's content is a *walk* fact (the cursor reaches zero on `[1]`), not a
 consequence of anything the caller stages, the relation states, or the units post
-states;
-`evb_arena_not_empty` is the evidence for that sentence and is not weakened.
+states; `evb_arena_not_empty` is the evidence for that sentence and is not
+weakened.  A release theorem that consumes only the units post still takes the
+arena datum, because the units post still binds no trace.
 -/
 
 /-! ### Axiom footprints -/
+
+/-- info: 'LeanLLVM.Refinement.evb_records_of_rel' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms evb_records_of_rel
+
+/-- info: 'LeanLLVM.Refinement.evb_arena_extent_zero_of_evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms evb_arena_extent_zero_of_evidence
+
+/-- info: 'LeanLLVM.Refinement.evb_emission_of_evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms evb_emission_of_evidence
 
 /-- info: 'LeanLLVM.Refinement.evbInv_openBracket' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in

@@ -387,7 +387,7 @@ theorem parserRows_of_evidence {base : Nat} {args : List Value} {mem : Mem}
   · obtain ⟨bs, hlen, hread, hcase⟩ := h
     refine ⟨bs, hlen, hread, ?_⟩
     rcases hcase with
-      ⟨hv, hutf8, t, rs, arena, evs, hparse, hdst, hev, hrecs, hrel⟩ |
+      ⟨hv, hutf8, t, rs, arena, evs, hparse, hdst, hev, hrecs, hrel, -, -, -⟩ |
       ⟨hv, hpol, hno⟩
     · refine ⟨⟨fun _ => ⟨t, hparse⟩, fun _ => hv⟩, ?_, ?_⟩
       · intro _

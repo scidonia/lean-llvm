@@ -1322,6 +1322,21 @@ step relates one record to one token, and the trace is the concatenation.
 emitted bytes computed rather than assumed; §7.11 states and proves the relation's
 general form, which makes those two instances rather than the claim.
 
+**The arena's reported extent is the trace's accounting.**  `Stage2OutcomeEvidence`
+also reads the staged arena cursor off the starting memory and states
+`ndst' = ndst0 + arenaExtent rs`, where `arenaExtent` sums one `len` per record
+in the escaped form (`strArena`, whose field is an arena offset); the plain
+form's body stays in the document and appends nothing.  The bodies' bytes are
+not a function of the trace — each is the decoder's output, which the record
+names by extent and offset — so the trace accounts for the extent, and the
+relation's per-record `escapeCodePoints` clause constrains the bytes.  This is
+the clause the units post and `Sigma_pipeline` cannot state (neither binds a
+trace); at the event slice `[1]` the trace is three bodyless records, so the
+accounting is zero and the destination's reported prefix is empty:
+`evb_arena_extent_zero_of_evidence` and `evb_emission_of_evidence`
+(`JsonEventEmission`) make `EvbEmission.arena_eq` a theorem of the slice rather
+than a further assumption.
+
 **What the producer derives, and what it names.**  `Stage2OutcomeEvidence` is the
 evidence at one outcome: the document the arguments name, and the run's answer.
 Derived from it are the decoded value (`decodeTape_correct`), the tape's validity

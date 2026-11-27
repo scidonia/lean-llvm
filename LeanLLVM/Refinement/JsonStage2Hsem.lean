@@ -390,24 +390,57 @@ theorem parserHalf_refuse {bs : List UInt8} {verdict : BitVec 64} {m : Mem}
   intro h
   exact absurd h hne
 
+/-! ### The arena's accounting at the trace
+
+The trace names each escaped body by its extent and its offset
+(`EventRecord.str`), not by its bytes: the body is the decoder's output, which
+the record's `len` measures at the cursor its field names.  So the fact a
+reported arena extent carries is the accounting — the staged cursor plus one
+appended body per record in the escaped form — and `arenaExtent` is that sum.
+A plain-form record's body stays in the document and appends nothing.
+
+The accounting is what ties the extent to the trace; the bytes themselves are
+the relation's per-record `escapeCodePoints` clause, which constrains each
+written slice and not the buffer's length.  This is why the replay of the units
+post admits a one-byte arena (`JsonEventEmission.evb_arena_not_empty`) while the
+trace at `[1]` accounts for zero bytes. -/
+
+/-- The arena's used extent as the walk's trace accounts for it: one `len` per
+key or string record written in the escaped form (its field is an arena offset
+below `2 ^ 63`), and nothing for a record of another class or for the plain
+form, whose body the document holds. -/
+def arenaExtent : List EventRecord → Nat
+  | [] => 0
+  | .str _ len field :: rest => (if field < 2 ^ 63 then len else 0) + arenaExtent rest
+  | _ :: rest => arenaExtent rest
+
 /-! ### The evidence at one outcome
 
 The evidence is indexed by the outcome exactly as `ParserHalfForOutcome` is, so
 the producer is asked only at outcomes an execution produces.  It carries the
 document and the run's answer — and not the value, the validity, the span
-discipline or the acceptance equivalence, which the producers above derive. -/
+discipline or the acceptance equivalence, which the producers above derive.
+
+**The arena's reported extent is the trace's accounting.**  The destination
+buffer's read at the reported extent is already here; what it does not pin is
+that extent, because a memory holding one more staged byte satisfies the same
+read.  The accepted branch therefore carries the staged cursor and the equation
+`ndst' = ndst0 + arenaExtent rs`: the cursor is read off the starting memory
+(the same slot the staging wrote), and the rest is the trace's sum.  This is the
+one conjunct the units' post cannot state — it binds no trace — and the one the
+specification's accept branch cannot state either, for the same reason. -/
 
 /-- **The evidence the producer turns into the parser half**, at one outcome of
 the run: the document the arguments name (`base` and the length argument) and the
 walk's answer — an accepted tape, the UTF-8 stage's passed test and the record
-trace related to the tape's tokens, or a refusal at no accepting tape with the
-policy's word at the refusal slot. -/
+trace related to the tape's tokens, its arena accounting, or a refusal at no
+accepting tape with the policy's word at the refusal slot. -/
 def Stage2OutcomeEvidence (base : Nat) (args : List Value) (mem : Mem)
     (ndst' nev' : Nat) (o : Outcome) : Prop :=
   match o, args with
   | .ret (some (.int 64 verdict)) m,
     [.ptr _, .int 64 n, .ptr _, .ptr _, .ptr _, .ptr _, .int 64 _, .ptr _, .ptr _,
-     .int 64 _, .ptr _, .ptr _, .ptr dst, .int 64 _, .ptr _, .ptr ev, .int 64 _,
+     .int 64 _, .ptr _, .ptr _, .ptr dst, .int 64 _, .ptr ndst, .ptr ev, .int 64 _,
      .ptr _, .ptr err, .int 64 _] =>
       ∃ bs : List UInt8,
         n.toNat = bs.length ∧
@@ -419,7 +452,11 @@ def Stage2OutcomeEvidence (base : Nat) (args : List Value) (mem : Mem)
               readBytes m dst ndst' = some arena ∧
               readBytes m ev nev' = some evs ∧
               evs = (rs.map EventRecord.encodedBytes).flatten ∧
-              Stage2Records bs arena rs t.tokens) ∨
+              Stage2Records bs arena rs t.tokens ∧
+              -- the reported extent is the staged cursor plus the trace's sum
+              ∃ ndst0 : Nat,
+                readBytes mem ndst 8 = some (wordBytes 8 ndst0) ∧
+                ndst' = ndst0 + arenaExtent rs) ∨
           (verdict = 0 ∧
             RefusalOffsetPolicy bs m err ∧
             ¬ ∃ t : Tape, parseBytes Limits.default (ByteString.literal bs) = .ok t))
@@ -437,7 +474,8 @@ theorem parserHalfForOutcome_of_evidence {base : Nat} {args : List Value} {mem :
   · obtain ⟨bs, hlen, hread, hcase⟩ := h
     unfold ParserHalfForOutcome
     refine ⟨bs, hlen, hread, ?_⟩
-    rcases hcase with ⟨hv, hutf8, t, rs, arena, evs, hparse, hdst, hev, hrecs, hrel⟩ |
+    rcases hcase with
+      ⟨hv, hutf8, t, rs, arena, evs, hparse, hdst, hev, hrecs, hrel, -, -, -⟩ |
       ⟨hv, hpol, hno⟩
     · exact parserHalf_accept hparse hdst hev hrecs hrel hutf8 hv
     · exact parserHalf_refuse hno hpol hv

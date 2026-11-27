@@ -193,17 +193,20 @@ stored the word; `refusalPolicy_of_route` is how a producer that does know the
 route discharges it. -/
 
 /-- **What the run still owes at one document.**  On acceptance: the bit, the
-parser's tape, the arena and event reads, the walk's row and the stage's passed
-UTF-8 test.  On refusal: the bit, the parser's refusal and the policy at the
-caller's slot. -/
-def ParserHalfResidual (bs : List UInt8) (verdict : BitVec 64) (m : Mem)
-    (dst ev err ndst' nev' : Nat) : Prop :=
+parser's tape, the arena and event reads, the walk's row, the staged arena
+cursor (`mem`'s `ndst` slot, read at the starting memory), the extent the trace
+accounts for from it, and the stage's passed UTF-8 test.  On refusal: the bit,
+the parser's refusal and the policy at the caller's slot. -/
+def ParserHalfResidual (bs : List UInt8) (verdict : BitVec 64) (mem m : Mem)
+    (dst ev err ndst : Nat) (ndst' nev' : Nat) : Prop :=
   (verdict = 1 ∧
-    ∃ (t : Tape) (rs : List EventRecord) (arena : List UInt8),
+    ∃ (t : Tape) (rs : List EventRecord) (arena : List UInt8) (ndst0 : Nat),
       parseBytes Limits.default (ByteString.literal bs) = .ok t ∧
       readBytes m dst ndst' = some arena ∧
       readBytes m ev nev' = some ((rs.map EventRecord.encodedBytes).flatten) ∧
       WalkTraceRow bs arena t rs ∧
+      readBytes mem ndst 8 = some (wordBytes 8 ndst0) ∧
+      ndst' = ndst0 + arenaExtent rs ∧
       utf8WinPrefix (utf8Window bs bs.length (pipelineBlocks bs.length))) ∨
   (verdict = 0 ∧
     (¬ ∃ t : Tape, parseBytes Limits.default (ByteString.literal bs) = .ok t) ∧
@@ -216,10 +219,10 @@ and the accepted document's policy is `refusalOffset_of_parseOk`'s, from the tap
 and the stage's passed test.  The refused branch's policy is the residual's own,
 and its accepted clause is vacuous at the bit. -/
 theorem parserHalfRows_of_residual {bs : List UInt8} {verdict : BitVec 64}
-    {m : Mem} {dst ev err ndst' nev' : Nat}
-    (h : ParserHalfResidual bs verdict m dst ev err ndst' nev') :
+    {mem m : Mem} {dst ev err ndst ndst' nev' : Nat}
+    (h : ParserHalfResidual bs verdict mem m dst ev err ndst ndst' nev') :
     ParserHalfRows stage2EventRel bs verdict m dst ev err ndst' nev' := by
-  rcases h with ⟨hv, t, rs, arena, hparse, hdst, hev, hrow, hutf8⟩ |
+  rcases h with ⟨hv, t, rs, arena, ndst0, hparse, hdst, hev, hrow, -, -, hutf8⟩ |
     ⟨hv, hno, hpol⟩
   · refine ⟨?_, ?_, ?_⟩
     · rw [hv]
@@ -250,12 +253,12 @@ def ParserRowsResidual (base : Nat) (args : List Value)
   match o, args with
   | .ret (some (.int 64 verdict)) m,
     [.ptr _, .int 64 n, .ptr _, .ptr _, .ptr _, .ptr _, .int 64 _, .ptr _, .ptr _,
-     .int 64 _, .ptr _, .ptr _, .ptr dst, .int 64 _, .ptr _, .ptr ev, .int 64 _,
+     .int 64 _, .ptr _, .ptr _, .ptr dst, .int 64 _, .ptr ndst, .ptr ev, .int 64 _,
      .ptr _, .ptr err, .int 64 _] =>
       ∃ bs : List UInt8,
         n.toNat = bs.length ∧
         readBytes mem base n.toNat = some bs ∧
-        ParserHalfResidual bs verdict m dst ev err ndst' nev'
+        ParserHalfResidual bs verdict mem m dst ev err ndst ndst' nev'
   | _, _ => False
 
 /-- **The residual gives the pipeline's rows at the outcome.** -/
@@ -279,9 +282,9 @@ is unchanged.  So the residual is no new obligation, and the converse holds too:
 the two predicates differ only in how the record trace is spelled. -/
 
 /-- **Stage two's evidence supplies the residual.**  The accepted branch's
-`Stage2Records` is the walk's row (`stage2Records_iff_forall₂`), and its
-`evs = (rs.map …).flatten` is the residual's pinned read; the refused branch is
-unchanged. -/
+`Stage2Records` is the walk's row (`stage2Records_iff_forall₂`), its
+`evs = (rs.map …).flatten` is the residual's pinned read, and its staged cursor
+and extent equation are the residual's own; the refused branch is unchanged. -/
 theorem residual_of_evidence {base : Nat} {args : List Value} {mem : Mem}
     {ndst' nev' : Nat} {o : Outcome}
     (h : Stage2OutcomeEvidence base args mem ndst' nev' o) :
@@ -292,9 +295,11 @@ theorem residual_of_evidence {base : Nat} {args : List Value} {mem : Mem}
   · obtain ⟨bs, hlen, hread, hcase⟩ := h
     refine ⟨bs, hlen, hread, ?_⟩
     rcases hcase with
-      ⟨hv, hutf8, t, rs, arena, evs, hparse, hdst, hev, hrecs, hrel⟩ |
+      ⟨hv, hutf8, t, rs, arena, evs, hparse, hdst, hev, hrecs, hrel,
+        ndst0, hndst0read, hndst0eq⟩ |
       ⟨hv, hpol, hno⟩
-    · refine Or.inl ⟨hv, t, rs, arena, hparse, hdst, ?_, ?_, hutf8⟩
+    · refine Or.inl ⟨hv, t, rs, arena, ndst0, hparse, hdst, ?_, ?_,
+        hndst0read, hndst0eq, hutf8⟩
       · rw [hrecs] at hev
         exact hev
       · exact stage2Records_iff_forall₂.mp hrel
@@ -313,10 +318,13 @@ theorem evidence_of_residual {base : Nat} {args : List Value} {mem : Mem}
   split at h
   · obtain ⟨bs, hlen, hread, hcase⟩ := h
     refine ⟨bs, hlen, hread, ?_⟩
-    rcases hcase with ⟨hv, t, rs, arena, hparse, hdst, hev, hrow, hutf8⟩ |
+    rcases hcase with
+      ⟨hv, t, rs, arena, ndst0, hparse, hdst, hev, hrow, hndst0read,
+        hndst0eq, hutf8⟩ |
       ⟨hv, hno, hpol⟩
     · refine Or.inl ⟨hv, hutf8, t, rs, arena,
-        (rs.map EventRecord.encodedBytes).flatten, hparse, hdst, hev, rfl, ?_⟩
+        (rs.map EventRecord.encodedBytes).flatten, hparse, hdst, hev, rfl, ?_,
+        ndst0, hndst0read, hndst0eq⟩
       exact Stage2Records.of_forall₂ hrow
     · exact Or.inr ⟨hv, hpol, hno⟩
   · exact h.elim
