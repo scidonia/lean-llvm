@@ -87,24 +87,32 @@ states that clause (`StopToEntrySpace`, `WalkAlignGaps`) and proves its consumer
 `stop_eq_of_gap_loop` and `stop_eq_of_gap_direct` derive the scan's stop,
 `numberExtentAssumed_of_gap_loop`/`_direct` yield `NumberExtentAssumed` itself,
 and `numberArmPremises_of_parse_scan` is the whole consumer — parse acceptance,
-the token, the lane's identity, the gap and the scan's re-exported answer
-(`ScanArm`) give the number arm's five premises with no extent hypothesis.
-The residue is the clause's initialisation, and it is the parser's rather than
-the emitter's: `parseBytes` skips whitespace between tokens (`spaceRun_all`,
-`skipFrom_space`, which `TapeCorrect`'s decoder proof already uses), but the tape
-predicates record only `checkSpans`'s `prev ≤ s.start` and each token's own bytes
-(`TokenBytes`).  A theorem that a parse-accepted tape's inter-token gaps are
-whitespace (`TokenGapsSpace`) is the exact missing premise.
+the alignment, the token, the lane's identity and the scan's re-exported answer
+(`ScanArm`) give the number arm's five premises with no extent and no gap
+hypothesis.
+
+The clause's initialisation is the parser's tape rather than the emitter's:
+`parseBytes` skips whitespace between tokens (`spaceRun_all`, `skipFrom_space`,
+which `TapeCorrect`'s decoder proof already uses), but the tape predicates record
+only `checkSpans`'s `prev ≤ s.start` and each token's own bytes (`TokenBytes`), so
+the gap fact is proved separately.  `JsonStage2WalkStopsGap.parseBytes_tokenGapsSpace`
+is that production, read from the decoder's own success rather than from the
+parser's recursion: `decodeTape` checks every separator at `skipFrom` of the
+cursor its predecessor stopped at, so a successful decode's token chain has
+whitespace gaps and `decodeTape_correct` carries the success from `parseBytes`.
+`WalkAlignGaps.of_tokenGaps` then turns the tape's gaps into the alignment's.
 
 ## What it is not
 
 This module does not prove the stop equation, and nothing in it should be read as
-a claim that the tree does.  `NumberExtentAssumed` is a *hypothesis* of the
-release theorem — the same kind of named premise as its compiler and ABI steps —
-not a theorem about the scanner, the emitter, or `WalkAlign`.  The maximal-run
-half is not part of it: that is `JsonNumberPremises.parse_number_maximal_run`, a
-theorem about the decoder.  The companion accumulator premise is stated
-separately; this module is the extent half alone.
+a claim that the tree does.  `NumberExtentAssumed` remains a named premise; what
+`JsonStage2WalkStopsGap` shows is that a `parseBytes` acceptance plus the
+alignment and the scan's answer supply every field of it by theorem, so a
+consumer of `numberArmPremises_of_parse_scan` carries no extent or gap
+assumption.  The maximal-run half is not part of it: that is
+`JsonNumberPremises.parse_number_maximal_run`, a theorem about the decoder.  The
+companion accumulator premise is stated separately; this module is the extent
+half alone.
 -/
 import LeanLLVM.Refinement.JsonNumberPremises
 
