@@ -29,8 +29,8 @@
 # `n/a` where the row is this capture's own rewrite (`weakened`).
 #
 # A callee with no row is a body the capture did not rewrite.  `stk_mul_u64`
-# is such a body: the strip removes surface, and it needs no token
-# substituted or weakened.
+# and `stk_cmp` are such bodies: the strip removes surface, and neither
+# needs a token substituted or weakened.
 class	kind	from	to	line	reason
 6	substituted	i64 poison	i64 0	4	poison replaced by the defined lane 0: the lane is one the body overwrites or one whose only readers are result lanes the body never reads
 6	substituted	i8 poison	i8 0	14	poison replaced by the defined lane 0: the lane is one the body overwrites or one whose only readers are result lanes the body never reads

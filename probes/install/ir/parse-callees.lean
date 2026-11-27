@@ -15,10 +15,13 @@ open LeanLLVM
 
 /-- The declared layout each fixture needs: the extent is the datalayout's, and
 the parser takes it from the caller.  `%struct.EPow` is `uint64_t hi, lo;
-int32_t e` — twenty bytes padded to its eight-byte alignment.  The key is the
-name after `%struct.`, which is what `Parser.resolveStruct` looks up. -/
+int32_t e` — twenty bytes padded to its eight-byte alignment; `%struct.StkBn` is
+`uint64_t w[96]` and the `int` count — 776 bytes — and `%struct.Stk` is two of
+those, the `int64_t` exponent and the `int` sticky flag — 1568 bytes.  The key
+is the name after `%struct.`, which is what `Parser.resolveStruct` looks up. -/
 def layoutOf : String → Layout
   | "num_el_el1" => [("EPow", 24)]
+  | "stk_cmp" => [("StkBn", 776), ("Stk", 1568)]
   | _ => []
 
 /-- A layout in the Lean syntax the module's `numElLayout` uses. -/
@@ -26,7 +29,7 @@ def layoutStr (l : Layout) : String :=
   "[" ++ String.intercalate ", " (l.map fun (n, b) => s!"(\"{n}\", {b})") ++ "]"
 
 def main : IO Unit := do
-  let cases : List String := ["num_d8_el1", "num_el_el1", "stk_mul_u64"]
+  let cases : List String := ["num_d8_el1", "num_el_el1", "stk_mul_u64", "stk_cmp"]
   for sym in cases do
     let layout := layoutOf sym
     let src ← IO.FS.readFile s!"probes/install/ir/stage2.callee.{sym}.ll"

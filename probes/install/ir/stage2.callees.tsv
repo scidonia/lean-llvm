@@ -1,4 +1,4 @@
-# The three out-of-line callees as emitted.
+# The four out-of-line callees as emitted.
 # Regenerate with probes/install/ir/capture-stage2-callees.sh.
 #
 # `blocks` counts label lines and `instr_lines` counts lines that begin with
@@ -12,8 +12,12 @@
 #               JsonStage2NumFastCalleeEl, whose #guard states the counts;
 #               parsed with the declared layout [("EPow", 24)])
 #   stk_mul_u64 11 blocks, 77 instructions, 2 params
+#   stk_cmp     104 blocks, 757 instructions, 3 params  (pinned in
+#               JsonStage2NumFastCalleeCmp, whose #guard states the counts;
+#               parsed with the declared layout [("StkBn", 776), ("Stk", 1568)])
 #
 # symbol	lines	blocks	instr_lines	params	symbols_called	globals	assembles
 num_d8_el1	26	3	19	2	llvm.x86.sse2.pmadd.wd,llvm.x86.ssse3.pmadd.ub.sw.128	@llvm.x86.sse2.pmadd.wd,@llvm.x86.ssse3.pmadd.ub.sw.128,@num_d8_el1	yes
 num_el_el1	54	6	41	3	el_exact,el_pack,llvm.ctlz.i64	@el_exact,@el_pack,@EPOW,@g_el_window,@llvm.ctlz.i64,@num_el_el1	no: reads the module-level @EPOW table, whose declaration the extracted block does not carry
 stk_mul_u64	111	11	88	2		@stk_mul_u64	yes
+stk_cmp	1070	104	861	3	llvm.lifetime.end.p0,llvm.lifetime.start.p0,llvm.memset.p0.i64,__memcpy_chk,stk_mul_u64	@llvm.lifetime.end.p0,@llvm.lifetime.start.p0,@llvm.memset.p0.i64,@__memcpy_chk,@stk_cmp,@stk_mul_u64	no: calls stk_mul_u64 out of line, whose define is the separate fixture rather than a declaration the extraction carries
