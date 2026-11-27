@@ -533,7 +533,15 @@ __attribute__((always_inline)) static inline int num_fast_el1(const uint8_t *p, 
 
 /* Limbs enough for every operand: the largest is a 768-digit significand
    (2552 bits) shifted by the 1075-bit denominator clearance, or the scaled
-   boundary `J*5^k*2^shift`, both under 3840 bits; 96 limbs is 6144. */
+   boundary `J*5^k*2^shift`.  The second term's figure is an estimate, not a
+   measured maximum, and it understates: from the clamps below (`-324 <= f <=
+   308`) and `R < 768` one gets `k <= 1091` and a scaled boundary of about 4650
+   bits (73 limbs), where "under 3840" says 60.  The conclusion the figure was
+   carrying still holds - 96 limbs is 6144 - so the array is large enough; a
+   reader sizing anything else on this comment should use 73, not 60.
+   Nothing here is a check: neither `stk_mul_add` nor `stk_shl` tests `n`
+   against `STK_LIMBS`, so the bound is a property of the inputs, not of the
+   code, until a producer's invariant states it. */
 #define STK_LIMBS 96
 
 typedef struct { uint64_t w[STK_LIMBS]; int n; } StkBn;
