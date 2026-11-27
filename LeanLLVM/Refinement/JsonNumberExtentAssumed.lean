@@ -7,8 +7,8 @@ reference parser's canonical value or its parse error, and is competitive with
 native.  Its event route ends at
 `JsonEventBridgeFinal.eventsOfBytes_valueOfEvents_scalar`, whose `hrel :
 Stage2Records bs arena rs toks` is built from the walk's number arm.  That arm's
-number record takes, as its first premise, that the span the stage-1 scanner
-hands to `num_fast_el1` is the grammar token's extent.  Most of that premise is a
+number record takes, as its first premise, that the slice the walk hands to
+`num_fast_el1` is the grammar token's extent.  Most of that premise is a
 theorem about the decoder — `JsonNumberPremises.parse_number_maximal_run` — and
 what the walk alone cannot supply is one equation; this module states that
 equation as an assumption of the release theorem, and proves its consumer.
@@ -29,17 +29,19 @@ theorem, not a hypothesis, and this module does not restate it.
 
 `NumberExtentAssumed bs sp q` is the release theorem's assumption-list entry for
 one number token.  `sp` is the parser's span for the token, `q` the stop the
-stage-1 scalar scan reports for it, and `bs` the document.  Its single field is
+walk's scalar scan reports for it, and `bs` the document.  Its single field is
 
 * `stop_eq` — the scan's stop is the span's stop, so the scanner hands over the
   whole token rather than a stopping point of its own.
 
-That is the emitter/staging piece: `q` is a walk value read from the staged lane
-table, the tape's `sp.stop` is the decoder's, and joining them is what the
-alignment and the stage-1 emitter owe.  `NumberExtentAssumed.ofExtent` records
-that every whole extent implies the assumption (`bs` is retained as a parameter so
-the release theorem's assumption list keeps its shape); the converse,
-`.toExtent_of_tape`, composes the assumption with the decoder's theorems above.
+That is the staging piece: `q` is the stage-2 scan's stop over the staged
+document, the tape's `sp.stop` is the decoder's, and joining them is what the
+scan's whitespace rule and the document's gaps owe — not the entry table, which
+places run starts (`JsonStage2WalkStopsGap`).  `NumberExtentAssumed.ofExtent`
+records that every whole extent implies the assumption (`bs` is retained as a
+parameter so the release theorem's assumption list keeps its shape); the
+converse, `.toExtent_of_tape`, composes the assumption with the decoder's
+theorems above.
 
 ## The consumer
 
@@ -59,36 +61,37 @@ passes to the arm is `hassume.toExtent_of_tape …`, whose maximal-run conjunct 
 `numberArmPremises_of_parseAssumed` is the same consumer from a `parseBytes`
 acceptance, reading the run through `parse_number_maximal_run_literal`.
 
-## The discharge path
+## The discharge path, and why the recorded stop clause is not it
 
-The stop equation is not derivable from the tree's current definitions.
-`WalkAlign` (`LeanLLVM/Refinement/JsonStage2WalkAlignment.lean:313`) pins each
-token's *start* to `entryPos G k` and the next entry to the next token's start;
-it never states that the next entry is the current token's *stop*.  The clause to
-add is `WalkAlignStops`, defined in `JsonNumberPremises`: for every token with a
-successor, the successor's entry position is the token's stop.  It belongs as a
-further conjunct of `WalkAlign` in `LeanLLVM/Refinement/JsonStage2WalkAlignment.lean`
-— at the token-start reading, which is the stream exactly when no token is a
-string; under `WalkAlignQuoted` the clause is read at the number's start lane
-rather than at a token index.  Whether the staged stream places an entry at the
-digit-run end of a number — rather than only at the next structural or scalar
-byte — is exactly the emitter question below.
+The stop equation is not derivable from the tree's definitions, and the clause an
+earlier reading of this module recorded — `WalkAlignStops` in
+`JsonNumberPremises`, a conjunct saying the successor entry is the token's stop —
+is not merely unproved: it is false.  `WalkAlign` already forces the byte at
+every entry to announce a token class (`WalkAlign.class`), and no whitespace byte
+has a class.  A token followed by whitespace ends on a whitespace byte, so its
+stop cannot be the successor entry.  `[1 ,2]` is a valid document at which
+`WalkAlign` holds and `WalkAlignStops` fails: the entry stream is
+`[0, 1, 3, 4, 5]`, the first number's stop is `2`, and its successor entry is the
+comma at `3`.  `JsonStage2WalkStopsGap` proves the refutation
+(`WalkAlign.not_stops_of_isSpace`) and the corrected clause.
 
-Initialising the clause is the stage-1 emitter's job, and that is the part the
-tree does not have.  `WalkGeom.entries`
-(`LeanLLVM/Refinement/JsonStage2WalkScopeGeom.lean:21`, field `entries` at line
-70) reads the staged lane table; `entryPos` (same file, line 891) is a lane
-read.  The stage-1 emitter that fills those lanes (`entryMask64`'s lanes,
-`JsonEntSpec`) has no Lean semantics anywhere in the tree, and what it produces
-is entry *positions*, not extents.  Discharging the assumption therefore needs
-the emitter's *stop* side — the statement that the lane after a number's start
-lane is the run's stop — and that side would have to be **proved** (a body proof
-of the emitter, composed with `parseValue`'s token list) or **measured** (an
-identity or a capture of the emitted object bound to `decodeTape`'s tokens).
-Only then does `WalkAlign` plus the decoder's spans give `NumberExtentAssumed`
-at every number token.  The last token is outside `WalkAlignStops`: its stop is
-the scalar scan's `q`, obtained from the document, and joining it to the tape is
-the final piece of the same discharge.
+The stage-1 model confirms the shape rather than repairing it: `JsonEntSpec`'s
+`entry_mask_eq` makes an entry bit an unescaped quote, a delimiter outside a
+string, or a scalar run's first lane, and `positionsOf` turns those into
+positions.  Nothing in that definition names a run's last lane, so the emitter
+can supply neither the false clause nor the true one.
+
+What the stop equation needs is the document's gap: between a token's stop and
+the walk's `%cond` bound the bytes are whitespace.  `JsonStage2WalkStopsGap`
+states that clause (`StopToEntrySpace`, `WalkAlignGaps`) and proves its consumers:
+`stop_eq_of_gap_loop` and `stop_eq_of_gap_direct` derive the scan's stop, and
+`numberExtentAssumed_of_gap_loop`/`_direct` yield `NumberExtentAssumed` itself.
+The residue is the clause's initialisation, and it is the parser's rather than
+the emitter's: `parseBytes` skips whitespace between tokens (`spaceRun_all`,
+`skipFrom_space`, which `TapeCorrect`'s decoder proof already uses), but the tape
+predicates record only `checkSpans`'s `prev ≤ s.start` and each token's own bytes
+(`TokenBytes`).  A theorem that a parse-accepted tape's inter-token gaps are
+whitespace is the exact missing premise.
 
 ## What it is not
 

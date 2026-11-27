@@ -375,5 +375,6 @@ import LeanLLVM.Refinement.JsonEventIndexed
 import LeanLLVM.Refinement.JsonNumberPremises
 import LeanLLVM.Refinement.JsonEventIndexedStep
 import LeanLLVM.Refinement.JsonNumberExtentAssumed
+import LeanLLVM.Refinement.JsonStage2WalkStopsGap
 import LeanLLVM.Refinement.JsonNumFastAssumed
 import LeanLLVM.Refinement.JsonNumberSegmentation

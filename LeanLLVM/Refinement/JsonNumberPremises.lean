@@ -65,17 +65,21 @@ gives the span's well-formedness from the run's non-emptiness.  What is left of
 the statement is the stop equation `q = sp.stop`, and that is the walk's half.
 `WalkAlign` (`JsonStage2WalkAlignment.lean:313`) pins each token's *start* to
 `entryPos G k` and the next entry to the next token's start; it never states
-that the next entry is the current token's *stop*.  `entryPos` is a lane read of
-a staged table (`JsonStage2WalkScopeGeom.entryPos`,
-`WalkGeom.entries : readLanes32 m0 ep nep = some ent`) — the stage-1 emitter
-that fills those lanes has no Lean semantics anywhere in the tree.  The scalar
-scan's stop `q` is a walk value, and `JsonStage2NoEventWalkValue` proves only
-`lane ≤ q ≤ cond` and `q = cond ∨ stage2SkipWs` at `q`.  So closing the stop
-equation needs a *definition change* — a stop clause such as `WalkAlignStops`
-below, added to the alignment the walk's invariant preserves (initialised from
-the stage-1 emitter) — together with a *measurement or a body proof* of that
-emitter's stop side: the mask classifier in the tree produces entry positions,
-not extents.
+that the next entry is the current token's *stop*, and the clause that would
+state it (`WalkAlignStops` below) is false: `WalkAlign.class` forces every entry
+byte to carry a token class, and whitespace has none, so a scalar followed by
+whitespace cannot have its stop named by the successor entry (`[1 ,2]` is a
+valid witness).  `entryPos` is a lane read of a staged table
+(`JsonStage2WalkScopeGeom.entryPos`, `WalkGeom.entries : readLanes32 m0 ep nep =
+some ent`) filled by a stage-1 emitter whose model (`JsonEntSpec.entry_mask_eq`,
+`positionsOf`) produces entry *positions* — quotes, delimiters and scalar run
+starts — and no extents.  The scalar scan's stop `q` is a walk value, and
+`JsonStage2NoEventWalkValue` proves only `lane ≤ q ≤ cond` and `q = cond ∨
+stage2SkipWs` at `q`.  What closes the stop equation is not an emitter stop side
+but the document's gap clause (`JsonStage2WalkStopsGap.StopToEntrySpace`,
+`WalkAlignGaps`): between the token's stop and the walk's bound the bytes are
+whitespace.  That clause's consumers are proved there; its initialisation is the
+parser's whitespace skip and is not stated anywhere in the tree.
 
 ## Premise 2 — the emitted accumulators are the reader's decimal fields
 
@@ -303,19 +307,25 @@ theorem tokenRecord_number_of_tape_reader {t : Tape} {v : JSON.Value}
     omega
   · rw [ByteString.data_toList_literal]
 
-/-- **The clause `WalkAlign` is missing.**  For every token that has a
-successor, the successor's entry is the token's stop.  `WalkAlign` names the
-successor's *start* at the same position, so the two agree only when this clause
-holds; adding it (and a proof of the stage-1 emitter's stops) is the definition
-change Premise 1 needs.  The last token is outside the clause: its stop is the
-scalar scan's `q`, which the walk obtains from the document, not from an entry. -/
+/-- **The retired stop clause — false, and kept only as the shape it named.**
+For every token with a successor, the successor's entry would be the token's
+stop.  `WalkAlign` names the successor's *start* at that position, so the two
+agree only when no byte intervenes; `WalkAlign.class` forces every entry to
+carry a token class, so a token followed by whitespace can never satisfy this.
+`[1 ,2]` is a valid witness (`ent = [0, 1, 3, 4, 5]`, the first number's stop is
+`2`, its successor entry is the comma at `3`): `WalkAlign` holds and this clause
+does not.  `JsonStage2WalkStopsGap` proves the refutation
+(`WalkAlign.not_stops_of_isSpace`) and states the clause that does hold
+(`WalkAlignGaps`: the gap to the walk's bound is whitespace).  Do not add this
+as a conjunct of `WalkAlign`. -/
 def WalkAlignStops {m0 : Mem} (G : WalkGeom m0) (t : Tape) : Prop :=
   ∀ (k : Nat) (tok : Token), t.tokens[k]? = some tok → k + 1 < G.nep →
     entryPos G (k + 1) = tok.span.stop
 
 /-- **The stop clause at a number token.**  With `WalkAlignStops`, a non-last
 number token's next entry is its stop, so the walk's `%cond` is the tape's
-`span.stop` and the extent premise's `q = sp.stop` is the scan's own equation. -/
+`span.stop`.  The premise is refuted at whitespace-terminated tokens; see
+`JsonStage2WalkStopsGap`. -/
 theorem entryPos_next_of_number {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     (hstop : WalkAlignStops G t) {k : Nat} {sp : Span}
     (htok : t.tokens[k]? = some (.number sp)) (hk : k + 1 < G.nep) :
