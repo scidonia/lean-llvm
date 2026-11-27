@@ -1,0 +1,17 @@
+# The three out-of-line callees as emitted.
+# Regenerate with probes/install/ir/capture-stage2-callees.sh.
+#
+# `blocks` counts label lines and `instr_lines` counts lines that begin with
+# two spaces, which includes an instruction's continuation lines; neither is
+# the parsed shape.  The parsed shapes below are what
+# `lake env lean --run probes/install/ir/parse-callees.lean` prints: 
+#   num_d8_el1  3 blocks, 16 instructions, 2 params  (pinned in
+#               JsonStage2NumFastCalleeD8, whose #guard states the counts)
+#   stk_mul_u64 11 blocks, 77 instructions, 2 params
+#   num_el_el1  refused at the array-of-struct type its EPOW index writes:
+#               "%struct.EPow is not a type the parser reads"
+#
+# symbol	lines	blocks	instr_lines	params	symbols_called	globals	assembles
+num_d8_el1	26	3	19	2	llvm.x86.sse2.pmadd.wd,llvm.x86.ssse3.pmadd.ub.sw.128	@llvm.x86.sse2.pmadd.wd,@llvm.x86.ssse3.pmadd.ub.sw.128,@num_d8_el1	yes
+num_el_el1	54	6	41	3	el_exact,el_pack,llvm.ctlz.i64	@el_exact,@el_pack,@EPOW,@g_el_window,@llvm.ctlz.i64,@num_el_el1	no: reads the module-level @EPOW table, whose declaration the extracted block does not carry
+stk_mul_u64	111	11	88	2		@stk_mul_u64	yes

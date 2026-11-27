@@ -681,11 +681,18 @@ path when a callee is absent, because the call is not guarded by an answer
 their `step`/`runFuel` forms).  A body-level proof of the arm cannot therefore be
 carried by the body's run at the walk's environment: the conversion's arithmetic
 is unreachable there, and `NumFastBodyArm`'s `Calls` parameter is what a proof
-must supply first.  None of
-the three callees is captured as a fixture — no `define` for them exists under
-`probes/` or `kernel/` — so their answers' shape (the digit pair, the kernel's
-decision and code, the multiply's product) is a decision to make, not a fact to
-read.
+must supply first.  The three callees are captured now:
+`probes/install/ir/capture-stage2-callees.sh` writes `stage2.callee.num_d8_el1.ll`,
+`stage2.callee.num_el_el1.ll` and `stage2.callee.stk_mul_u64.ll` from the same
+emission the helpers come from, and `stage2.callees.tsv` records each body's
+shape — three blocks and nineteen instructions for the digit pair, six and
+forty-one for the kernel (whose two `el_` helpers stay out of line and whose
+`EPOW` table is a module-level global), eight and eighty-eight for the multiply.
+So the digit pair's shape is read rather than decided; the kernel's decision and
+the multiply's product are still decisions, and the agreement of each body with
+its model remains the obligation `NumFastCalleesAnswered` names.
+`JsonStage2NumFastCalleeD8` pins `num_d8_el1`'s body and proves its eight-digit
+test — the branch condition, not the value.
 
 Two further inputs are outside the contract's staging, and `NumFastBodyArm`
 carries them as hypotheses rather than silently taking them.  The first is the
@@ -1321,21 +1328,6 @@ step relates one record to one token, and the trace is the concatenation.
 `pair_records` and `null_records` instantiate it at two documents with the
 emitted bytes computed rather than assumed; §7.11 states and proves the relation's
 general form, which makes those two instances rather than the claim.
-
-**The arena's reported extent is the trace's accounting.**  `Stage2OutcomeEvidence`
-also reads the staged arena cursor off the starting memory and states
-`ndst' = ndst0 + arenaExtent rs`, where `arenaExtent` sums one `len` per record
-in the escaped form (`strArena`, whose field is an arena offset); the plain
-form's body stays in the document and appends nothing.  The bodies' bytes are
-not a function of the trace — each is the decoder's output, which the record
-names by extent and offset — so the trace accounts for the extent, and the
-relation's per-record `escapeCodePoints` clause constrains the bytes.  This is
-the clause the units post and `Sigma_pipeline` cannot state (neither binds a
-trace); at the event slice `[1]` the trace is three bodyless records, so the
-accounting is zero and the destination's reported prefix is empty:
-`evb_arena_extent_zero_of_evidence` and `evb_emission_of_evidence`
-(`JsonEventEmission`) make `EvbEmission.arena_eq` a theorem of the slice rather
-than a further assumption.
 
 **What the producer derives, and what it names.**  `Stage2OutcomeEvidence` is the
 evidence at one outcome: the document the arguments name, and the run's answer.
