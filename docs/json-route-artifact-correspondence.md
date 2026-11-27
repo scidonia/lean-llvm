@@ -185,3 +185,46 @@ resolves rather than objects the probe links.  The probe's claim stays what the
 scenario measures: the route reports *this object's* observation, byte for byte,
 and the object's relation to the proved body is the one recorded above and no
 stronger.
+
+## What a release claim transfers across the two builds
+
+The measurements above say the object is not the fixture's function. They do
+not say what a claim about the proved body owes once it is carried to the
+object. This section states that, so the transfer is a listed obligation rather
+than an implication of the shared source.
+
+**The callee contracts.** The proof resolves each of the five callees through its
+environment: `num_d8_el1`, `num_el_el1`, `stk_mul_u64`, `stk_cmp`, and the
+library's bounds-checked copy. The fixture keeps **ten** call sites to those
+bodies; the untransformed emissions keep none, because every helper is
+`always_inline` before the transform. So in the object the contracts are not
+discharged at calls — they are discharged at **inlined instances of the same C
+text**. Carrying the claim therefore requires one of:
+
+- that each inlined instance's emitted code is the body the contract was proved
+  of, at the same arguments — a per-helper correspondence, of which the record
+  above gives three of eleven as identical under the transform, six as differing,
+  and two as absent;
+- or the compiler trust row, taken once, that inlining and the optimisation level
+  preserve each helper's contract.
+
+The record does not choose between them. It is the reason a claim cannot stop at
+"both are emitted from `kernel/json/stage2.c`".
+
+**What the differing bodies cost.** The six helpers whose bodies differ and the
+walk's own body (937 instruction lines against 622) are where a contract
+transfer would have to be re-established, not merely cited. Three helpers are
+identical after the recorded normalisation, and for those the transfer is the
+transform's own record.
+
+**What is not owed.** The proof's statements are about the emitted IR the parser
+accepted and the fixture pins; they are not statements about the object's
+machine code. The object's agreement with the fixture is measured by the route's
+scenario (`tests/json-*`), whose claim is about observation, not about the model.
+Keeping the two kinds of claim apart is what makes the certificate's trust rows
+readable: one row for the model-to-C correspondence, one for the compiler and
+backend, one for the ABI the certificate names.
+
+**Re-measure when** the fixture is regenerated, the transform changes, the
+helper set changes, or the optimisation level moves — the same cadence as the
+measurements above.
