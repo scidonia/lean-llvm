@@ -257,7 +257,8 @@ and the `n` limbs it names, the step's memory holds the new limbs' length in the
 same cell. -/
 theorem stkMulAddAnswer_count {a m c : Nat} {mem : Mem} {next n : Nat} {ws : List Nat}
     (hcnt : stkCount mem a = some n) (hl : stkLimbs mem a n = some ws)
-    (hwords : ∀ w ∈ ws, w < 2 ^ 64) (hm : m < 2 ^ 64) (hc : c < 2 ^ 64) :
+    (hwords : ∀ w ∈ ws, w < 2 ^ 64) (hm : m < 2 ^ 64) (hc : c < 2 ^ 64)
+    (hwslen : ws.length ≤ 96) :
     ∃ mem', stkMulAddAnswer a m c mem next
         = some { ret := .int 1 0, mem := mem', next := next }
       ∧ stkCount mem' a = some (stkMulAddLimbs ws m c).length := by
@@ -270,11 +271,12 @@ theorem stkMulAddAnswer_count {a m c : Nat} {mem : Mem} {next n : Nat} {ws : Lis
 /-- The store's count at the ingest's own call shape, as a `Value` list. -/
 theorem numStkMulAddAnswer_count {a : Nat} {m c : BitVec 64} {mem : Mem} {next n : Nat}
     {ws : List Nat} (hcnt : stkCount mem a = some n) (hl : stkLimbs mem a n = some ws)
-    (hwords : ∀ w ∈ ws, w < 2 ^ 64) (hm : m.toNat < 2 ^ 64) (hc : c.toNat < 2 ^ 64) :
+    (hwords : ∀ w ∈ ws, w < 2 ^ 64) (hm : m.toNat < 2 ^ 64) (hc : c.toNat < 2 ^ 64)
+    (hwslen : ws.length ≤ 96) :
     ∃ mem', numStkMulAddAnswer [.ptr a, .int 64 m, .int 64 c] mem next
         = some { ret := .int 1 0, mem := mem', next := next }
       ∧ stkCount mem' a = some (stkMulAddLimbs ws m.toNat c.toNat).length := by
-  obtain ⟨mem', h, hc'⟩ := stkMulAddAnswer_count hcnt hl hwords hm hc
+  obtain ⟨mem', h, hc'⟩ := stkMulAddAnswer_count hcnt hl hwords hm hc hwslen
   refine ⟨mem', ?_, hc'⟩
   simpa only [numStkMulAddAnswer] using h
 
@@ -282,7 +284,7 @@ theorem numStkMulAddAnswer_count {a : Nat} {m c : BitVec 64} {mem : Mem} {next n
 addend-0 instance of the append: `stkMulWords ws m` is `stkMulAddLimbs ws m 0`. -/
 theorem numStkMulAnswer_count {a : Nat} {m : BitVec 64} {mem : Mem} {next n : Nat}
     {ws : List Nat} (hcnt : stkCount mem a = some n) (hl : stkLimbs mem a n = some ws)
-    (hwords : ∀ w ∈ ws, w < 2 ^ 64) (hm : m.toNat < 2 ^ 64) :
+    (hwords : ∀ w ∈ ws, w < 2 ^ 64) (hm : m.toNat < 2 ^ 64) (hwslen : ws.length ≤ 96) :
     ∃ mem', numStkMulAnswer [.ptr a, .int 64 m] mem next
         = some { ret := .int 1 0, mem := mem', next := next }
       ∧ stkCount mem' a = some (stkMulWords ws m.toNat).length := by
@@ -325,8 +327,7 @@ theorem readBytes_stkWriteLimbs_at : (ws : List Nat) → (mem : Mem) → (a k : 
             (a + 8) ws) a 8 = some (natToBytes (w % 2 ^ 64) 8)
           rw [readBytes_stkWriteLimbs_below (writeBytes mem a (natToBytes (w % 2 ^ 64) 8))
             ws (a + 8) a 8 (by omega)]
-          simpa [natToBytes_length] using
-            readBytes_writeBytes_same mem (natToBytes (w % 2 ^ 64) 8) (addr := a)
+          exact readBytes_writeBytes_same mem (natToBytes (w % 2 ^ 64) 8) (addr := a)
       | succ j =>
           have hw' : ∀ u ∈ ws, u < 2 ^ 64 := fun u hu => hw u (by simp [hu])
           have hk' : j < ws.length := by simpa using hk
@@ -412,7 +413,6 @@ theorem stkLimbs_writeCount (mem : Mem) (a : Nat) (ws : List Nat)
   rw [stkLimbs_writeBytes_above (stkWriteLimbs mem a ws) a ws.length (a + stkCountOffset)
     (natToBytes ws.length 4) (by
       have hoff : stkCountOffset = 768 := rfl
-      rw [natToBytes_length]
       omega)]
   exact stkLimbs_stkWriteLimbs mem a ws hw
 
@@ -612,9 +612,11 @@ def stkMulAddRun (mem : Mem) (a : Nat) (ws : List Nat) : List (Nat × Nat) → M
 theorem stkMulAddRun_snd (mem : Mem) (a : Nat) (ws : List Nat)
     (calls : List (Nat × Nat)) :
     (stkMulAddRun mem a ws calls).2 = stkMulAddCalls calls ws := by
-  induction calls generalizing ws with
+  induction calls generalizing mem ws with
   | nil => rfl
-  | cons p ps ih => exact ih (stkMulAddLimbs ws p.1 p.2)
+  | cons p ps ih =>
+      simp only [stkMulAddRun, stkMulAddCalls]
+      exact ih (stkMulAddMem mem a ws p.1 p.2) (stkMulAddLimbs ws p.1 p.2)
 
 /-- **One answered call keeps the count tied to the limbs.** -/
 theorem stkMulAddRun_exact {a : Nat} :
@@ -624,23 +626,24 @@ theorem stkMulAddRun_exact {a : Nat} :
       ws.length + calls.length ≤ 96 →
       stkBnLimbs (stkMulAddRun mem a ws calls).1 a (stkMulAddRun mem a ws calls).2
   | [], mem, ws, h, _, _, _ => by simpa [stkMulAddRun] using h
-  | p :: ps, mem, ws, h, hwords, hpc, hcap => by
-      obtain ⟨hcnt, hlim⟩ := h
+  | p :: ps, mem, ws, _, hwords, hpc, hcap => by
       have hp : p.1 < 2 ^ 64 ∧ p.2 < 2 ^ 64 := hpc p (by simp)
       have hle : (stkMulAddLimbs ws p.1 p.2).length ≤ ws.length + 1 :=
         stkMulAdd_length_le hwords hp.1 hp.2
+      have hwords' : ∀ w ∈ stkMulAddLimbs ws p.1 p.2, w < 2 ^ 64 :=
+        stkMulAdd_lt hwords hp.1 hp.2
+      have hlen96 : (stkMulAddLimbs ws p.1 p.2).length ≤ 96 := by
+        simp only [List.length_cons] at hcap
+        omega
       have hcap' : (stkMulAddLimbs ws p.1 p.2).length + ps.length ≤ 96 := by
         simp only [List.length_cons] at hcap
         omega
       have hstep : stkBnLimbs (stkMulAddMem mem a ws p.1 p.2) a
           (stkMulAddLimbs ws p.1 p.2) :=
-        ⟨stkCount_writeCount mem a (stkMulAddLimbs ws p.1 p.2)
-            (by simp only [List.length_cons] at hcap; omega),
-          stkLimbs_writeCount mem a (stkMulAddLimbs ws p.1 p.2) hwords (by
-            simp only [List.length_cons] at hcap; omega)⟩
+        ⟨stkCount_writeCount mem a (stkMulAddLimbs ws p.1 p.2) (by omega),
+          stkLimbs_writeCount mem a (stkMulAddLimbs ws p.1 p.2) hwords' hlen96⟩
       exact stkMulAddRun_exact ps (stkMulAddMem mem a ws p.1 p.2)
-        (stkMulAddLimbs ws p.1 p.2) hstep
-        (stkMulAdd_lt hwords hp.1 hp.2) (fun q hq => hpc q (by simp [hq])) hcap'
+        (stkMulAddLimbs ws p.1 p.2) hstep hwords' (fun q hq => hpc q (by simp [hq])) hcap'
 
 /-- **The run's count tie grows by the calls.** -/
 theorem stkMulAddRun_countTie {a : Nat} {mem : Mem} {ws : List Nat}
@@ -717,7 +720,8 @@ theorem readBytes_stkMulAddRun_above {a : Nat} :
         simp only [List.length_cons] at hcap
         have := stkMulAdd_length_le hwords hp.1 hp.2
         omega
-      have hstep := readBytes_stkMulAddMem_above hwords hp.1 hp.2 hwsle hq
+      have hstep := readBytes_stkMulAddMem_above (mem := mem) (a := a) (ws := ws)
+        (m := p.1) (c := p.2) (q := q) (k := k) hwords hp.1 hp.2 hwsle hq
       have hr := readBytes_stkMulAddRun_above ps (stkMulAddMem mem a ws p.1 p.2)
         (stkMulAddLimbs ws p.1 p.2) q k (stkMulAdd_lt hwords hp.1 hp.2)
         (fun q' hq' => hpc q' (by simp [hq'])) hcap' hq
@@ -746,7 +750,8 @@ theorem ingestCountTie_of_run {mem : Mem} {v R : Nat} {calls : List (Nat × Nat)
     (hpc : ∀ p ∈ calls, p.1 < 2 ^ 64 ∧ p.2 < 2 ^ 64)
     (hlen : calls.length = nestSteps 19 R) :
     ingestCountTie (stkMulAddRun mem v [] calls).1 v R := by
-  have hcap : calls.length ≤ 96 := by
+  have hcap : ([] : List Nat).length + calls.length ≤ 96 := by
+    have hnil : ([] : List Nat).length = 0 := rfl
     rw [hlen]
     have := ingest_limbs_le hR
     omega
@@ -761,7 +766,8 @@ theorem powFiveCountTie_of_run {mem : Mem} {v k : Nat} {calls : List (Nat × Nat
     (hpc : ∀ p ∈ calls, p.1 < 2 ^ 64 ∧ p.2 < 2 ^ 64)
     (hlen : calls.length = nestSteps 27 k) :
     powFiveCountTie (stkMulAddRun mem (v + 776) [1] calls).1 v k := by
-  have hcap : 1 + calls.length ≤ 96 := by
+  have hcap : ([1] : List Nat).length + calls.length ≤ 96 := by
+    have h1 : ([1] : List Nat).length = 1 := rfl
     rw [hlen]
     have := pow_five_limbs_le hk
     omega
@@ -776,7 +782,8 @@ theorem powTenCountTie_of_run {mem : Mem} {v k : Nat} {calls : List (Nat × Nat)
     (hpc : ∀ p ∈ calls, p.1 < 2 ^ 64 ∧ p.2 < 2 ^ 64)
     (hlen : calls.length = nestSteps 19 k) :
     powTenCountTie (stkMulAddRun mem (v + 776) [1] calls).1 v k := by
-  have hcap : 1 + calls.length ≤ 96 := by
+  have hcap : ([1] : List Nat).length + calls.length ≤ 96 := by
+    have h1 : ([1] : List Nat).length = 1 := rfl
     rw [hlen]
     have := pow_ten_limbs_le hk
     omega
@@ -791,7 +798,8 @@ theorem foldCountTie_of_run {mem : Mem} {v R S : Nat} {calls : List (Nat × Nat)
     (hpc : ∀ p ∈ calls, p.1 < 2 ^ 64 ∧ p.2 < 2 ^ 64)
     (hlen : calls.length = nestSteps 19 R + nestSteps 19 S) :
     foldCountTie (stkMulAddRun mem v [] calls).1 v R S := by
-  have hcap : calls.length ≤ 96 := by
+  have hcap : ([] : List Nat).length + calls.length ≤ 96 := by
+    have hnil : ([] : List Nat).length = 0 := rfl
     rw [hlen]
     have := fold_limbs_le hR hS
     omega
@@ -811,7 +819,8 @@ theorem ingestRun_pow_count {mem : Mem} {v R : Nat} {calls : List (Nat × Nat)}
     (hlen : calls.length = nestSteps 19 R) :
     stkCount (stkMulAddRun mem v [] calls).1 (v + 776)
       = stkCount mem (v + 776) := by
-  have hcap : calls.length ≤ 96 := by
+  have hcap : ([] : List Nat).length + calls.length ≤ 96 := by
+    have hnil : ([] : List Nat).length = 0 := rfl
     rw [hlen]
     have := ingest_limbs_le hR
     omega
@@ -825,7 +834,8 @@ theorem ingestRun_pow_limbs {mem : Mem} {v R : Nat} {calls : List (Nat × Nat)}
     (hlen : calls.length = nestSteps 19 R) :
     stkLimbs (stkMulAddRun mem v [] calls).1 (v + 776) 1
       = stkLimbs mem (v + 776) 1 := by
-  have hcap : calls.length ≤ 96 := by
+  have hcap : ([] : List Nat).length + calls.length ≤ 96 := by
+    have hnil : ([] : List Nat).length = 0 := rfl
     rw [hlen]
     have := ingest_limbs_le hR
     omega
@@ -950,15 +960,16 @@ theorem numCmp_copyLen_le_of_sticky_runs {mem0 : Mem} {v R k : Nat} {nw : BitVec
 
 /-! ### Axiom footprints
 
-The add-carry store and the branch's new end, pinned so the build checks them. -/
+The add-carry store and the run's step invariant, pinned so the build checks
+them. -/
 
 /-- info: 'LeanLLVM.Refinement.NumFastProducerCount.stkMulAddAnswer_count' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stkMulAddAnswer_count
 
-/-- info: 'LeanLLVM.Refinement.NumFastProducerCount.sticky_ties_of_runs' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.NumFastProducerCount.stkMulAddRun_exact' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
-#print axioms sticky_ties_of_runs
+#print axioms stkMulAddRun_exact
 
 end NumFastProducerCount
 
