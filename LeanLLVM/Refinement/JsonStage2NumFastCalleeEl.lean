@@ -59,11 +59,22 @@ vocabulary:
 body: `numElEl1`'s answer at the entry state — the refusal arms, the window's
 `el_exact` call and the fast path's `el_pack` call — is not stated here.  What is
 here is the branch condition and the arguments those calls pass, each proved of
-the pinned text.  The two out-of-line callees are not modelled either: `el_exact`
-and `el_pack` are `Calls`-resolved in the body, their own emitted bodies are not
-captured under `probes/`, and this fixture is a `define` block, so it carries no
-`@EPOW` or `@g_el_window` declaration — the table's rows and the counter's word
-are the staging's data (`NumElRow`, `numElGlobals`), not text the fixture states.
+the pinned text.  The two out-of-line callees are answered at the `Calls`
+boundary now (`numElCalls`), which is the fact a run needs and `numD8Calls` did
+not: their own emitted bodies are not captured under `probes/`, and this fixture
+is a `define` block, so it carries no `@EPOW` or `@g_el_window` declaration — the
+table's rows and the counter's word are the staging's data (`NumElRow`,
+`numElGlobals`), not text the fixture states.
+
+**The arm as stated is false, and the section below proves why.**  The window arm
+loads `@g_el_window`, adds one and stores it back before it calls `el_exact`,
+while `numElAnswer` writes nothing but the eight bytes at `out`
+(`numElAnswer_frame`).  So no equality between the body's run and `numElAnswer`
+holds on that arm (`numEl_ifThen18_counter`): the run's memory has the counter's
+next word and the model's has the word it was given.  The difference is proved at
+both ends rather than papered over: an equality needs either a model that carries
+the counter — `numElAnswer` is the walk's `NumFastCalleesAnswered` value, so that
+is a change at the walk's selection — or a frame that exempts the counter's cell.
 -/
 import LeanLLVM.Refinement.JsonStage2HelperIR
 import LeanLLVM.Refinement.JsonStage2NumFastCalls
@@ -553,6 +564,355 @@ theorem numEl_globals_window : lookupName numElGlobals "@g_el_window" = some 0x2
 /-- The two staged regions do not overlap. -/
 theorem numEl_globals_disjoint : 0x100000 + 2184 ≤ 0x200000 := by decide
 
+open LeanLLVM.Refinement.BlockEval
+
+/-! ### The staged call environment: three symbols, not one
+
+`JsonStage2NumFastCalleeD8`'s body called only intrinsics, and `escapeCalls`
+answered it.  This body calls one intrinsic and two out-of-line functions,
+`el_exact` and `el_pack`, whose own emitted bodies are not captured under
+`probes/`.  The environment below answers all three at the `Calls` boundary out
+of the model's own vocabulary — `ctlz` for the count, `elExact` and `elPack` for
+the helpers — and answers nothing else, so an unresolved symbol stays `ub`.  That
+is the fact `numD8Calls` did not need: the run of this body is defined only at an
+environment that answers a callee inside it.
+
+The two helpers take their row from the table the model already has as a
+parameter, not from the pointer argument they are passed: the body's own two
+loads (`numEl_load_hi`, `numEl_load_e`) are what tie the staged row to the
+memory, and a row that disagreed with `epow` would separate the body's slice from
+the model's. -/
+
+/-- A 32-bit word as the `int` it was written from: the low four bytes of the
+two's-complement value, which is what the emitted `int32_t` slot holds. -/
+def numElI32ToInt (x : BitVec 32) : Int :=
+  if x.toNat < 2 ^ 31 then (x.toNat : Int) else (x.toNat : Int) - 2 ^ 32
+
+/-- **The exponent's word decodes to its exponent.**  `epowEWord` is the slot's
+little-endian word, so the round trip is `e % 2 ^ 32` read back with `Int`'s
+sign; on the table's range (`|e| < 2 ^ 31`) it is `e`. -/
+theorem numElI32ToInt_epowEWord {e : Int} (hlo : -(2 ^ 31 : Int) ≤ e)
+    (hhi : e < 2 ^ 31) :
+    numElI32ToInt (BitVec.ofNat 32 (epowEWord e)) = e := by
+  have hmod : e % (2 ^ 32 : Int) = if 0 ≤ e then e else e + 2 ^ 32 := by
+    by_cases h : 0 ≤ e
+    · rw [if_pos h, Int.emod_eq_of_lt h (by omega)]
+    · rw [if_neg h]
+      calc e % (2 ^ 32 : Int) = (e + 2 ^ 32) % (2 ^ 32 : Int) := by
+              rw [Int.add_emod, Int.emod_self, Int.add_zero, Int.emod_emod]
+        _ = e + 2 ^ 32 := Int.emod_eq_of_lt (by omega) (by omega)
+  have hx : (BitVec.ofNat 32 (epowEWord e)).toNat = epowEWord e := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (epowEWord_lt e)]
+  unfold numElI32ToInt
+  rw [hx]
+  by_cases h : 0 ≤ e
+  · have hw : epowEWord e = e.toNat := by
+      unfold epowEWord
+      rw [hmod, if_pos h]
+    rw [hw]
+    have hlt : e.toNat < 2 ^ 31 := by
+      have hcast := Int.toNat_of_nonneg h
+      omega
+    rw [if_pos hlt]
+    exact Int.toNat_of_nonneg h
+  · have hw : epowEWord e = (e + 2 ^ 32).toNat := by
+      unfold epowEWord
+      rw [hmod, if_neg h]
+    rw [hw]
+    have hcast : ((e + 2 ^ 32).toNat : Int) = e + 2 ^ 32 :=
+      Int.toNat_of_nonneg (by omega)
+    have hge : ¬ (e + 2 ^ 32).toNat < 2 ^ 31 := by omega
+    rw [if_neg hge]
+    omega
+
+/-- The kernel's three callees, answered at the `Calls` boundary. -/
+def numElCalls (epow : Int → Option EPow) : Calls :=
+  fun callee args mem next =>
+    match callee, args with
+    | "llvm.ctlz.i64", [.int 64 x, .int 1 _flag] =>
+        some { ret := .int 64 (BitVec.ofNat 64 (BitLanes.ctlz x)),
+               mem := mem, next := next }
+    | "el_exact", [.int 64 W, .int 32 lz, .ptr _row, .int 64 q, .ptr out] =>
+        match epow q.toInt with
+        | some t =>
+            match elExact W.toNat lz.toNat t q.toInt with
+            | some bits =>
+                some { ret := .int 32 1, mem := writeBytes mem out (natToBytes bits 8),
+                       next := next }
+            | none => some { ret := .int 32 0, mem := mem, next := next }
+        | none => none
+    | "el_pack", [.int 64 m, .int 32 up, .int 32 ub, .int 32 e, .int 32 lz, .ptr out] =>
+        match elPack m.toNat up.toNat ub.toNat ⟨0, 0, numElI32ToInt e⟩ lz.toNat with
+        | some bits =>
+            some { ret := .int 32 1, mem := writeBytes mem out (natToBytes bits 8),
+                   next := next }
+        | none => some { ret := .int 32 0, mem := mem, next := next }
+    | _, _ => none
+
+/-- The count's arm, at either flag: the flag is the capture's weakened `i1`, and
+`numEl_flag_domain` is why the two values agree where the body reads it. -/
+theorem numElCalls_ctlz (epow : Int → Option EPow) (x : BitVec 64) (flag : BitVec 1)
+    (mem : Mem) (next : Nat) :
+    numElCalls epow "llvm.ctlz.i64" [.int 64 x, .int 1 flag] mem next =
+      some { ret := .int 64 (BitVec.ofNat 64 (BitLanes.ctlz x)), mem := mem,
+             next := next } := rfl
+
+/-- The exact arm's accepted answer. -/
+theorem numElCalls_elExact (epow : Int → Option EPow) {W : BitVec 64} {lz : BitVec 32}
+    {row out : Nat} {q : BitVec 64} {t : EPow} {bits : Nat}
+    (hep : epow q.toInt = some t)
+    (he : elExact W.toNat lz.toNat t q.toInt = some bits) (mem : Mem) (next : Nat) :
+    numElCalls epow "el_exact"
+        [.int 64 W, .int 32 lz, .ptr row, .int 64 q, .ptr out] mem next =
+      some { ret := .int 32 1, mem := writeBytes mem out (natToBytes bits 8),
+             next := next } := by
+  simp only [numElCalls, hep, he]
+
+/-- The exact arm's refusal answer: `undec` at a negative exponent. -/
+theorem numElCalls_elExact_refuse (epow : Int → Option EPow) {W : BitVec 64}
+    {lz : BitVec 32} {row out : Nat} {q : BitVec 64} {t : EPow}
+    (hep : epow q.toInt = some t) (he : elExact W.toNat lz.toNat t q.toInt = none)
+    (mem : Mem) (next : Nat) :
+    numElCalls epow "el_exact"
+        [.int 64 W, .int 32 lz, .ptr row, .int 64 q, .ptr out] mem next =
+      some { ret := .int 32 0, mem := mem, next := next } := by
+  simp only [numElCalls, hep, he]
+
+/-- The fast arm's accepted answer. -/
+theorem numElCalls_elPack (epow : Int → Option EPow) {m : BitVec 64}
+    {up ub lz e : BitVec 32} {out : Nat} {bits : Nat}
+    (h : elPack m.toNat up.toNat ub.toNat ⟨0, 0, numElI32ToInt e⟩ lz.toNat = some bits)
+    (mem : Mem) (next : Nat) :
+    numElCalls epow "el_pack"
+        [.int 64 m, .int 32 up, .int 32 ub, .int 32 e,
+         .int 32 lz, .ptr out] mem next =
+      some { ret := .int 32 1, mem := writeBytes mem out (natToBytes bits 8),
+             next := next } := by
+  simp only [numElCalls, h]
+
+/-- The fast arm's refusal answer: the exponent leaves the normal range. -/
+theorem numElCalls_elPack_refuse (epow : Int → Option EPow) {m : BitVec 64}
+    {up ub lz e : BitVec 32} {out : Nat}
+    (h : elPack m.toNat up.toNat ub.toNat ⟨0, 0, numElI32ToInt e⟩ lz.toNat = none)
+    (mem : Mem) (next : Nat) :
+    numElCalls epow "el_pack"
+        [.int 64 m, .int 32 up, .int 32 ub, .int 32 e,
+         .int 32 lz, .ptr out] mem next =
+      some { ret := .int 32 0, mem := mem, next := next } := by
+  simp only [numElCalls, h]
+
+/-! ### The window arm writes the counter
+
+`if.then18` is the one arm of the body that touches a global besides `out`: it
+loads `@g_el_window`, adds one and stores it back, then calls `el_exact`.  The
+model `numElAnswer` writes nothing but the eight bytes at `out`, so the two
+answers cannot be the same `CallOutcome` on this arm: the body's memory holds the
+counter's next word and the model's holds the word it was given.  The statements
+below are that difference, both halves proved of the pinned text. -/
+
+/-- `%d = load i64, ptr @g`, a global's word.  `evalOperand` resolves the symbol
+through the environment exactly as it resolves a register, which is how the
+body's `Operand.global` reaches the staging. -/
+theorem numEl_step_load64_global (calls : Calls) (env : Env) (s : State) (d g : String)
+    {a : Nat} {v : BitVec 64}
+    (hg : lookupName env g = some (.ptr a))
+    (hv : readBytes s.mem a 8 = some (natToBytes v.toNat 8)) :
+    evalInstr calls (stateAt env s) (.load d (.int 64) (.global g)) =
+      some (stateAt ((d, .int 64 v) :: env) s) := by
+  have hg' : evalOperand (stateAt env s) (.global g) = some (.ptr a) := by
+    simp only [evalOperand, stateAt, hg]
+  have hv' : loadValue s.mem (.int 64) a = some (.int 64 v) := by
+    rw [BlockEval.loadValue_i64_of_readBytes hv, natToBytes_toNat, BlockEval.pow256_eight,
+      Nat.mod_eq_of_lt v.isLt]
+    simp [BitVec.ofNat_toNat, BitVec.setWidth_eq]
+  rw [JsonS1MasksIR.evalInstr_load (hp := hg') (hv := by simpa only [stateAt] using hv')]
+  simp [stateAt, State.bind]
+
+/-- `store i64 %v, ptr @g`, a global's word. -/
+theorem numEl_step_store64_global (calls : Calls) (env : Env) (s : State) (v g : String)
+    {x : BitVec 64} {a : Nat}
+    (hv : lookupName env v = some (.int 64 x))
+    (hg : lookupName env g = some (.ptr a)) :
+    evalInstr calls (stateAt env s) (.store (.int 64) (.reg v) (.global g)) =
+      some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) }) := by
+  have hg' : evalOperand (stateAt env s) (.global g) = some (.ptr a) := by
+    simp only [evalOperand, stateAt, hg]
+  rw [JsonS1MasksIR.evalInstr_store (vv := .int 64 x) (a := a)
+    (s' := stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) })
+    (hv := BlockEval.evalOperand_reg_of env s v (.int 64 x) hv) (hp := hg')]
+  simp [storeValue, stateAt]
+
+/-- **The window block, denoted.**  The counter's word is read, incremented and
+written back, and `el_exact` answers into `out`. -/
+theorem numEl_ifThen18_denote (epow : Int → Option EPow) (env : Env) (s : State)
+    {W : BitVec 64} {lz : BitVec 32} {row out k : Nat} {q : BitVec 64} {t : EPow}
+    {bits : Nat}
+    (hW : lookupName env "%shl" = some (.int 64 W))
+    (hlz : lookupName env "%cast" = some (.int 32 lz))
+    (hrow : lookupName env "%arrayidx" = some (.ptr row))
+    (hq : lookupName env "%q" = some (.int 64 q))
+    (hout : lookupName env "%out" = some (.ptr out))
+    (hglob : lookupName env "@g_el_window" = some (.ptr 0x200000))
+    (hread : readBytes s.mem 0x200000 8 = some (natToBytes k 8))
+    (hk : k < 2 ^ 64)
+    (hep : epow q.toInt = some t)
+    (he : elExact W.toNat lz.toNat t q.toInt = some bits) :
+    denoteCode (numElCalls epow) numElIfThen18Instrs (stateAt env s) =
+      some (stateAt
+        (("%call", .int 32 1) ::
+          ("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
+          ("%2", .int 64 (BitVec.ofNat 64 k)) :: env)
+        { s with
+          mem := writeBytes
+            (writeBytes s.mem 0x200000
+              (natToBytes (((BitVec.ofNat 64 k) + 1#64).toNat) 8))
+            out (natToBytes bits 8) }) := by
+  unfold numElIfThen18Instrs
+  let s1 : State :=
+    { s with mem := (writeBytes s.mem 0x200000
+        (natToBytes (((BitVec.ofNat 64 k) + 1#64).toNat) 8)) }
+  have hread' : readBytes s.mem 0x200000 8 =
+      some (natToBytes (BitVec.ofNat 64 k).toNat 8) := by
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt hk]
+    exact hread
+  rw [BlockEval.denoteCode_cons_of _ _ _ _ _
+    (numEl_step_load64_global (numElCalls epow) env s "%2" "@g_el_window" hglob hread')]
+  rw [BlockEval.denoteCode_cons_of _ _ _ _ _
+    (BlockEval.step_add_imm (calls := numElCalls epow)
+      (env := ("%2", .int 64 (BitVec.ofNat 64 k)) :: env) (s := s) (d := "%inc")
+      (a := "%2") (x := BitVec.ofNat 64 k) (c := 0x0000000000000001#64) (by block_lk))]
+  rw [BlockEval.denoteCode_cons_of _ _ _ _ _
+    (numEl_step_store64_global (numElCalls epow)
+      (("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
+        ("%2", .int 64 (BitVec.ofNat 64 k)) :: env) s "%inc" "@g_el_window"
+      (by block_lk) hglob)]
+  rw [denoteCode_call_some (numElCalls epow)
+    (("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
+      ("%2", .int 64 (BitVec.ofNat 64 k)) :: env) s1
+    "%call" (Ty.int 32) "el_exact"
+    [((Ty.int 64), (Operand.reg "%shl")), ((Ty.int 32), (Operand.reg "%cast")),
+     (Ty.ptr, (Operand.reg "%arrayidx")), ((Ty.int 64), (Operand.reg "%q")),
+     (Ty.ptr, (Operand.reg "%out"))]
+    [.int 64 W, .int 32 lz, .ptr row, .int 64 q, .ptr out]
+    ({ ret := .int 32 1,
+       mem := writeBytes s1.mem out (natToBytes bits 8),
+       next := s1.next } : CallOutcome)
+    (by simp only [evalOperands,
+        BlockEval.evalOperand_reg_of
+          (("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
+            ("%2", .int 64 (BitVec.ofNat 64 k)) :: env) s1 "%shl" (.int 64 W) (by block_lk),
+        BlockEval.evalOperand_reg_of
+          (("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
+            ("%2", .int 64 (BitVec.ofNat 64 k)) :: env) s1 "%cast" (.int 32 lz) (by block_lk),
+        BlockEval.evalOperand_reg_of
+          (("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
+            ("%2", .int 64 (BitVec.ofNat 64 k)) :: env) s1 "%arrayidx" (.ptr row) (by block_lk),
+        BlockEval.evalOperand_reg_of
+          (("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
+            ("%2", .int 64 (BitVec.ofNat 64 k)) :: env) s1 "%q" (.int 64 q) (by block_lk),
+        BlockEval.evalOperand_reg_of
+          (("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
+            ("%2", .int 64 (BitVec.ofNat 64 k)) :: env) s1 "%out" (.ptr out) (by block_lk)])
+    (numElCalls_elExact epow hep he _ _) []]
+  rfl
+
+/-- `natToBytes` at eight bytes is injective on the words it encodes. -/
+theorem numEl_natToBytes_inj {a b : Nat} (ha : a < 2 ^ 64) (hb : b < 2 ^ 64)
+    (h : natToBytes a 8 = natToBytes b 8) : a = b := by
+  have hc := congrArg bytesToNat h
+  rw [natToBytes_toNat, natToBytes_toNat,
+    show (256 : Nat) ^ 8 = 2 ^ 64 from by decide,
+    Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb] at hc
+  exact hc
+
+/-- The counter's next word is not its current one. -/
+theorem numEl_counter_succ_ne (k : Nat) (hk : k < 2 ^ 64) :
+    (k + 1) % 2 ^ 64 ≠ k := by
+  have hpos : 0 < 2 ^ 64 := Nat.pow_pos (by decide)
+  rcases Nat.lt_or_ge (k + 1) (2 ^ 64) with hlt | hge
+  · rw [Nat.mod_eq_of_lt hlt]
+    omega
+  · have htop : k + 1 = 2 ^ 64 := by omega
+    rw [htop, Nat.mod_self]
+    omega
+
+/-- **The model writes nothing but the eight bytes at `out`.**  Every answer
+`numElAnswer` gives has a memory that differs from its input only inside the
+value's slot: the accepted arm writes the eight bytes, and the declined arm
+writes nothing. -/
+theorem numElAnswer_frame (epow : Int → Option EPow) (w q : BitVec 64) (out : Nat)
+    (mem : Mem) (next : Nat) {r : CallOutcome}
+    (h : numElAnswer epow [.int 64 w, .int 64 q, .ptr out] mem next = some r) :
+    ∀ a n, a + n ≤ out ∨ out + 8 ≤ a → readBytes r.mem a n = readBytes mem a n := by
+  intro a n hdisj
+  unfold numElAnswer at h
+  cases hd : numElEl1 epow w.toNat q.toInt with
+  | none =>
+      simp only [hd] at h
+      cases h
+      rfl
+  | some bits =>
+      simp only [hd] at h
+      cases h
+      rw [JsonEntrySteps.readBytes_writeBytes_frame mem (natToBytes bits 8) out a n
+        (by
+          rcases hdisj with h | h
+          · exact Or.inl h
+          · exact Or.inr (by rw [natToBytes_length]; exact h))]
+
+/-- **The window arm's answer is not the model's.**  At a staging whose counter
+word is `k` and whose `out` is below the counter's cell, the block leaves the
+counter's cell holding the next word, and `numElAnswer` leaves it holding `k`:
+whatever the model answers at the same arguments, the two memories disagree
+there. -/
+theorem numEl_ifThen18_counter (epow : Int → Option EPow) (env : Env) (s : State)
+    {W : BitVec 64} {lz : BitVec 32} {row out k : Nat} {q : BitVec 64} {t : EPow}
+    {bits : Nat} {wm : BitVec 64}
+    (hW : lookupName env "%shl" = some (.int 64 W))
+    (hlz : lookupName env "%cast" = some (.int 32 lz))
+    (hrow : lookupName env "%arrayidx" = some (.ptr row))
+    (hq : lookupName env "%q" = some (.int 64 q))
+    (hout : lookupName env "%out" = some (.ptr out))
+    (hglob : lookupName env "@g_el_window" = some (.ptr 0x200000))
+    (hread : readBytes s.mem 0x200000 8 = some (natToBytes k 8))
+    (hk : k < 2 ^ 64) (hdisj : out + 8 ≤ 0x200000)
+    (hep : epow q.toInt = some t)
+    (he : elExact W.toNat lz.toNat t q.toInt = some bits) :
+    ∀ r, numElAnswer epow [.int 64 wm, .int 64 q, .ptr out] s.mem s.next = some r →
+      ∃ (env' : Env) (mem' : Mem),
+        denoteCode (numElCalls epow) numElIfThen18Instrs (stateAt env s) =
+          some (stateAt env' { s with mem := mem' }) ∧
+        lookupName env' "%call" = some (.int 32 1) ∧
+        readBytes mem' 0x200000 8 ≠ readBytes r.mem 0x200000 8 := by
+  intro r hr
+  have hframe := numElAnswer_frame epow wm q out s.mem s.next hr 0x200000 8
+    (Or.inr hdisj)
+  refine ⟨("%call", .int 32 1) ::
+      ("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
+      ("%2", .int 64 (BitVec.ofNat 64 k)) :: env,
+    writeBytes (writeBytes s.mem 0x200000
+      (natToBytes (((BitVec.ofNat 64 k) + 1#64).toNat) 8)) out (natToBytes bits 8),
+    ?_, ?_, ?_⟩
+  · exact numEl_ifThen18_denote epow env s hW hlz hrow hq hout hglob hread hk hep he
+  · block_lk
+  · rw [hframe, hread]
+    intro hbad
+    have hread' : readBytes
+        (writeBytes (writeBytes s.mem 0x200000
+          (natToBytes (((BitVec.ofNat 64 k) + 1#64).toNat) 8)) out (natToBytes bits 8))
+        0x200000 8 = some (natToBytes (((BitVec.ofNat 64 k) + 1#64).toNat) 8) := by
+      rw [JsonEntrySteps.readBytes_writeBytes_frame _ _ out _ _
+        (Or.inr (by rw [natToBytes_length]; omega))]
+      exact readBytes_writeBytes_same s.mem _ (addr := 0x200000)
+    rw [hread'] at hbad
+    have hsucc : ((BitVec.ofNat 64 k) + 1#64).toNat = (k + 1) % 2 ^ 64 := by
+      have h1 : (1#64 : BitVec 64).toNat = 1 := by decide
+      rw [BitVec.toNat_add, BitVec.toNat_ofNat, h1]
+      rw [Nat.mod_eq_of_lt hk]
+    rw [hsucc] at hbad
+    exact numEl_counter_succ_ne k hk (numEl_natToBytes_inj (Nat.mod_lt _ (by decide)) hk
+      (Option.some.inj hbad))
+
 /-! ### Axiom footprints
 
 Pinned with `#guard_msgs` so the build checks the footprints rather than printing
@@ -582,5 +942,41 @@ them.  The instrument is `#print axioms`; a declaration proved with `sorry` prin
 /-- info: 'LeanLLVM.Refinement.NumElRow.row' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms NumElRow.row
+
+/-- info: 'LeanLLVM.Refinement.numElI32ToInt_epowEWord' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numElI32ToInt_epowEWord
+
+/-- info: 'LeanLLVM.Refinement.numElCalls_ctlz' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms numElCalls_ctlz
+
+/-- info: 'LeanLLVM.Refinement.numElCalls_elExact' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms numElCalls_elExact
+
+/-- info: 'LeanLLVM.Refinement.numElCalls_elPack' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms numElCalls_elPack
+
+/-- info: 'LeanLLVM.Refinement.numEl_step_load64_global' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numEl_step_load64_global
+
+/-- info: 'LeanLLVM.Refinement.numEl_step_store64_global' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numEl_step_store64_global
+
+/-- info: 'LeanLLVM.Refinement.numEl_ifThen18_denote' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numEl_ifThen18_denote
+
+/-- info: 'LeanLLVM.Refinement.numElAnswer_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numElAnswer_frame
+
+/-- info: 'LeanLLVM.Refinement.numEl_ifThen18_counter' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numEl_ifThen18_counter
 
 end LeanLLVM.Refinement
