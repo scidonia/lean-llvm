@@ -385,3 +385,5 @@ import LeanLLVM.Refinement.JsonStage2NumFastCalleeMul
 import LeanLLVM.Refinement.JsonStage2NumFastToDoubleLadder
 import LeanLLVM.Refinement.JsonStage2NumFastEpilogueLoop
 import LeanLLVM.Refinement.JsonStage2WalkSpansNil
+import LeanLLVM.Refinement.JsonStage2NumFastCalleeMulStep
+import LeanLLVM.Refinement.JsonStage2NumFastCalleeMulArith
