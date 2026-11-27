@@ -246,12 +246,55 @@ theorem not_arenaWord_of_lt {m : Mem} {z v alen : Nat}
   intro h
   exact absurd (wordBytes8_inj hvv ha h) (by omega)
 
+/-! ### The unappended walk: the slot at the staged cursor
+
+The module's negative result is that `C.alen` and the slot's word are different
+numbers in general.  The case where the gap closes is the walk that reserved no
+span at all: the carry's cursor is the staged one
+(`WalkInv.alen_eq_ndst0_of_spans_nil`), and `log_alen`'s witness lies between the
+two, so the word at `%z + 48` is `wordBytes 8 ndst0`.  The accept route of the
+finalisation copies that word to the caller's arena cursor
+(`walkFinishPost_accept`), so at a walk whose document has no escaped body the
+reported extent is the staged one. -/
+
+/-- **A staged zero cursor word stages the cursor at zero.**  `arenaRoom` puts
+`ndst0` below the arena's capacity, which is a 64-bit number, and `ndstRead`
+names the slot's word; two eight-byte words below the width that print the same
+bytes are the same number (`wordBytes8_inj`). -/
+theorem ndst0_eq_zero_of_staged_zero {m0 : Mem} (G : WalkGeom m0)
+    (h : readBytes m0 G.ndst 8 = some (wordBytes 8 0)) : G.ndst0 = 0 := by
+  have hlt : G.ndst0 < 2 ^ 64 := by
+    have hroom := G.arenaRoom
+    have hcap := G.dstcapLt
+    omega
+  have hword : wordBytes 8 G.ndst0 = wordBytes 8 0 :=
+    Option.some.inj (G.ndstRead.symm.trans h)
+  exact wordBytes8_inj hlt (by decide : (0 : Nat) < 2 ^ 64) hword
+
+/-- **The finalisation's arena word at a walk with no reserved span.**  The word
+the accept route copies to `%ndst` is `log_alen`'s, and with `C.spans = []` its
+witness is the staged cursor (`WalkInv.alen_eq_ndst0_of_spans_nil`); a staging
+whose slot reads `wordBytes 8 0` then leaves the word `wordBytes 8 0`. -/
+theorem arenaWord_zero_of_spans_nil {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
+    {s : State} (h : WalkInv G C s) (hspans : C.spans = [])
+    (hstaged : readBytes m0 G.ndst 8 = some (wordBytes 8 0)) :
+    readBytes s.mem (C.stage.z + 48) 8 = some (wordBytes 8 0) := by
+  obtain ⟨a, hge, hle, hread⟩ := h.log_alen
+  have halen := WalkInv.alen_eq_ndst0_of_spans_nil h hspans
+  have ha : a = G.ndst0 := by omega
+  have h0 : G.ndst0 = 0 := ndst0_eq_zero_of_staged_zero G hstaged
+  rw [ha, h0] at hread
+  exact hread
+
 /-! ### The instrument -/
 
 #print axioms LeanLLVM.Refinement.WalkScope.WalkArenaWord.log_alen
 #print axioms LeanLLVM.Refinement.WalkScope.walkSeed_arenaWord
 #print axioms LeanLLVM.Refinement.WalkScope.arenaWord_writeBack_iff
 #print axioms LeanLLVM.Refinement.WalkScope.not_arenaWord_of_lt
+#print axioms LeanLLVM.Refinement.WalkInv.alen_eq_ndst0_of_spans_nil
+#print axioms LeanLLVM.Refinement.WalkScope.ndst0_eq_zero_of_staged_zero
+#print axioms LeanLLVM.Refinement.WalkScope.arenaWord_zero_of_spans_nil
 
 end WalkScope
 end LeanLLVM.Refinement

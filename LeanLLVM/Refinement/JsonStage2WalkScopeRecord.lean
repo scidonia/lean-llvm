@@ -529,6 +529,20 @@ theorem forInc {h : WalkInv G C s} (hblock : C.block = "for.inc.i.i") :
       lookupName s.env "%cond.i.i" = some (.int 64 (BitVec.ofNat 64 c)) := by
   simpa [WalkLocal, hblock] using h.blockLocal
 
+/-- **With no reserved spans the carried arena cursor is the staged one.**  The
+upper bound `alen_le_sum` is the staged cursor plus the extents the walk reserved,
+and `alen_ge` bounds the cursor below; an empty span list collapses both bounds to
+`ndst0`.  This is the degenerate end of the accounting: a walk that reached no
+escape append has not moved the cursor off its staging, whatever the reservation
+bookkeeping would say. -/
+theorem alen_eq_ndst0_of_spans_nil (h : WalkInv G C s) (hspans : C.spans = []) :
+    C.alen = G.ndst0 := by
+  have hle := h.alen_le_sum
+  rw [hspans] at hle
+  simp only [List.map_nil, List.sum_nil] at hle
+  have hge := h.alen_ge
+  omega
+
 end WalkInv
 
 /-! ### The carried maps across a step
