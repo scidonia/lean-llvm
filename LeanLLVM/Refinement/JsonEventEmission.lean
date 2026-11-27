@@ -53,17 +53,24 @@ trace.  The event buffer is derived from the post (`evb_events_of_post`), so the
 residue is exactly the destination buffer's extent, not the event stream.
 
 The clause therefore lives at the one predicate that has the trace in scope:
-`Stage2OutcomeEvidence` now states the reported extent as the staged cursor plus
+`Stage2OutcomeEvidence` states the reported extent as the staged cursor plus
 `arenaExtent` of the trace, and at `[1]` that accounting is zero — so the arena
-the run reports is empty, and `EvbEmission` is a theorem of the slice
-(`evb_emission_of_evidence`) rather than an assumption.  `pipelineUnitsPost` and
-`Sigma_pipeline` cannot carry the clause for the same reason (neither binds a
-trace), so a release that consumes only the units post still takes the arena
-datum.
+the run reports is empty, and `evb_emission_of_evidence` is a theorem of the
+slice rather than an assumption.  Its conclusion names the returned memory and
+the adapter's header extents: the arena read at `ndstU`, the event read at
+`nev'`, the indexed decoder applied to those two buffers returning the canonical
+value, and `EvbCertificate`, which names the linked symbol, the object and the
+adapter the statement concerns and the body at the ABI it trusts.
+
+`pipelineUnitsPost` and `Sigma_pipeline` cannot carry the extent clause (neither
+binds a trace), so a release that consumes only the units post still takes the
+arena datum.  `evb_events_of_post` remains the post-side route to the event
+bytes for a consumer that has the semantic post and no evidence.
 
 There is no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/
 import LeanLLVM.Refinement.JsonEventPremisesOneParse
+import LeanLLVM.Refinement.JsonEventCursorInterface
 
 set_option autoImplicit false
 set_option maxRecDepth 10000
@@ -524,22 +531,127 @@ theorem evb_arena_extent_zero_of_evidence {m : Mem} {ndst' nev' : Nat}
       exact (Option.some.inj (hnil.symm.trans hread')).symm
   · exact absurd hv0 (by decide)
 
-/-- **`EvbEmission` at `[1]`, derived rather than assumed.**  The arena is the
-evidence's reported read — empty by its extent equation — and the event stream
-is the post's read, which `evb_events_of_post` fixes to the trace's encoding.  So
-the two buffers the emitter's residue named are read off the run's own evidence
-and postcondition. -/
-theorem evb_emission_of_evidence {m : Mem} {next ndstU nev' : Nat}
+/-- **The event buffer's content and extent, from the evidence.**  The evidence
+reads the event buffer at the value of the adapter's `nev` slot, and `[1]`'s
+trace is `evbRecords`, so the bytes it read are `evbEvents`.  This is the
+evidence-side counterpart of `evb_events_of_post`: the post fixes the same
+bytes, while the evidence additionally names the extent the adapter reported. -/
+theorem evb_events_of_evidence {m : Mem} {ndstU nev' : Nat}
+    (hpre : routePre evbLayout evbDoc)
+    (hev : Stage2OutcomeEvidence evbLayout.base evbArgs evbMem ndstU nev'
+      (.ret (some (.int 64 1)) m)) :
+    ∃ evs : List UInt8,
+      readBytes m evbLayout.ev nev' = some evs ∧ evs = evbEvents := by
+  obtain ⟨_, hb3, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep⟩ := hpre
+  simp only [Stage2OutcomeEvidence, evbArgs, routeArgs] at hev
+  obtain ⟨bs, _, hread, hcase⟩ := hev
+  rcases hcase with
+    ⟨-, -, t, rs, arena, evs, hparse, -, hreadEv, hrecs, hrel, -, -, -⟩ |
+    ⟨hv0, -, -⟩
+  · have hn : (BitVec.ofNat 64 evbDoc.length).toNat = evbDoc.length :=
+      bitVecOfNat_toNat (by decide)
+    rw [hn] at hread
+    have hbs : bs = evbDoc :=
+      Option.some.inj (hread.symm.trans (stagedDoc_read evbLayout evbDoc hsep hb3))
+    rw [hbs] at hparse
+    have ht : t = evbTape := ParseResult.ok.inj (hparse.symm.trans evb_parse)
+    have hrel' : Stage2Records evbDoc arena rs evbTokens := by
+      rw [hbs, ht] at hrel
+      exact hrel
+    have hrs : rs = evbRecords := evb_records_of_rel hrel'
+    refine ⟨evs, hreadEv, ?_⟩
+    rw [hrecs, hrs]
+    exact evb_events.symm
+  · exact absurd hv0 (by decide)
+
+/-- **The linked unit a release certificate for the event route names, and the
+transfer it trusts.**
+
+`linkedSymbol` is the exported name of the object the adapter calls, `linkedObject`
+that object, `emitterSymbol` and `emitterObject` the stage-2 unit that writes the
+event buffer, and `adapter` the `@[extern]` the Lean caller reaches.
+`adapterSource` names the C file behind that symbol.  `body` and `staging` are
+the transfer: the linked body is the pinned `pipelineBody`, called with the
+twenty argument values `evbArgs` stages.  That clang preserves that body and that
+the link reaches it are `docs/contract.md` rows 8 and 9 — the compiler/FFI trust
+boundary `JsonCallRoute.missingBridgePieces` records — stated here so the
+certificate discloses it rather than leaving it implicit.
+
+The header extents themselves are in `evb_emission_of_evidence`'s conclusion;
+the certificate is about the linked unit, not about one run's buffers. -/
+structure EvbCertificate : Type where
+  /-- The linked object's exported symbol (`pipeline.h`). -/
+  linkedSymbol : String
+  linkedSymbol_eq : linkedSymbol = JsonPipelineIR.pipelineBody.name
+  /-- The object `probes/json/route/build.sh` links as `pipeline.o`. -/
+  linkedObject : String
+  linkedObject_eq : linkedObject = "pipeline.o"
+  /-- The stage-2 unit's symbol, which writes the event buffer. -/
+  emitterSymbol : String
+  emitterSymbol_eq : emitterSymbol = JsonPipelineIR.stage2Sym
+  /-- The stage-2 object `build.sh` links as `stage2.o`. -/
+  emitterObject : String
+  emitterObject_eq : emitterObject = "stage2.o"
+  /-- The adapter the Lean caller's `@[extern]` reaches. -/
+  adapter : String
+  adapter_eq : adapter = nativeAdapterSymbol
+  /-- The adapter's source, outside `lake`. -/
+  adapterSource : String
+  adapterSource_eq : adapterSource = "probes/json/route/shim.c"
+  /-- The body the linked object is trusted to implement. -/
+  body : Function
+  body_eq : body = JsonPipelineIR.pipelineBody
+  /-- The ABI values the adapter stages. -/
+  staging : List Value
+  staging_eq : staging = evbArgs
+  /-- Twenty values: `routeArgs`'s list. -/
+  staging_arity : staging.length = 20
+
+/-- **The emission at `[1]`, at the buffers the run returned.**  Both payload
+reads name the same returned memory `m` and the lengths the adapter's header
+carries — `ndstU` from the `ndst` slot and `nev'` from the `nev` slot.  The
+indexed decoder applied to exactly those two reads returns the reference's
+canonical value, and the certificate names the linked symbol, the object, the
+adapter and the body/ABI transfer the statement trusts.
+
+The arena extent is zero from the evidence (`evb_arena_extent_zero_of_evidence`);
+the event bytes are the evidence's read at the header's `nev'`
+(`evb_events_of_evidence`) and are the trace's encoding.  The specification post
+is no longer a hypothesis: the evidence carries both buffers at the reported
+extents, so `evb_events_of_post` stays as the post-side route for a consumer that
+does not have the evidence. -/
+theorem evb_emission_of_evidence {m : Mem} {ndstU nev' : Nat}
     (hpre : routePre evbLayout evbDoc)
     (hext : pipelineOutputExtents evbArgs (.ret (some (.int 64 1)) m) ndstU nev')
     (hev : Stage2OutcomeEvidence evbLayout.base evbArgs evbMem ndstU nev'
-      (.ret (some (.int 64 1)) m))
-    (hpost : Sigma_pipeline stage2EventRel evbLayout.base evbArgs evbMem next
       (.ret (some (.int 64 1)) m)) :
-    ∃ (arena evs : List UInt8), EvbEmission arena evs := by
-  obtain ⟨arena, -, -, rfl, -⟩ := evb_arena_extent_zero_of_evidence hpre hext hev
-  obtain ⟨-, evs, -, hevEq⟩ := evb_events_of_post hpre hpost
-  exact ⟨[], evs, ⟨rfl, by simpa [evbEvents] using hevEq⟩⟩
+    ∃ (arena evs : List UInt8),
+      readBytes m evbLayout.ndst 8 = some (wordBytes 8 ndstU) ∧
+      readBytes m evbLayout.nev 8 = some (wordBytes 8 nev') ∧
+      readBytes m evbLayout.dst ndstU = some arena ∧
+      readBytes m evbLayout.ev nev' = some evs ∧
+      (eventsOfBytesIndexed (ByteString.literal evbDoc)
+          (ByteString.literal evs) (ByteString.literal arena)).bind valueOfEvents =
+        scalarCanonValueOfBytes evbDoc ∧
+      Nonempty EvbCertificate := by
+  obtain ⟨arena, -, hreadA, hnil, -⟩ :=
+    evb_arena_extent_zero_of_evidence hpre hext hev
+  obtain ⟨evs, hreadE, hevEq⟩ := evb_events_of_evidence hpre hev
+  simp only [pipelineOutputExtents, evbArgs, routeArgs] at hext
+  obtain ⟨-, -, hdrNdst, hdrNev⟩ := hext
+  refine ⟨arena, evs, hdrNdst, hdrNev, hreadA, hreadE, ?_, ?_⟩
+  · have hagree := eventsOfBytesIndexedAgrees (bs := ByteString.literal evbDoc)
+      (evs := ByteString.literal evs) (arena := ByteString.literal arena)
+    have hdec : eventsOfBytesIndexed (ByteString.literal evbDoc)
+        (ByteString.literal evs) (ByteString.literal arena) =
+        eventsOfBytes evbDoc evs arena := by
+      simpa only [EventsOfBytesIndexedAgrees, ByteString.toList_literal] using hagree
+    rw [hdec, hevEq, hnil]
+    exact evb_sliceOne_value evb_parse
+  · exact ⟨JsonPipelineIR.pipelineBody.name, rfl, "pipeline.o", rfl,
+      JsonPipelineIR.stage2Sym, rfl, "stage2.o", rfl, nativeAdapterSymbol, rfl,
+      "probes/json/route/shim.c", rfl, JsonPipelineIR.pipelineBody, rfl, evbArgs,
+      rfl, by simp [evbArgs, routeArgs]⟩
 
 /-! ### The finding, and the repair
 
@@ -569,9 +681,12 @@ evidence:
 * at `[1]` the trace is `evbRecords` (`evb_records_of_rel`), its accounting is
   `0` (`evb_arenaExtent_nil`), and the staged cursor is `0` (`evb_stage_ndst`), so
   the recorded extent is `0` (`evb_arena_extent_zero_of_evidence`) and every
-  destination read at or below it is `[]`.  `EvbEmission` at the slice is then a
-  theorem (`evb_emission_of_evidence`) rather than an assumption: the arena half
-  comes from the evidence and the event half from the post.
+  destination read at or below it is `[]`.  `evb_emission_of_evidence` then
+  states the emission at the returned memory: both payload reads at the header's
+  extents, the indexed decoder on those two buffers returning the canonical
+  value, and `EvbCertificate` naming the linked symbol, object, adapter and the
+  body/ABI transfer.  `evb_events_of_evidence` is the evidence-side event read;
+  `evb_events_of_post` remains the same content from the specification post.
 
 The arena is free *at the relation* too (`evb_rel_arena_free`: every arena
 satisfies `Stage2EventRel` at `[1]`'s records, because none of the three
@@ -593,9 +708,13 @@ arena datum, because the units post still binds no trace.
 #guard_msgs in
 #print axioms evb_arena_extent_zero_of_evidence
 
-/-- info: 'LeanLLVM.Refinement.evb_emission_of_evidence' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'LeanLLVM.Refinement.evb_emission_of_evidence' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms evb_emission_of_evidence
+
+/-- info: 'LeanLLVM.Refinement.evb_events_of_evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms evb_events_of_evidence
 
 /-- info: 'LeanLLVM.Refinement.evbInv_openBracket' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
