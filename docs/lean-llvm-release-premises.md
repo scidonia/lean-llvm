@@ -51,18 +51,33 @@ ninety-one rows**, not a comment (`epow_rows_e_bounds`).
 | the five- and ten-powers fit at the largest exponent the clamps admit | `pow_five_lt`, `pow_ten_lt` | same |
 | the accumulation's carry stays inside a limb | `stkMulFold_carry_lt_96` | same |
 | the comparator's copy length, and the constant half | `numCmpCopyLen_le_of_value` (`8·n ≤ 776`) | same |
+| the producer's two counts, from the nests' own call counts | `ingest_limbs_le`, `pow_five_limbs_le`, `pow_ten_limbs_le`, `fold_limbs_le` (`41`, `42`, `59`, `58` limbs) | `JsonStage2NumFastProducerCount` |
 
 ## Assumption: two, both named in the tree
 
 | premise | anchor | what it says | what would discharge it |
 |---|---|---|---|
 | `NumFastCalleesAnswered calls epow` | `JsonNumFastAssumed:176` | `calls = stage2NumFastCalls epow`: the selection is the model of the measured C | nothing in this tree — it is the trust statement |
-| `fbStkCounts mem v` | `JsonStage2NumFastFallback:349` | the two bignum counts in memory, each within its ninety-six-limb array | a run of the digit ingest and the power nests, which have no model here; the C's clamps give at most forty and fifty-nine limbs |
+| `fbStkCounts mem v` | `JsonStage2NumFastFallback:349`, read at `NumFastProducerCount.stkBnCountTie` | the two bignum counts in memory, each within its ninety-six-limb array | a statement that each nest's memory is the model's run: the counts are bounded from the nests' guards (`41`, `42`, `59`, `58` limbs, each under `96`) and the store's own count is proved (`stkMulAddAnswer_count`), so what remains is that the emitted body is `stkMulAddRun` from the entry's zero or one |
 
-The second is the count tie. Its numbers are the C's own and are **not**
-theorems; the docstring at the tie says so. What *is* proved is the rest of the
-chain: the count word bounds the length, and the length bounds the bytes the
-copy is given.
+The second is the count tie. Its *numbers* are no longer only the C's:
+`JsonStage2NumFastProducerCount` bounds the counts the emitting blocks can write
+from the guards alone — one `stk_mul_add` appends at most one limb
+(`stkMulAddCalls_length_le`), the digit guard `R < 768` makes the ingest at most
+`41` limbs, and the clamps make the power nests at most `42` (sticky, `5 ^ 27`)
+and `59` (exact, `10 ^ 19`), with `58` for the significand on the one branch
+that folds `10 ^ S` into it. The store's own count is proved too: the add-carry
+answer `stkMulAddAnswer` leaves `stkCount mem a = some (stkMulAddLimbs ws m c).length`
+(`stkMulAddAnswer_count`), `stkMulAddRun_exact` keeps that invariant over a nest's
+calls, and `sticky_ties_of_runs` composes the ingest's and the sticky power's
+runs into `numCmp_copyLen_le_of_sticky_runs`, which carries no tie and no count
+bound. What is left of the tie is the one thing no arithmetic gives: that the
+emitted nests *are* those runs — `mem = (stkMulAddRun base a ws calls).1` with
+`calls.length = nestSteps` at the inlined stores
+(`for.body.i.i.i`:1415, `while.body.us.i.i.i.i`:1709, `for.body.i566.i.i`:2012).
+`stkBnCountTie` is that statement at each store, and `fbStkCounts_of_ties` turns
+it into the epilogue's premise. What *is* proved is the rest of the chain: the
+count word bounds the length, and the length bounds the bytes the copy is given.
 
 ## Outside the proof: two items
 
