@@ -28,12 +28,18 @@ own `findBlock` pin and each with the environment its chain leaves:
   call, and the two generic forms `getelementptr`/`store` at a literal offset);
 * the parse's exit path — `parse_exit_run_nosign`/`parse_exit_run_sign` compose
   the steps into one `runFuel` run from `if.else46.i.i` to the copy's entry on
-  both of the switch's outcomes.
+  both of the switch's outcomes;
+* the parse's zero exit `if.then59.i.i` — the block's step and `Then59Entry`,
+  with each of its five arms' runs into the return's merge `if.end291` — and the
+  copy's two preheaders `for.body87.i.i.preheader`/`.preheader.new`, whose two
+  boundaries are `Pre87EpilEntry` (the residual loop's entry) and
+  `Pre87CopyEntry` (the copy's head), with `end83Env_i2`/`end83Env_n`/
+  `end83Env_p` supplying the dispatch's copy edge's cells.
 
 The blocks the copy's own statements already cover (`for.body87.i.i`'s nest,
 its residual loop and the handoff) are composed from
 `JsonStage2NumFastTier3CopyUnroll`/`JsonStage2NumFastTier3Handoff`, not
-restated here.
+restated here; the two preheaders above are the entry those statements read.
 
 The big multiply's layer is begun (`for.body132.i.i`'s staging edge and the
 chunk loop's back edge, `stk_mul_u64.exit.i.i`'s three sites, `while.end.i.i`)
@@ -5697,6 +5703,573 @@ theorem peelRun {calls : Calls} (mem0 : Mem) (p n digA : Nat) (bs : List UInt8)
     exact hcont e hexit hout
   exact runFuel_mono_le (by omega) hone
 
+/-! ### The parse's zero exit: `if.then59.i.i`
+
+Every arm of the parse that ends with nothing to convert lands here — the peel
+latch's and the inner latch's counted exits, the parse's end, the outer latch's
+counted exit, and the inner loop's non-digit refusal — and the block selects the
+lexeme's zero: `-0.0` at `%cmp1.i`'s bit, `0.0` otherwise.  It hands the double
+to the return's merge `if.end291`, whose leading `phi` reads this block's
+`%cond.i.i` on this edge; `Then59Entry` names that entry, and each arm's run is
+the arm's own step followed by `then59_step`.
+
+The select has the clamps' shape, so the block adds no chain step: `clamp_step`
+at `if.then59.i.i`'s own pin is its step, and the arms differ only in the
+environment that carries `%cmp1.i` forward. -/
+
+/-- `if.then59.i.i`, from its pin: the clamp's one `select`, with `-0.0` on the
+sign's side. -/
+theorem then59_find :
+    numFastBody.findBlock "if.then59.i.i" =
+      some ⟨"if.then59.i.i",
+        clampInstrs "%cond.i.i" 0x8000000000000000#64 0x0000000000000000#64,
+        Term.br "if.end291"⟩ := by
+  simpa only [clampInstrs] using numFast_findBlock_if_then59_i_i
+
+/-- The zero exit's step into the return's merge. -/
+theorem then59_step {calls : Calls} {env : Env} {s : State} {bb : BitVec 1}
+    (hpc : s.pc = "if.then59.i.i")
+    (hc : lookupName env "%cmp1.i" = some (.int 1 bb)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (clampEnv env "%cond.i.i" 0x8000000000000000#64
+          0x0000000000000000#64 bb)
+        { s with pc := "if.end291", pre := some "if.then59.i.i" }) := by
+  exact clamp_step hpc then59_find hc
+
+/-- The merge's entry on the zero exit's edge: its leading `phi` reads
+`%cond.i.i`, the double this block selected. -/
+def Then59Entry (bb : BitVec 1) (s : State) : Prop :=
+  s.pc = "if.end291" ∧
+  s.pre = some "if.then59.i.i" ∧
+  lookupName s.env "%cond.i.i" =
+    some (.float (if bb = 1 then 0x8000000000000000#64
+      else 0x0000000000000000#64))
+
+theorem then59_entry (env : Env) (bb : BitVec 1) (s : State) :
+    Then59Entry bb
+      { stateAt (clampEnv env "%cond.i.i" 0x8000000000000000#64
+          0x0000000000000000#64 bb) s with
+          pc := "if.end291", pre := some "if.then59.i.i" } := by
+  refine ⟨rfl, rfl, ?_⟩
+  exact lookupName_cons_self ..
+
+/-- The peel latch's environment keeps the sign's bit. -/
+theorem incPeelEnv_cmp1 {env : Env} {i n : BitVec 64} {bb : BitVec 1}
+    (h : lookupName env "%cmp1.i" = some (.int 1 bb)) :
+    lookupName (incPeelEnv env i n) "%cmp1.i" = some (.int 1 bb) := by
+  simp only [incPeelEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- The refusal edge's environment keeps the sign's bit. -/
+theorem threadEnv_cmp1 {env : Env} {b56 : BitVec 8} {i n : BitVec 64}
+    {bb : BitVec 1} (h : lookupName env "%cmp1.i" = some (.int 1 bb)) :
+    lookupName (threadEnv env b56 i n) "%cmp1.i" = some (.int 1 bb) := by
+  simp only [threadEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- The inner latch's environment keeps the sign's bit. -/
+theorem incThreadEnv_cmp1 {env : Env} {i n : BitVec 64} {bb : BitVec 1}
+    (h : lookupName env "%cmp1.i" = some (.int 1 bb)) :
+    lookupName (incThreadEnv env i n) "%cmp1.i" = some (.int 1 bb) := by
+  simp only [incThreadEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- The parse end's environment keeps the sign's bit. -/
+theorem parseEndEnv_cmp1 {env : Env} {seen : BitVec 32} {bb : BitVec 1}
+    (h : lookupName env "%cmp1.i" = some (.int 1 bb)) :
+    lookupName (parseEndEnv env seen) "%cmp1.i" = some (.int 1 bb) := by
+  simp only [parseEndEnv]
+  rw [lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- The counted exit's environment keeps the sign's bit. -/
+theorem endThreadEnv_cmp1 {env : Env} {seen : BitVec 32} {bb : BitVec 1}
+    (h : lookupName env "%cmp1.i" = some (.int 1 bb)) :
+    lookupName (endThreadEnv env seen) "%cmp1.i" = some (.int 1 bb) := by
+  simp only [endThreadEnv]
+  rw [lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- **The peel latch's refusal arm, through the zero exit.**  Two steps to the
+return's merge. -/
+theorem then59_run_incPeel {calls : Calls} {env : Env} {s : State}
+    {i n : BitVec 64} {bb : BitVec 1}
+    (hpc : s.pc = "for.inc.thread.i.peel.i")
+    (hi : lookupName env "%i.1725.ph.i.i" = some (.int 64 i))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hc : lookupName env "%cmp1.i" = some (.int 1 bb))
+    (hbit : evalICmp .eq (i + 0x0000000000000001#64) n = (1 : BitVec 1)) :
+    ∀ j, runFuel calls (2 + j) numFastBody (stateAt env s) =
+      runFuel calls j numFastBody
+        (stateAt (clampEnv (incPeelEnv env i n) "%cond.i.i"
+            0x8000000000000000#64 0x0000000000000000#64 bb)
+          { s with pc := "if.end291", pre := some "if.then59.i.i" }) := by
+  intro j
+  have h1 := incPeel_step_exit (calls := calls) hpc hi hn hbit
+  have h2 := then59_step (calls := calls)
+    (env := incPeelEnv env i n)
+    (s := { s with pc := "if.then59.i.i", pre := some "for.inc.thread.i.peel.i" })
+    rfl (incPeelEnv_cmp1 hc)
+  rw [show 2 + j = 1 + (1 + j) from by omega]
+  rw [runFuel_jump_prefix h1]
+  rw [runFuel_jump_prefix h2]
+
+/-- **The refusal edge's arm, through the zero exit.**  Two steps to the
+return's merge. -/
+theorem then59_run_thread {calls : Calls} {env : Env} {s : State}
+    {b56 : BitVec 8} {i n : BitVec 64} {bb : BitVec 1}
+    (hpc : s.pc = "if.else46.i.thread.i")
+    (h56 : lookupName env "%56" = some (.int 8 b56))
+    (hi : lookupName env "%i.1725.i.i" = some (.int 64 i))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hc : lookupName env "%cmp1.i" = some (.int 1 bb))
+    (hbit : evalICmp .eq (i + 0x0000000000000001#64) n ||| evalICmp .ne b56 0x2e#8
+      = (1 : BitVec 1)) :
+    ∀ j, runFuel calls (2 + j) numFastBody (stateAt env s) =
+      runFuel calls j numFastBody
+        (stateAt (clampEnv (threadEnv env b56 i n) "%cond.i.i"
+            0x8000000000000000#64 0x0000000000000000#64 bb)
+          { s with pc := "if.end291", pre := some "if.then59.i.i" }) := by
+  intro j
+  have h1 := thread_step_refuse (calls := calls) hpc h56 hi hn hbit
+  have h2 := then59_step (calls := calls)
+    (env := threadEnv env b56 i n)
+    (s := { s with pc := "if.then59.i.i", pre := some "if.else46.i.thread.i" })
+    rfl (threadEnv_cmp1 hc)
+  rw [show 2 + j = 1 + (1 + j) from by omega]
+  rw [runFuel_jump_prefix h1]
+  rw [runFuel_jump_prefix h2]
+
+/-- **The inner latch's refusal arm, through the zero exit.**  Two steps to the
+return's merge. -/
+theorem then59_run_incThread {calls : Calls} {env : Env} {s : State}
+    {i n : BitVec 64} {bb : BitVec 1}
+    (hpc : s.pc = "for.inc.thread.i.i")
+    (hi : lookupName env "%i.1725.i.i" = some (.int 64 i))
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hc : lookupName env "%cmp1.i" = some (.int 1 bb))
+    (hbit : evalICmp .eq (i + 0x0000000000000001#64) n = (1 : BitVec 1)) :
+    ∀ j, runFuel calls (2 + j) numFastBody (stateAt env s) =
+      runFuel calls j numFastBody
+        (stateAt (clampEnv (incThreadEnv env i n) "%cond.i.i"
+            0x8000000000000000#64 0x0000000000000000#64 bb)
+          { s with pc := "if.end291", pre := some "if.then59.i.i" }) := by
+  intro j
+  have h1 := incThread_step_exit (calls := calls) hpc hi hn hbit
+  have h2 := then59_step (calls := calls)
+    (env := incThreadEnv env i n)
+    (s := { s with pc := "if.then59.i.i", pre := some "for.inc.thread.i.i" })
+    rfl (incThreadEnv_cmp1 hc)
+  rw [show 2 + j = 1 + (1 + j) from by omega]
+  rw [runFuel_jump_prefix h1]
+  rw [runFuel_jump_prefix h2]
+
+/-- **The parse end's refusal arm, through the zero exit.**  Two steps to the
+return's merge. -/
+theorem then59_run_parseEnd {calls : Calls} {env : Env} {s : State}
+    {seen : BitVec 32} {bb : BitVec 1}
+    (hpc : s.pc = "for.end.i.i")
+    (hseen : lookupName env "%seen.0717.ph.i.i" = some (.int 32 seen))
+    (hc : lookupName env "%cmp1.i" = some (.int 1 bb))
+    (hbit : evalICmp .eq seen 0x00000000#32 = (1 : BitVec 1)) :
+    ∀ j, runFuel calls (2 + j) numFastBody (stateAt env s) =
+      runFuel calls j numFastBody
+        (stateAt (clampEnv (parseEndEnv env seen) "%cond.i.i"
+            0x8000000000000000#64 0x0000000000000000#64 bb)
+          { s with pc := "if.end291", pre := some "if.then59.i.i" }) := by
+  intro j
+  have h1 := parseEnd_step_refuse (calls := calls) hpc hseen hbit
+  have h2 := then59_step (calls := calls)
+    (env := parseEndEnv env seen)
+    (s := { s with pc := "if.then59.i.i", pre := some "for.end.i.i" })
+    rfl (parseEndEnv_cmp1 hc)
+  rw [show 2 + j = 1 + (1 + j) from by omega]
+  rw [runFuel_jump_prefix h1]
+  rw [runFuel_jump_prefix h2]
+
+/-- **The outer latch's counted exit, through the zero exit.**  Two steps to the
+return's merge. -/
+theorem then59_run_endThread {calls : Calls} {env : Env} {s : State}
+    {seen : BitVec 32} {bb : BitVec 1}
+    (hpc : s.pc = "for.end.thread.i.i")
+    (hseen : lookupName env "%seen.4.ph.i.i" = some (.int 32 seen))
+    (hc : lookupName env "%cmp1.i" = some (.int 1 bb))
+    (hbit : evalICmp .eq seen 0x00000000#32 = (1 : BitVec 1)) :
+    ∀ j, runFuel calls (2 + j) numFastBody (stateAt env s) =
+      runFuel calls j numFastBody
+        (stateAt (clampEnv (endThreadEnv env seen) "%cond.i.i"
+            0x8000000000000000#64 0x0000000000000000#64 bb)
+          { s with pc := "if.end291", pre := some "if.then59.i.i" }) := by
+  intro j
+  have h1 := endThread_step_refuse (calls := calls) hpc hseen hbit
+  have h2 := then59_step (calls := calls)
+    (env := endThreadEnv env seen)
+    (s := { s with pc := "if.then59.i.i", pre := some "for.end.thread.i.i" })
+    rfl (endThreadEnv_cmp1 hc)
+  rw [show 2 + j = 1 + (1 + j) from by omega]
+  rw [runFuel_jump_prefix h1]
+  rw [runFuel_jump_prefix h2]
+
+/-! ### The copy's two preheaders: `for.body87.i.i.preheader` and its unrolled
+successor
+
+The dispatch's copy edge (`if.end83.i.i`'s taken test) enters the preheader,
+which forms the residual count `%61 = n - i`, the scalar tail's count
+`%xtraiter = %61 & 3` and the wrap test `%63 = (%i - n) >u -4` on `%62 = i - n`.
+With fewer than four visits left, `i - n` is within three of `2^64`, so the test
+is taken and the residual loop's entry `for.end100.i.i.loopexit.unr-lcssa` takes
+the tail; otherwise the unrolled preheader forms the trip count
+`%unroll_iter = %61 & -4` and the three `invariant.gep` bases the copy's stores
+read, and enters `for.body87.i.i`.
+
+Both blocks are straight lines over their pin's instructions.  The cells the two
+boundaries read are named rather than assumed: `Pre87CopyEntry` is
+`Tier3CopyUnroll`'s frame on the `.new` edge — `%i.2.i.i` for the head's first
+`phi` and the three `invariant.gep` bases — and `Pre87EpilEntry` is the cells
+`for.end100.i.i.loopexit.unr-lcssa`'s three `phi`s and its `%lcmp.mod.not` test
+read.  The blocks under either boundary are not stated here. -/
+
+def pre87Instrs : List Instr :=
+  [Instr.binop "%61" (BinOp.sub) 64 (Operand.reg "%n") (Operand.reg "%i.2.i.i"),
+   Instr.binop "%xtraiter" (BinOp.and) 64 (Operand.reg "%61")
+     (Operand.imm (Const.int 64 0x0000000000000003#64)),
+   Instr.binop "%62" (BinOp.sub) 64 (Operand.reg "%i.2.i.i") (Operand.reg "%n"),
+   Instr.icmp "%63" (IPred.ugt) 64 (Operand.reg "%62")
+     (Operand.imm (Const.int 64 0xfffffffffffffffc#64))]
+
+theorem pre87_find :
+    numFastBody.findBlock "for.body87.i.i.preheader" =
+      some ⟨"for.body87.i.i.preheader", pre87Instrs,
+        Term.condbr (Operand.reg "%63") "for.end100.i.i.loopexit.unr-lcssa"
+          "for.body87.i.i.preheader.new"⟩ := by
+  simpa only [pre87Instrs] using numFast_findBlock_for_body87_i_i_preheader
+
+/-- The preheader's environment: the residual count, the tail's count, the
+opposite difference and the wrap test. -/
+def pre87Env (env : Env) (i2 n : BitVec 64) : Env :=
+  ("%63", .int 1 (evalICmp .ugt (i2 - n) 0xfffffffffffffffc#64)) ::
+  ("%62", .int 64 (i2 - n)) ::
+  ("%xtraiter", .int 64 ((n - i2) &&& 0x0000000000000003#64)) ::
+  ("%61", .int 64 (n - i2)) :: env
+
+/-- The residual count, through the environment the block builds. -/
+theorem pre87Env_61 {env : Env} {i2 n : BitVec 64} :
+    lookupName (pre87Env env i2 n) "%61" = some (.int 64 (n - i2)) := by
+  simp only [pre87Env]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self ..
+
+/-- The tail's count, through the environment the block builds. -/
+theorem pre87Env_xt {env : Env} {i2 n : BitVec 64} :
+    lookupName (pre87Env env i2 n) "%xtraiter" =
+      some (.int 64 ((n - i2) &&& 0x0000000000000003#64)) := by
+  simp only [pre87Env]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self ..
+
+/-- The dispatched cursor, through the block's four cells. -/
+theorem pre87Env_i2 {env : Env} {i2 n : BitVec 64}
+    (h : lookupName env "%i.2.i.i" = some (.int 64 i2)) :
+    lookupName (pre87Env env i2 n) "%i.2.i.i" = some (.int 64 i2) := by
+  simp only [pre87Env]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- `%n`, through the block's four cells. -/
+theorem pre87Env_n {env : Env} {i2 n nn : BitVec 64}
+    (h : lookupName env "%n" = some (.int 64 nn)) :
+    lookupName (pre87Env env i2 n) "%n" = some (.int 64 nn) := by
+  simp only [pre87Env]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- `%p`, through the block's four cells. -/
+theorem pre87Env_p {env : Env} {i2 n : BitVec 64} {p : Nat}
+    (h : lookupName env "%p" = some (.ptr p)) :
+    lookupName (pre87Env env i2 n) "%p" = some (.ptr p) := by
+  simp only [pre87Env]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- The preheader's chain at its pin. -/
+theorem pre87_denote {calls : Calls} {env : Env} {s : State} {i2 n : BitVec 64}
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hi : lookupName env "%i.2.i.i" = some (.int 64 i2)) :
+    denoteCode calls pre87Instrs (stateAt env s) =
+      some (stateAt (pre87Env env i2 n) s) := by
+  unfold pre87Instrs
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  block_close
+
+/-- **The preheader's taken test: the residual loop's entry.**  At most three
+visits are left, so the tail is the residual loop's. -/
+theorem pre87_step_lcssa {calls : Calls} {env : Env} {s : State}
+    {i2 n : BitVec 64}
+    (hpc : s.pc = "for.body87.i.i.preheader")
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hi : lookupName env "%i.2.i.i" = some (.int 64 i2))
+    (hbit : evalICmp .ugt (i2 - n) 0xfffffffffffffffc#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre87Env env i2 n)
+        { s with pc := "for.end100.i.i.loopexit.unr-lcssa",
+                 pre := some "for.body87.i.i.preheader" }) := by
+  refine numFast_step_at (s' := stateAt (pre87Env env i2 n) s)
+    (b := ⟨"for.body87.i.i.preheader", pre87Instrs,
+      Term.condbr (Operand.reg "%63") "for.end100.i.i.loopexit.unr-lcssa"
+        "for.body87.i.i.preheader.new"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre87_find
+  · exact pre87_denote hn hi
+  · rw [numFast_execTerm_condbr_one (s := stateAt (pre87Env env i2 n) s) "%63"
+      "for.end100.i.i.loopexit.unr-lcssa" "for.body87.i.i.preheader.new"
+      (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- **The preheader's untaken test: the unrolled successor.**  At least four
+visits are left, so the unrolled nest runs. -/
+theorem pre87_step_new {calls : Calls} {env : Env} {s : State}
+    {i2 n : BitVec 64}
+    (hpc : s.pc = "for.body87.i.i.preheader")
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hi : lookupName env "%i.2.i.i" = some (.int 64 i2))
+    (hbit : evalICmp .ugt (i2 - n) 0xfffffffffffffffc#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre87Env env i2 n)
+        { s with pc := "for.body87.i.i.preheader.new",
+                 pre := some "for.body87.i.i.preheader" }) := by
+  refine numFast_step_at (s' := stateAt (pre87Env env i2 n) s)
+    (b := ⟨"for.body87.i.i.preheader", pre87Instrs,
+      Term.condbr (Operand.reg "%63") "for.end100.i.i.loopexit.unr-lcssa"
+        "for.body87.i.i.preheader.new"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre87_find
+  · exact pre87_denote hn hi
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (pre87Env env i2 n) s) "%63"
+      "for.end100.i.i.loopexit.unr-lcssa" "for.body87.i.i.preheader.new"
+      (lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- The residual loop's entry on the preheader's taken test: the cells
+`for.end100.i.i.loopexit.unr-lcssa`'s three `phi`s and its `%lcmp.mod.not` test
+read. -/
+def Pre87EpilEntry (i2 n : BitVec 64) (s : State) : Prop :=
+  s.pc = "for.end100.i.i.loopexit.unr-lcssa" ∧
+  s.pre = some "for.body87.i.i.preheader" ∧
+  lookupName s.env "%i.2.i.i" = some (.int 64 i2) ∧
+  lookupName s.env "%xtraiter" =
+    some (.int 64 ((n - i2) &&& 0x0000000000000003#64))
+
+theorem pre87_epil_entry {env : Env} {i2 n : BitVec 64}
+    (hi : lookupName env "%i.2.i.i" = some (.int 64 i2)) (s : State) :
+    Pre87EpilEntry i2 n
+      { stateAt (pre87Env env i2 n) s with
+          pc := "for.end100.i.i.loopexit.unr-lcssa",
+          pre := some "for.body87.i.i.preheader" } := by
+  refine ⟨rfl, rfl, ?_, ?_⟩
+  · exact pre87Env_i2 hi
+  · exact pre87Env_xt
+
+def pre87newInstrs : List Instr :=
+  [Instr.binop "%unroll_iter" (BinOp.and) 64 (Operand.reg "%61")
+     (Operand.imm (Const.int 64 0xfffffffffffffffc#64)),
+   Instr.gep "%invariant.gep" (Ty.int 8) (Operand.reg "%p")
+     (Operand.imm (Const.int 64 0x0000000000000001#64)),
+   Instr.gep "%invariant.gep1191" (Ty.int 8) (Operand.reg "%p")
+     (Operand.imm (Const.int 64 0x0000000000000002#64)),
+   Instr.gep "%invariant.gep1193" (Ty.int 8) (Operand.reg "%p")
+     (Operand.imm (Const.int 64 0x0000000000000003#64))]
+
+theorem pre87new_find :
+    numFastBody.findBlock "for.body87.i.i.preheader.new" =
+      some ⟨"for.body87.i.i.preheader.new", pre87newInstrs,
+        Term.br "for.body87.i.i"⟩ := by
+  simpa only [pre87newInstrs] using numFast_findBlock_for_body87_i_i_preheader_new
+
+/-- The unrolled preheader's environment: the trip count and the three bases. -/
+def pre87newEnv (env : Env) (x61 : BitVec 64) (p : Nat) : Env :=
+  ("%invariant.gep1193",
+    .ptr (p + ((0x0000000000000003#64).signExtend 64).toNat)) ::
+  ("%invariant.gep1191",
+    .ptr (p + ((0x0000000000000002#64).signExtend 64).toNat)) ::
+  ("%invariant.gep",
+    .ptr (p + ((0x0000000000000001#64).signExtend 64).toNat)) ::
+  ("%unroll_iter", .int 64 (x61 &&& 0xfffffffffffffffc#64)) :: env
+
+/-- The trip count, through the environment the block builds. -/
+theorem pre87newEnv_unroll {env : Env} {x61 : BitVec 64} {p : Nat} :
+    lookupName (pre87newEnv env x61 p) "%unroll_iter" =
+      some (.int 64 (x61 &&& 0xfffffffffffffffc#64)) := by
+  simp only [pre87newEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self ..
+
+/-- The first base, through the environment the block builds. -/
+theorem pre87newEnv_gep {env : Env} {x61 : BitVec 64} {p : Nat} :
+    lookupName (pre87newEnv env x61 p) "%invariant.gep" =
+      some (.ptr (p + ((0x0000000000000001#64).signExtend 64).toNat)) := by
+  simp only [pre87newEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self ..
+
+/-- The second base, through the environment the block builds. -/
+theorem pre87newEnv_gep1191 {env : Env} {x61 : BitVec 64} {p : Nat} :
+    lookupName (pre87newEnv env x61 p) "%invariant.gep1191" =
+      some (.ptr (p + ((0x0000000000000002#64).signExtend 64).toNat)) := by
+  simp only [pre87newEnv]
+  rw [lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self ..
+
+/-- The third base, through the environment the block builds. -/
+theorem pre87newEnv_gep1193 {env : Env} {x61 : BitVec 64} {p : Nat} :
+    lookupName (pre87newEnv env x61 p) "%invariant.gep1193" =
+      some (.ptr (p + ((0x0000000000000003#64).signExtend 64).toNat)) := by
+  simp only [pre87newEnv]
+  exact lookupName_cons_self ..
+
+/-- The dispatched cursor, through the unrolled preheader's four cells. -/
+theorem pre87newEnv_i2 {env : Env} {x61 : BitVec 64} {p : Nat} {nn : BitVec 64}
+    (h : lookupName env "%i.2.i.i" = some (.int 64 nn)) :
+    lookupName (pre87newEnv env x61 p) "%i.2.i.i" = some (.int 64 nn) := by
+  simp only [pre87newEnv]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- The unrolled preheader's chain at its pin. -/
+theorem pre87new_denote {calls : Calls} {env : Env} {s : State}
+    {x61 : BitVec 64} {p : Nat}
+    (h61 : lookupName env "%61" = some (.int 64 x61))
+    (hp : lookupName env "%p" = some (.ptr p)) :
+    denoteCode calls pre87newInstrs (stateAt env s) =
+      some (stateAt (pre87newEnv env x61 p) s) := by
+  unfold pre87newInstrs
+  have hpos1 : ((0x0000000000000001#64).signExtend 64).toNat < 2 ^ 63 := by decide
+  have hpos2 : ((0x0000000000000002#64).signExtend 64).toNat < 2 ^ 63 := by decide
+  have hpos3 : ((0x0000000000000003#64).signExtend 64).toNat < 2 ^ 63 := by decide
+  inner_step
+  inner_step
+  inner_step
+  inner_step
+  block_close
+
+/-- The state the unrolled preheader hands the copy's head. -/
+def pre87BodyState (env : Env) (i2 n : BitVec 64) (p : Nat) (s : State) : State :=
+  { stateAt (pre87newEnv (pre87Env env i2 n) (n - i2) p) s with
+      pc := "for.body87.i.i", pre := some "for.body87.i.i.preheader.new" }
+
+/-- The unrolled preheader's step into the copy's head. -/
+theorem pre87new_step {calls : Calls} {env : Env} {s : State}
+    {x61 : BitVec 64} {p : Nat}
+    (hpc : s.pc = "for.body87.i.i.preheader.new")
+    (h61 : lookupName env "%61" = some (.int 64 x61))
+    (hp : lookupName env "%p" = some (.ptr p)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre87newEnv env x61 p)
+        { s with pc := "for.body87.i.i",
+                 pre := some "for.body87.i.i.preheader.new" }) := by
+  refine numFast_step_at (s' := stateAt (pre87newEnv env x61 p) s)
+    (b := ⟨"for.body87.i.i.preheader.new", pre87newInstrs,
+      Term.br "for.body87.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre87new_find
+  · exact pre87new_denote h61 hp
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The copy's head on the unrolled preheader's edge: the cells
+`Tier3CopyUnroll`'s frame and the head's first `phi` read. -/
+def Pre87CopyEntry (i2 n : BitVec 64) (p : Nat) (s : State) : Prop :=
+  s.pc = "for.body87.i.i" ∧
+  s.pre = some "for.body87.i.i.preheader.new" ∧
+  lookupName s.env "%i.2.i.i" = some (.int 64 i2) ∧
+  lookupName s.env "%unroll_iter" =
+    some (.int 64 ((n - i2) &&& 0xfffffffffffffffc#64)) ∧
+  lookupName s.env "%invariant.gep" = some (.ptr (p + 1)) ∧
+  lookupName s.env "%invariant.gep1191" = some (.ptr (p + 2)) ∧
+  lookupName s.env "%invariant.gep1193" = some (.ptr (p + 3))
+
+theorem pre87_copy_entry {env : Env} {i2 n : BitVec 64} {p : Nat}
+    (hi : lookupName env "%i.2.i.i" = some (.int 64 i2)) (s : State) :
+    Pre87CopyEntry i2 n p (pre87BodyState env i2 n p s) := by
+  have hone : ((0x0000000000000001#64 : BitVec 64).signExtend 64).toNat = 1 := by
+    decide
+  have htwo : ((0x0000000000000002#64 : BitVec 64).signExtend 64).toNat = 2 := by
+    decide
+  have hthree : ((0x0000000000000003#64 : BitVec 64).signExtend 64).toNat = 3 := by
+    decide
+  refine ⟨rfl, rfl, ?_, ?_, ?_, ?_, ?_⟩
+  · exact pre87newEnv_i2 (pre87Env_i2 hi)
+  · exact pre87newEnv_unroll
+  · calc lookupName (pre87BodyState env i2 n p s).env "%invariant.gep"
+        = some (.ptr (p + ((0x0000000000000001#64).signExtend 64).toNat)) :=
+          pre87newEnv_gep
+      _ = some (.ptr (p + 1)) := by rw [hone]
+  · calc lookupName (pre87BodyState env i2 n p s).env "%invariant.gep1191"
+        = some (.ptr (p + ((0x0000000000000002#64).signExtend 64).toNat)) :=
+          pre87newEnv_gep1191
+      _ = some (.ptr (p + 2)) := by rw [htwo]
+  · calc lookupName (pre87BodyState env i2 n p s).env "%invariant.gep1193"
+        = some (.ptr (p + ((0x0000000000000003#64).signExtend 64).toNat)) :=
+          pre87newEnv_gep1193
+      _ = some (.ptr (p + 3)) := by rw [hthree]
+
+/-- **The preheader's run into the copy's head.**  Two control steps when at
+least four visits are left; the state it leaves is `Pre87CopyEntry`'s. -/
+theorem pre87_run_copy {calls : Calls} {env : Env} {s : State}
+    {i2 n : BitVec 64} {p : Nat}
+    (hpc : s.pc = "for.body87.i.i.preheader")
+    (hn : lookupName env "%n" = some (.int 64 n))
+    (hi : lookupName env "%i.2.i.i" = some (.int 64 i2))
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hbit : evalICmp .ugt (i2 - n) 0xfffffffffffffffc#64 = (0 : BitVec 1)) :
+    ∀ j, runFuel calls (2 + j) numFastBody (stateAt env s) =
+      runFuel calls j numFastBody (pre87BodyState env i2 n p s) := by
+  intro j
+  have h1 := pre87_step_new (calls := calls) hpc hn hi hbit
+  have h2 := pre87new_step (calls := calls)
+    (env := pre87Env env i2 n)
+    (s := { s with pc := "for.body87.i.i.preheader.new",
+                     pre := some "for.body87.i.i.preheader" })
+    rfl (pre87Env_61 (env := env) (i2 := i2) (n := n)) (pre87Env_p hp)
+  rw [show 2 + j = 1 + (1 + j) from by omega]
+  rw [runFuel_jump_prefix h1]
+  rw [runFuel_jump_prefix h2]
+  simp only [pre87BodyState, stateAt]
+
+/-- The dispatch's copy edge leaves the preheader's cursor: `if.end83.i.i`'s arm
+lands on `end83Env`, whose second cell is `%i.2.i.i`. -/
+theorem end83Env_i2 {env : Env} {esign : BitVec 1} {i2 n : BitVec 64} :
+    lookupName (end83Env env esign i2 n) "%i.2.i.i" = some (.int 64 i2) := by
+  simp only [end83Env]
+  rw [lookupName_cons_ne _ _ (by decide)]
+  exact lookupName_cons_self ..
+
+/-- The dispatch's copy edge keeps `%n`, the preheader's other cell. -/
+theorem end83Env_n {env : Env} {esign : BitVec 1} {i2 n nn : BitVec 64}
+    (h : lookupName env "%n" = some (.int 64 nn)) :
+    lookupName (end83Env env esign i2 n) "%n" = some (.int 64 nn) := by
+  simp only [end83Env]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide)]
+  exact h
+
+/-- The dispatch's copy edge keeps `%p`, the unrolled preheader's base. -/
+theorem end83Env_p {env : Env} {esign : BitVec 1} {i2 n : BitVec 64} {p : Nat}
+    (h : lookupName env "%p" = some (.ptr p)) :
+    lookupName (end83Env env esign i2 n) "%p" = some (.ptr p) := by
+  simp only [end83Env]
+  rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+    lookupName_cons_ne _ _ (by decide)]
+  exact h
+
 /-! ### The outer multiply's exit: `while.end176.i.i`
 
 The block where the `%pow` chunk multiply hands the ladder its start.
@@ -5886,6 +6459,27 @@ theorem end176_run_ladder {calls : Calls} {env : Env} {s : State}
 #print axioms NumFastToDouble.end176_store_read
 #print axioms NumFastToDouble.end176_residual_empty
 #print axioms NumFastToDouble.end176_run_ladder
+#print axioms NumFastToDouble.then59_find
+#print axioms NumFastToDouble.then59_step
+#print axioms NumFastToDouble.then59_entry
+#print axioms NumFastToDouble.then59_run_incPeel
+#print axioms NumFastToDouble.then59_run_thread
+#print axioms NumFastToDouble.then59_run_incThread
+#print axioms NumFastToDouble.then59_run_parseEnd
+#print axioms NumFastToDouble.then59_run_endThread
+#print axioms NumFastToDouble.pre87_find
+#print axioms NumFastToDouble.pre87_denote
+#print axioms NumFastToDouble.pre87_step_lcssa
+#print axioms NumFastToDouble.pre87_step_new
+#print axioms NumFastToDouble.pre87_epil_entry
+#print axioms NumFastToDouble.pre87new_find
+#print axioms NumFastToDouble.pre87new_denote
+#print axioms NumFastToDouble.pre87new_step
+#print axioms NumFastToDouble.pre87_copy_entry
+#print axioms NumFastToDouble.pre87_run_copy
+#print axioms NumFastToDouble.end83Env_i2
+#print axioms NumFastToDouble.end83Env_n
+#print axioms NumFastToDouble.end83Env_p
 
 end NumFastToDouble
 
