@@ -154,6 +154,7 @@ import LeanLLVM.Refinement.JsonStage2NumFastCalls
 import LeanLLVM.Refinement.JsonStage2NumFastCarried
 import LeanLLVM.Refinement.JsonStage2NumFastCells
 import LeanLLVM.Refinement.JsonStage2NumFastCellsRun
+import LeanLLVM.Refinement.PathTransportFixture
 import LeanLLVM.Refinement.JsonStage2NumFastCounters
 import LeanLLVM.Refinement.JsonStage2NumFastDigitRuns
 import LeanLLVM.Refinement.JsonStage2NumFastStarts
@@ -235,6 +236,7 @@ import LeanLLVM.Refinement.JsonStage2WalkRefusalOffsetQuote
 import LeanLLVM.Refinement.PipelineDischarge
 -- The route's wrapper contract, its document decision, and the caller's decode.
 import LeanLLVM.JsonCallRoute
+import LeanLLVM.Refinement.JsonPolicyModel
 import LeanLLVM.StrtodRefine
 import LeanLLVM.StrtodTier1
 import LeanLLVM.ElGuardRefine
@@ -371,6 +373,7 @@ import LeanLLVM.Refinement.JsonStage2NoEventWalkScalarValueProvider
 import LeanLLVM.Refinement.JsonStage2NoEventWalkHeadFalseArms
 import LeanLLVM.Refinement.JsonStage2NoEventWalkDecisionTie
 import LeanLLVM.Refinement.JsonStage2NoEventWalkTraceRun
+import LeanLLVM.Refinement.JsonStage2NoEventWalkCountedReentry
 import LeanLLVM.Refinement.JsonEventIndexed
 import LeanLLVM.Refinement.JsonNumberPremises
 import LeanLLVM.Refinement.JsonEventIndexedStep
@@ -382,6 +385,8 @@ import LeanLLVM.Refinement.JsonStage2NumFastCalleeD8
 import LeanLLVM.Refinement.JsonStage2NumFastCalleeEl
 import LeanLLVM.Refinement.JsonStage2NumFastEpilogueShape
 import LeanLLVM.Refinement.JsonStage2NumFastCalleeMul
+import LeanLLVM.Refinement.JsonStage2NumFastCalleeMulStep
+import LeanLLVM.Refinement.JsonStage2NumFastCalleeMulArith
 import LeanLLVM.Refinement.JsonStage2NumFastToDoubleLadder
 import LeanLLVM.Refinement.JsonStage2NumFastEpilogueLoop
 import LeanLLVM.Refinement.JsonStage2WalkSpansChain

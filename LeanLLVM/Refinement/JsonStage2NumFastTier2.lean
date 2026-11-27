@@ -42,6 +42,7 @@ coincide through `elExact_bits` and `elPack_bits`, which also carry the encoding
 
 **Axiom footprints** are at the end.
 -/
+import LeanLLVM.Refinement.JsonStage2NumFastCalleeElFacts
 import LeanLLVM.Refinement.JsonStage2NumFastCalls
 import LeanLLVM.ElGuardRefine
 
@@ -92,29 +93,10 @@ The model and the guard compute the same `W = w << lz`; `Nat.size w` and
 `Nat.log2 w` differ by one on nonzero `w`, which is `lz_shift`.  Everything after
 that is the same arithmetic in both texts. -/
 
-/-- `w`'s bit length is one more than its binary logarithm. -/
-theorem size_eq_log2_add_one {w : Nat} (h : w ≠ 0) : Nat.size w = Nat.log2 w + 1 := by
-  have hb := (Nat.log2_eq_iff h).mp rfl
-  have h1 : Nat.log2 w < Nat.size w := Nat.lt_size.mpr hb.1
-  have h2 : Nat.size w ≤ Nat.log2 w + 1 := Nat.size_le.mpr hb.2
-  omega
-
 /-- The model's normalising shift is the guard's: `64 - size` is `63 - log2`. -/
 theorem lz_shift (w : Nat) (h : w ≠ 0) : 64 - Nat.size w = 63 - Nat.log2 w := by
   have hs := size_eq_log2_add_one h
   omega
-
-/-- The normalised word is below `2 ^ 64` for a sixty-four-bit mantissa. -/
-theorem wnorm_lt (w : Nat) (h : w < 2 ^ 64) (h0 : w ≠ 0) :
-    w * 2 ^ (64 - Nat.size w) < 2 ^ 64 := by
-  have hb := (Nat.log2_eq_iff h0).mp rfl
-  have hs := size_eq_log2_add_one h0
-  have hsle : Nat.size w ≤ 64 := Nat.size_le.mpr h
-  calc w * 2 ^ (64 - Nat.size w)
-      < 2 ^ (Nat.log2 w + 1) * 2 ^ (64 - Nat.size w) :=
-        Nat.mul_lt_mul_of_pos_right hb.2 (Nat.pow_pos (by decide))
-    _ = 2 ^ (Nat.log2 w + 1 + (64 - Nat.size w)) := by rw [← Nat.pow_add]
-    _ = 2 ^ 64 := by rw [hs]; congr 1; omega
 
 /-! ### The table's rows are sixty-four-bit
 
