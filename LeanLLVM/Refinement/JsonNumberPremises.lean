@@ -102,8 +102,9 @@ cells as the model's, `NumFastSeams.expSelect_tie`/`expExit_merge_back` tie
 `%exp10.4` to `expVal d`, and `NumFastScanRun.ip_word_digitsNat`/
 `fr_word_digitsNat` are the fold-to-`digitsNat` steps.  The statement those
 pieces would discharge, and this premise's consumer on the body side, is
-`JsonStage2NumFastArm.NumFastBodyArm` (`JsonStage2NumFastArm.lean:940`) — the
-conversion arm's answer, `1` and `strtodSpec`'s eight bytes at `%out`.  The walk
+`JsonStage2NumFastTier2.NumFastBodyArm` — the conversion arm's answer, `1` and
+`strtodSpec`'s eight bytes at `%out`, the kernel's counter cell's successor where
+the guard's window is hit, and a frame over every region the conversion writes.  The walk
 selects its model for that slot (`JsonStage2Body.stage2Calls_num_fast_el1`),
 which is why the model-level arms (`valueArms_numFast_model`,
 `stage2NoEventWalkValueNumber`, `payloadRevolution_number_arm`'s `hev`) close

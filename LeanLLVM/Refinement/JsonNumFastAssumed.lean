@@ -52,9 +52,11 @@ outside both values.
 
 ## Its consumer, and the chain
 
-`JsonStage2NumFastArm.NumFastBodyArm` is the body statement the release theorem's
-number arm needs: at a staged entry state the conversion runs to its return,
-writes `strtodSpec`'s eight bytes at `%out` and returns `1`.  Its `calls`
+`JsonStage2NumFastTier2.NumFastBodyArm` is the body statement the release
+theorem's number arm needs: at a staged entry state the conversion runs to its
+return, writes `strtodSpec`'s eight bytes at `%out` and returns `1`, with the
+kernel's counter cell holding its successor where the guard's window is hit and
+a frame over every region the conversion writes.  Its `calls`
 parameter is the callee half's value, and its `if.end230`/`if.then241` arm reads
 the five merge registers that the agreement names.
 
@@ -123,16 +125,17 @@ and what remains is the run of each against its model at the `Calls` entry, whic
 is exactly the gap the discharge path names.  It is not the token-extent premise:
 `JsonNumberPremises.NumberTokenExtentAt` is the other half, and holds the span's
 bytes; these values take those bytes (`bs`) as given, and no field of either
-structure splits them into parts.  And it does not
-weaken or restate any existing definition or theorem:
-`NumFastBodyArm`, `numFastAccumulatorAgreement_intRun`, `t1_intRun_tie` and the
-site denotations keep their statements, and this module only names what they
-consume.
+structure splits them into parts.  `NumFastBodyArm`'s statement carries the
+kernel's counter cell and the walk's own frame (restated in
+`JsonStage2NumFastTier2` when the model began to write that cell);
+`numFastAccumulatorAgreement_intRun`, `t1_intRun_tie` and the site denotations
+keep their statements, and this module only names what they consume.
 
 It adds no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/
 import LeanLLVM.Refinement.JsonNumberPremises
 import LeanLLVM.Refinement.JsonStage2NumFastCalls
+import LeanLLVM.Refinement.JsonStage2NumFastTier2
 import LeanLLVM.Refinement.JsonNumberSegmentation
 
 set_option autoImplicit false
@@ -405,9 +408,12 @@ theorem numFastKernelAt_agreement (env : Env) (d : Decimal)
 
 /-! ### The body consumer
 
-`JsonStage2NumFastArm.NumFastBodyArm` is the statement the release theorem's
+`JsonStage2NumFastTier2.NumFastBodyArm` is the statement the release theorem's
 number arm consumes.  Its `calls` parameter is the callee half's value, and its
-conclusion is the conversion's answer at a staged entry state. -/
+conclusion is the conversion's answer at a staged entry state: `strtodSpec`'s
+bytes at `%out`, the cursor the caller resumes at, the kernel's counter cell
+holding its successor where the guard's window is hit, and a frame over every
+region the conversion writes. -/
 
 /-- **The arm is the callee half's consumer.**  An arm at any selection the
 assumption answers is the arm at the tree's model: the two statements are the same
@@ -421,36 +427,52 @@ theorem numFastBodyArm_of_calleesAnswered {calls : Calls} {epow : Int → Option
 
 /-- **The arm's answer at the assumed selection.**  From the assumption and the
 arm at its selection, the conversion runs to its return at a staged entry state:
-it returns `1`, writes `strtodSpec`'s eight bytes at `%out`, leaves `%err` alone
-and the cursor the caller's.  The run is stated at the model, which is the
-selection the callee half names. -/
+it returns `1`, writes `strtodSpec`'s eight bytes at `%out`, resumes the caller's
+cursor, leaves the kernel's counter cell holding the successor of the word it was
+handed wherever the guard's window is hit on the kernel class, and changes
+nothing outside the caller's slots, that cell, the walk's frame and its two
+diagnostic counters.  The run is stated at the model, which is the selection the
+callee half names. -/
 theorem numFastBodyArm_answer_of_assumed {calls : Calls} {epow : Int → Option EPow}
     {bs : List UInt8} {d : Decimal} {i0 d0 n : Nat}
     (h : JsonNumFastAssumed calls epow bs d i0 d0 n) (harm : NumFastBodyArm calls)
     (dd : Decimal) (lex : List UInt8) (env : Env) (mem : Mem) (next : Nat)
-    (p out err : Nat)
+    (p out err k g gs : Nat)
     (hd : dd.wellFormed) (hl : ByteString.literal lex = dd.lexeme)
     (hp : lookupName env "%p" = some (.ptr p))
     (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 lex.length)))
     (ho : lookupName env "%out" = some (.ptr out))
     (herr : lookupName env "%err" = some (.ptr err))
+    (hgel : lookupName env "@g_nume1_el" = some (.ptr g))
+    (hgsl : lookupName env "@g_nume1_slow" = some (.ptr gs))
     (hr : readBytes mem p lex.length = some lex)
+    (hwin : readBytes mem numElWindowAddr 8 = some (natToBytes k 8))
+    (hk : k < 2 ^ 64)
+    (hdisj : numElWindowAddr + 8 ≤ next ∨ next + numFastFrameBytes ≤ numElWindowAddr)
     (ht : NumFastTables env mem) :
-    ∃ (k : Nat) (o : CallOutcome),
-      runFuel calls k numFastBody
+    ∃ (k' : Nat) (o : CallOutcome),
+      runFuel calls k' numFastBody
           (stateAt env { env := [], mem := mem, next := next, pc := "entry",
                          pre := none }) =
         some (.ret (some o.ret) o.mem) ∧
       o.ret = .int 32 1 ∧
-      o.mem = writeBytes mem out (wordBytes 8 (strtodSpec dd).toBits) ∧
+      readBytes o.mem out 8 = some (wordBytes 8 (strtodSpec dd).toBits) ∧
       o.next = next ∧
-      UnchangedOutside mem o.mem [(out, 8), (err, 8)] := by
+      (numClassOf (digitCount dd) (numEff dd) (kernelDecides dd) = .kernel →
+        numElWindow guardTable (BitVec.ofNat 64 dd.mantissa).toNat
+            (BitVec.ofInt 64 (eff dd)).toInt ≠ none →
+          readBytes o.mem numElWindowAddr 8 =
+            some (natToBytes ((k + 1) % 2 ^ 64) 8)) ∧
+      UnchangedOutside mem o.mem
+        [(out, 8), (err, 8), (numElWindowAddr, 8), (next, numFastFrameBytes),
+          (g, 8), (gs, 8)] := by
   have hc := h.callees
   unfold NumFastCalleesAnswered at hc
   rw [hc] at harm ⊢
   exact numFastBodyArm_at_entry (calls := stage2NumFastCalls epow) (h := harm)
     (d := dd) (lex := lex) (env := env) (mem := mem) (next := next) (p := p)
-    (out := out) (err := err) hd hl hp hn ho herr hr ht
+    (out := out) (err := err) (k := k) (g := g) (gs := gs)
+    hd hl hp hn ho herr hgel hgsl hr hwin hk hdisj ht
 
 /-! ### Axiom footprints -/
 

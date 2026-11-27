@@ -21,14 +21,18 @@ outer gate to the end of its store.
    (`numFast_gate304_iff_eff`, `numFast_gate306_iff_eff`).
 3. **The kernel route.**  `if.then241`'s false edge reaches `if.end268`, whose
    kernel call is the guard's decision (`numFast_ifEnd268_accept`/`_refuse` in
-   `JsonStage2NumFastTier2`); on the accept bit `cleanup282` loads the guard's
-   eight bytes, applies the lexeme's sign and stores them at `%out`
+   `JsonStage2NumFastTier2`); the answer's memory carries the kernel's own
+   counter cell (`numElWindowMemAt`), which moves on the window arm; on the
+   accept bit `cleanup282` loads the guard's eight bytes, applies the lexeme's
+   sign and stores them at `%out`
    (`numFast_cleanup282_step_accept`), and `cleanup300` returns `1`.  On the
    refuse bit `cleanup282.thread462` ends the lifetime and reaches `if.end285`,
    the fallback's entry (`numFast_cleanup282_thread462_step`).
 4. **The two seams.**  `numFast_tier2_accept_run` composes the accept route from
    the merge block to the return; `numFast_tier2_refuse_run` composes the
-   refusal from the merge block to `if.end285`.
+   refusal from the merge block to `if.end285`.  Both report the kernel's
+   counter cell alongside the walk's own tier counter
+   (`numFastSiteMem`).
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
@@ -649,7 +653,11 @@ theorem numFast_ifEnd268_step_accept (epow : Int → Option EPow)
     step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
       .jump (stateAt
         (("%tobool271.not", .int 1 0) :: ("%call270", .int 32 1) :: env)
-        { s with mem := writeBytes s.mem q (natToBytes bits 8), next := s.next, pc := "cleanup282", pre := some "if.end268" }) := by
+        { s with
+          mem := writeBytes
+            (numElWindowMem s.mem numElWindowAddr
+              (numElWindow epow a.toNat b.toInt)) q (natToBytes bits 8),
+          next := s.next, pc := "cleanup282", pre := some "if.end268" }) := by
   have hcode := numFast_ifEnd268_denote_accepted (s := s) epow ha hb hd hdec
   have hfind : numFastBody.findBlock (stateAt env s).pc =
       some ⟨"if.end268", numFastIfEnd268Instrs,
@@ -658,7 +666,11 @@ theorem numFast_ifEnd268_step_accept (epow : Int → Option EPow)
     exact numFast_findBlock_if_end268_named
   have hbit : lookupName
       (stateAt (("%tobool271.not", .int 1 0) :: ("%call270", .int 32 1) :: env)
-        { s with mem := writeBytes s.mem q (natToBytes bits 8), next := s.next }).env
+        { s with
+          mem := writeBytes
+            (numElWindowMem s.mem numElWindowAddr
+              (numElWindow epow a.toNat b.toInt)) q (natToBytes bits 8),
+          next := s.next }).env
       "%tobool271.not" = some (.int 1 0) := by
     simp only [stateAt, lookupName_cons_self]
   simp only [step, hfind, hcode]
@@ -666,7 +678,8 @@ theorem numFast_ifEnd268_step_accept (epow : Int → Option EPow)
   simp only [stateAt, hpc]
 
 /-- `if.end268`'s refusing edge: the block's bit is one and the body continues
-at `cleanup282.thread462` with the caller's memory. -/
+at `cleanup282.thread462` with the counter's memory (the caller's unless the
+window arm was taken). -/
 theorem numFast_ifEnd268_step_refuse (epow : Int → Option EPow)
     {env : Env} {s : State} {a b : BitVec 64} {q : Nat}
     (hpc : s.pc = "if.end268")
@@ -677,7 +690,10 @@ theorem numFast_ifEnd268_step_refuse (epow : Int → Option EPow)
     step (stage2NumFastCalls epow) numFastBody (stateAt env s) =
       .jump (stateAt
         (("%tobool271.not", .int 1 1) :: ("%call270", .int 32 0) :: env)
-        { s with mem := s.mem, next := s.next, pc := "cleanup282.thread462", pre := some "if.end268" }) := by
+        { s with
+          mem := numElWindowMem s.mem numElWindowAddr
+            (numElWindow epow a.toNat b.toInt),
+          next := s.next, pc := "cleanup282.thread462", pre := some "if.end268" }) := by
   have hcode := numFast_ifEnd268_denote_refused (s := s) epow ha hb hd hdec
   have hfind : numFastBody.findBlock (stateAt env s).pc =
       some ⟨"if.end268", numFastIfEnd268Instrs,
@@ -686,7 +702,10 @@ theorem numFast_ifEnd268_step_refuse (epow : Int → Option EPow)
     exact numFast_findBlock_if_end268_named
   have hbit : lookupName
       (stateAt (("%tobool271.not", .int 1 1) :: ("%call270", .int 32 0) :: env)
-        { s with mem := s.mem, next := s.next }).env
+        { s with
+          mem := numElWindowMem s.mem numElWindowAddr
+            (numElWindow epow a.toNat b.toInt),
+          next := s.next }).env
       "%tobool271.not" = some (.int 1 1) := by
     simp only [stateAt, lookupName_cons_self]
   simp only [step, hfind, hcode]
@@ -787,13 +806,21 @@ theorem sExt_ofNat64' {j : Nat} (hj : j < 2 ^ 63) :
   simp [BitVec.toNat_ofNat, BitVec.signExtend]
   omega
 
-/-- The accepting arm's outcome: the return word `1` and its three writes. -/
-def numFastTier2Out (s : State) (q g out : Nat) (gv : BitVec 64) (bits : Nat)
+/-- The accepting arm's outcome: the return word `1`, its three writes over the
+site's memory, and the caller's cursor. -/
+def numFastTier2Out (m : Mem) (next : Nat) (q g out : Nat) (gv : BitVec 64) (bits : Nat)
     (d : Decimal) : CallOutcome :=
   { ret := .int 32 1
-    mem := writeBytes (writeBytes (writeBytes s.mem q (natToBytes bits 8)) g
+    mem := writeBytes (writeBytes (writeBytes m q (natToBytes bits 8)) g
       (natToBytes (gv + 1).toNat 8)) out (wordBytes 8 (strtodSpec d).toBits)
-    next := s.next }
+    next := next }
+
+/-- The kernel site's counter memory at the route's own counters: the two words
+the walk hands `num_el_el1` are its mantissa and its emitted exponent. -/
+def numFastSiteMem (s : State) (d : Decimal) (fs : Bytes) (ten : BitVec 64) : Mem :=
+  numElWindowMemAt guardTable s.mem
+    (ten * BitVec.ofNat 64 (Decimal.digitsNat d.ip) + BitVec.ofNat 64 (Decimal.digitsNat fs))
+    (BitVec.ofInt 64 (expVal d) - BitVec.ofNat 64 (fracDigits d))
 
 /-- The merge block's environment at the lexeme's counters. -/
 def numFastGateAt (env : Env) (d : Decimal) (fs : Bytes) : Env :=
@@ -819,13 +846,19 @@ def numFastKernelRefuseAt (env : Env) (d : Decimal) (fs : Bytes) (p10 : Nat)
 def numFastAtKernel (s : State) : State :=
   { s with pc := "if.end268", pre := some "if.then241" }
 
-/-- The state `if.end268`'s acceptance leaves: the guard's bytes at `%d269`. -/
-def numFastAtAcceptStore (s : State) (q bits : Nat) : State :=
-  { s with mem := writeBytes s.mem q (natToBytes bits 8), next := s.next, pc := "cleanup282", pre := some "if.end268" }
+/-- The state `if.end268`'s acceptance leaves: its memory is the site's, with the
+guard's bytes at `%d269`. -/
+def numFastAtAcceptStore (m : Mem) (s : State) (q bits : Nat) : State :=
+  { s with mem := writeBytes m q (natToBytes bits 8), next := s.next, pc := "cleanup282", pre := some "if.end268" }
 
 /-- The state `if.end268`'s refusal leaves. -/
-def numFastAtRefuseStore (s : State) : State :=
-  { s with pc := "cleanup282.thread462", pre := some "if.end268" }
+def numFastAtRefuseStore (m : Mem) (s : State) : State :=
+  { s with mem := m, pc := "cleanup282.thread462", pre := some "if.end268" }
+
+/-- The state `cleanup282.thread462`'s jump leaves: the fallback's entry, at the
+memory the kernel's counter arm left. -/
+def numFastAtRefused (m : Mem) (s : State) : State :=
+  { s with mem := m, pc := "if.end285", pre := some "cleanup282.thread462" }
 
 set_option maxHeartbeats 4000000 in
 
@@ -904,45 +937,54 @@ def numFastAtReturn (s : State) : State :=
 theorem numFastAcceptMem_eq {d : Decimal} {c : Code} (hcM : c.IsMag)
     {sign : BitVec 1} (hsign : (sign = 1) ↔ d.neg = false)
     (hspec : strtodSpec d = Binary64.fin d.neg c.expField c.mant)
-    (s : State) (q g out : Nat) (gv : BitVec 64) :
-    (numFastAcceptMem (numFastAtAcceptStore s q (tier2Bits c)) g out gv
+    (m : Mem) (s : State) (q g out : Nat) (gv : BitVec 64) :
+    (numFastAcceptMem (numFastAtAcceptStore m s q (tier2Bits c)) g out gv
         (BitVec.ofNat 64 (tier2Bits c)) sign).mem
-      = (numFastTier2Out s q g out gv (tier2Bits c) d).mem := by
+      = (numFastTier2Out m s.next q g out gv (tier2Bits c) d).mem := by
   simp only [numFastAcceptMem, numFastAtAcceptStore, numFastTier2Out,
     wordBytes, numFast_accept_words hcM hsign hspec]
 
-/-- The accepting arm's frame at its three stores: the counter's slot, the
-kernel's buffer and the output word are the only regions the route writes. -/
-theorem numFastTier2OutMem_frame (s : State) (q g out err : Nat) (gv : BitVec 64)
+/-- The accepting arm's frame at its stores: the kernel's buffer, the tier
+counter's slot, the output word and the kernel's own counter cell are the only
+regions the route writes. -/
+theorem numFastTier2OutMem_frame (s : State) (m : Mem) (h0 : UnchangedOutside s.mem m
+    [(numElWindowAddr, 8)]) (q g out err : Nat) (gv : BitVec 64)
     (c : Code) (d : Decimal) :
     UnchangedOutside s.mem
-      (writeBytes (writeBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) g
+      (writeBytes (writeBytes (writeBytes m q (natToBytes (tier2Bits c) 8)) g
         (natToBytes (gv + 1).toNat 8)) out (wordBytes 8 (strtodSpec d).toBits))
-      [(q, 8), (g, 8), (out, 8), (err, 8)] := by
+      [(q, 8), (g, 8), (out, 8), (err, 8), (numElWindowAddr, 8)] := by
+  have h0' : UnchangedOutside s.mem m
+      [(q, 8), (g, 8), (out, 8), (err, 8), (numElWindowAddr, 8)] :=
+    h0.of_subset (by
+      intro r hr
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+      subst hr
+      exact ⟨(numElWindowAddr, 8), by simp, le_rfl, le_rfl⟩)
   have h1 : UnchangedOutside s.mem
-      (writeBytes s.mem q (natToBytes (tier2Bits c) 8))
-      [(q, 8), (g, 8), (out, 8), (err, 8)] :=
-    (UnchangedOutside.refl' s.mem [(q, 8), (g, 8), (out, 8), (err, 8)]).write_le
+      (writeBytes m q (natToBytes (tier2Bits c) 8))
+      [(q, 8), (g, 8), (out, 8), (err, 8), (numElWindowAddr, 8)] :=
+    h0'.write_le
       (a := q) (w := 8) (bs := natToBytes (tier2Bits c) 8)
       ⟨(q, 8), by simp, le_rfl, by omega⟩ (by simp only [natToBytes_length]; omega)
-  have h2 : UnchangedOutside (writeBytes s.mem q (natToBytes (tier2Bits c) 8))
-      (writeBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) g
+  have h2 : UnchangedOutside (writeBytes m q (natToBytes (tier2Bits c) 8))
+      (writeBytes (writeBytes m q (natToBytes (tier2Bits c) 8)) g
         (natToBytes (gv + 1).toNat 8))
-      [(q, 8), (g, 8), (out, 8), (err, 8)] :=
-    (UnchangedOutside.refl' (writeBytes s.mem q (natToBytes (tier2Bits c) 8))
-      [(q, 8), (g, 8), (out, 8), (err, 8)]).write_le
+      [(q, 8), (g, 8), (out, 8), (err, 8), (numElWindowAddr, 8)] :=
+    (UnchangedOutside.refl' (writeBytes m q (natToBytes (tier2Bits c) 8))
+      [(q, 8), (g, 8), (out, 8), (err, 8), (numElWindowAddr, 8)]).write_le
       (a := g) (w := 8) (bs := natToBytes (gv + 1).toNat 8)
       ⟨(g, 8), by simp, le_rfl, by omega⟩ (by simp only [natToBytes_length]; omega)
   have h3 : UnchangedOutside
-      (writeBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) g
+      (writeBytes (writeBytes m q (natToBytes (tier2Bits c) 8)) g
         (natToBytes (gv + 1).toNat 8))
-      (writeBytes (writeBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) g
+      (writeBytes (writeBytes (writeBytes m q (natToBytes (tier2Bits c) 8)) g
         (natToBytes (gv + 1).toNat 8)) out (wordBytes 8 (strtodSpec d).toBits))
-      [(q, 8), (g, 8), (out, 8), (err, 8)] :=
+      [(q, 8), (g, 8), (out, 8), (err, 8), (numElWindowAddr, 8)] :=
     (UnchangedOutside.refl'
-      (writeBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) g
+      (writeBytes (writeBytes m q (natToBytes (tier2Bits c) 8)) g
         (natToBytes (gv + 1).toNat 8))
-      [(q, 8), (g, 8), (out, 8), (err, 8)]).write_le
+      [(q, 8), (g, 8), (out, 8), (err, 8), (numElWindowAddr, 8)]).write_le
       (a := out) (w := 8) (bs := wordBytes 8 (strtodSpec d).toBits)
       ⟨(out, 8), by simp, le_rfl, by omega⟩
         (by simp only [wordBytes, natToBytes_length]; omega)
@@ -972,6 +1014,7 @@ theorem numFast_tier2_chain {env : Env} {s : State} {d : Decimal} {fs : Bytes}
     (hrow10 : readBytes s.mem (p10 + (fdig.signExtend 64).toNat * 8) 8
       = some (natToBytes ten.toNat 8))
     (hdisj : q + 8 ≤ g ∨ g + 8 ≤ q)
+    (hdisjgw : g + 8 ≤ numElWindowAddr ∨ numElWindowAddr + 8 ≤ g)
     (hipb : Decimal.digitsNat d.ip < 2 ^ 64)
     (hfsb : Decimal.digitsNat (d.fr.getD empty) < 2 ^ 64)
     (h10 : 10 ^ fs.length < 2 ^ 64)
@@ -981,11 +1024,14 @@ theorem numFast_tier2_chain {env : Env} {s : State} {d : Decimal} {fs : Bytes}
     runFuel (stage2NumFastCalls guardTable) 4 numFastBody
       (stateAt (NumFastTier1.t1GateEnv env exp10 idig ip fr fdig) s) =
       some (.ret (some (.int 32 1))
-        (numFastTier2Out s q g out gv (tier2Bits c) d).mem) ∧
+        (numFastTier2Out (numElWindowMemAt guardTable s.mem (ten * ip + fr)
+          (exp10 - fdig)) s.next q g out gv (tier2Bits c) d).mem) ∧
     UnchangedOutside s.mem
-      (writeBytes (writeBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) g
-        (natToBytes (gv + 1).toNat 8)) out (wordBytes 8 (strtodSpec d).toBits))
-      [(q, 8), (g, 8), (out, 8), (err, 8)] ∧
+      (writeBytes (writeBytes (writeBytes
+        (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) q
+        (natToBytes (tier2Bits c) 8)) g (natToBytes (gv + 1).toNat 8))
+        out (wordBytes 8 (strtodSpec d).toBits))
+      [(q, 8), (g, 8), (out, 8), (err, 8), (numElWindowAddr, 8)] ∧
     numClassOf (digitCount d) (numEff d) (kernelDecides d) = .kernel := by
   have hT2 : Tier2 d kernelDecides := h2
   obtain ⟨hnt1, helig, hk⟩ := h2
@@ -1031,30 +1077,47 @@ theorem numFast_tier2_chain {env : Env} {s : State} {d : Decimal} {fs : Bytes}
       rw [← StrtodTier1.eff_eq_exponent, hc]
     rw [← numTier2Binary_eq_strtodSpec hwf hnd19 hk]
     exact hbin
-  have hgv1 : readBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) g 8
+  have h0 : UnchangedOutside s.mem
+      (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig))
+      [(numElWindowAddr, 8)] := by
+    unfold numElWindowMemAt
+    exact numElWindowMem_frame s.mem numElWindowAddr _
+  have hgv1 : readBytes
+      (writeBytes (numElWindowMemAt guardTable s.mem (ten * ip + fr)
+        (exp10 - fdig)) q (natToBytes (tier2Bits c) 8)) g 8
       = some (natToBytes gv.toNat 8) := by
-    refine (readBytes_writeBytes_outside8 s.mem (natToBytes (tier2Bits c) 8)
-      (start := q) (a := g) (k := 8) ?_).trans hgv
-    rw [natToBytes_length]
-    rcases hdisj with h | h
-    · exact Or.inl h
-    · exact Or.inr h
+    refine (readBytes_writeBytes_outside8
+      (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig))
+      (natToBytes (tier2Bits c) 8)
+      (start := q) (a := g) (k := 8) ?_).trans ?_
+    · rw [natToBytes_length]
+      rcases hdisj with h | h
+      · exact Or.inl h
+      · exact Or.inr h
+    · unfold numElWindowMemAt
+      exact (readBytes_numElWindowMem_outside s.mem numElWindowAddr _ hdisjgw).trans hgv
   have hxnat : (BitVec.ofNat 64 (tier2Bits c)).toNat = tier2Bits c % 2 ^ 64 := by
     rw [BitVec.toNat_ofNat]
   have hbuf : readBytes
-      (writeBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) g
+      (writeBytes (writeBytes (numElWindowMemAt guardTable s.mem (ten * ip + fr)
+        (exp10 - fdig)) q (natToBytes (tier2Bits c) 8)) g
         (natToBytes (gv + 1).toNat 8)) q 8
       = some (natToBytes (BitVec.ofNat 64 (tier2Bits c)).toNat 8) := by
-    rw [readBytes_writeBytes_outside8 (writeBytes s.mem q (natToBytes (tier2Bits c) 8))
+    rw [readBytes_writeBytes_outside8
+      (writeBytes (numElWindowMemAt guardTable s.mem (ten * ip + fr)
+        (exp10 - fdig)) q (natToBytes (tier2Bits c) 8))
       (natToBytes (gv + 1).toNat 8) (start := g) (a := q) (k := 8) (by
         rw [natToBytes_length]
         rcases hdisj with h | h
         · exact Or.inr h
         · exact Or.inl h)]
-    have hsame : readBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) q 8
+    have hsame : readBytes
+        (writeBytes (numElWindowMemAt guardTable s.mem (ten * ip + fr)
+          (exp10 - fdig)) q (natToBytes (tier2Bits c) 8)) q 8
         = some (natToBytes (tier2Bits c) 8) := by
       simpa only [natToBytes_length] using
-        (readBytes_writeBytes_same s.mem (natToBytes (tier2Bits c) 8) (addr := q))
+        (readBytes_writeBytes_same (numElWindowMemAt guardTable s.mem (ten * ip + fr)
+          (exp10 - fdig)) (natToBytes (tier2Bits c) 8) (addr := q))
     rw [hsame]
     congr 1
     rw [hxnat]
@@ -1083,7 +1146,7 @@ theorem numFast_tier2_chain {env : Env} {s : State} {d : Decimal} {fs : Bytes}
         (("%tobool271.not", .int 1 0) :: ("%call270", .int 32 1) ::
           NumFastTier1.t1MantEnv (NumFastTier1.t1GateEnv env exp10 idig ip fr fdig)
             p10 fdig ip fr (fdig + idig) (exp10 - fdig) ten)
-        (numFastAtAcceptStore s q (tier2Bits c))) :=
+        (numFastAtAcceptStore (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) s q (tier2Bits c))) :=
     numFast_ifEnd268_step_accept guardTable
       (env := NumFastTier1.t1MantEnv (NumFastTier1.t1GateEnv env exp10 idig ip fr fdig)
         p10 fdig ip fr (fdig + idig) (exp10 - fdig) ten)
@@ -1103,7 +1166,7 @@ theorem numFast_tier2_chain {env : Env} {s : State} {d : Decimal} {fs : Bytes}
         (("%tobool271.not", .int 1 0) :: ("%call270", .int 32 1) ::
           NumFastTier1.t1MantEnv (NumFastTier1.t1GateEnv env exp10 idig ip fr fdig)
             p10 fdig ip fr (fdig + idig) (exp10 - fdig) ten)
-        (numFastAtAcceptStore s q (tier2Bits c))) =
+        (numFastAtAcceptStore (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) s q (tier2Bits c))) =
       .jump (stateAt
         (numFastAcceptEnv
           (("%tobool271.not", .int 1 0) :: ("%call270", .int 32 1) ::
@@ -1111,13 +1174,13 @@ theorem numFast_tier2_chain {env : Env} {s : State} {d : Decimal} {fs : Bytes}
               p10 fdig ip fr (fdig + idig) (exp10 - fdig) ten)
           gv (BitVec.ofNat 64 (tier2Bits c)) sign)
         (numFastAtReturn
-          (numFastAcceptMem (numFastAtAcceptStore s q (tier2Bits c)) g out gv
+          (numFastAcceptMem (numFastAtAcceptStore (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) s q (tier2Bits c)) g out gv
             (BitVec.ofNat 64 (tier2Bits c)) sign))) :=
     numFast_cleanup282_step guardTable
       (env := ("%tobool271.not", .int 1 0) :: ("%call270", .int 32 1) ::
         NumFastTier1.t1MantEnv (NumFastTier1.t1GateEnv env exp10 idig ip fr fdig)
           p10 fdig ip fr (fdig + idig) (exp10 - fdig) ten)
-      (s := numFastAtAcceptStore s q (tier2Bits c))
+      (s := numFastAtAcceptStore (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) s q (tier2Bits c))
       (g := g) (q := q) (out := out) (gv := gv)
       (x := BitVec.ofNat 64 (tier2Bits c)) (sign := sign) rfl
       (lookup_two (by decide) (by decide)
@@ -1149,7 +1212,7 @@ theorem numFast_tier2_chain {env : Env} {s : State} {d : Decimal} {fs : Bytes}
               p10 fdig ip fr (fdig + idig) (exp10 - fdig) ten)
           gv (BitVec.ofNat 64 (tier2Bits c)) sign)
         (numFastAtReturn
-          (numFastAcceptMem (numFastAtAcceptStore s q (tier2Bits c)) g out gv
+          (numFastAcceptMem (numFastAtAcceptStore (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) s q (tier2Bits c)) g out gv
             (BitVec.ofNat 64 (tier2Bits c)) sign))) =
       .ret (some (.int 32 1))
         (stateAt
@@ -1160,7 +1223,7 @@ theorem numFast_tier2_chain {env : Env} {s : State} {d : Decimal} {fs : Bytes}
                   p10 fdig ip fr (fdig + idig) (exp10 - fdig) ten)
               gv (BitVec.ofNat 64 (tier2Bits c)) sign)
           (numFastAtReturn
-            (numFastAcceptMem (numFastAtAcceptStore s q (tier2Bits c)) g out gv
+            (numFastAcceptMem (numFastAtAcceptStore (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) s q (tier2Bits c)) g out gv
               (BitVec.ofNat 64 (tier2Bits c)) sign))) :=
     numFast_step_cleanup300_accept rfl rfl
   refine ⟨?_, ?_, numClassOf_kernel hT2⟩
@@ -1170,8 +1233,12 @@ theorem numFast_tier2_chain {env : Env} {s : State} {d : Decimal} {fs : Bytes}
     simp only [runFuel]
     rw [hstep4]
     simp only [stateAt, numFastAtReturn]
-    rw [numFastAcceptMem_eq (d := d) (c := c) hcM hsign hspec s q g out gv]
-  · exact numFastTier2OutMem_frame s q g out err gv c d
+    rw [numFastAcceptMem_eq (d := d) (c := c) hcM hsign hspec
+      (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig))
+      s q g out gv]
+  · exact numFastTier2OutMem_frame s
+      (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) h0
+      q g out err gv c d
 
 
 /-- The kernel's refusing route, from the merge block's environment at the
@@ -1197,7 +1264,8 @@ theorem numFast_tier2_refuse_chain {env : Env} {s : State} {d : Decimal} {fs : B
     (hwf : d.wellFormed) (hnt1 : ¬ Tier1 d) (helig : Tier2Eligible d)
     (hk : kernelDecides d = false) :
     ∃ e : State, e.pc = "if.end285" ∧ e.pre = some "cleanup282.thread462" ∧
-      e.mem = s.mem ∧ e.next = s.next ∧
+      e.mem = numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig) ∧
+      e.next = s.next ∧
       numClassOf (digitCount d) (numEff d) (kernelDecides d) = .fallback ∧
       ∀ k, runFuel (stage2NumFastCalls guardTable) (3 + k) numFastBody
         (stateAt (NumFastTier1.t1GateEnv env exp10 idig ip fr fdig) s) =
@@ -1264,7 +1332,10 @@ theorem numFast_tier2_refuse_chain {env : Env} {s : State} {d : Decimal} {fs : B
         hpos hrow10 hb306)
   have hstep2 : step (stage2NumFastCalls guardTable) numFastBody
       (stateAt (numFastKernelAt env d fs p10 ten) (numFastAtKernel s)) =
-      .jump (stateAt (numFastKernelRefuseAt env d fs p10 ten) (numFastAtRefuseStore s)) :=
+      .jump (stateAt (numFastKernelRefuseAt env d fs p10 ten)
+        (numFastAtRefuseStore
+          (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig))
+          (numFastAtKernel s))) :=
     numFast_ifEnd268_step_refuse guardTable
       (env := numFastKernelAt env d fs p10 ten) (s := numFastAtKernel s)
       (a := ten * ip + fr) (b := exp10 - fdig) (q := q) rfl
@@ -1282,11 +1353,18 @@ theorem numFast_tier2_refuse_chain {env : Env} {s : State} {d : Decimal} {fs : B
         exact hd)
       hdec
   have hstep3 : step (stage2NumFastCalls guardTable) numFastBody
-      (stateAt (numFastKernelRefuseAt env d fs p10 ten) (numFastAtRefuseStore s)) =
+      (stateAt (numFastKernelRefuseAt env d fs p10 ten)
+        (numFastAtRefuseStore
+          (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig))
+          (numFastAtKernel s))) =
       .jump (stateAt (numFastKernelRefuseAt env d fs p10 ten)
-        ({ numFastAtKernel s with pc := "if.end285", pre := some "cleanup282.thread462" })) :=
+        (numFastAtRefused
+          (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) s)) :=
     numFast_cleanup282_thread462_step guardTable
-      (env := numFastKernelRefuseAt env d fs p10 ten) (s := numFastAtRefuseStore s)
+      (env := numFastKernelRefuseAt env d fs p10 ten)
+      (s := numFastAtRefuseStore
+        (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig))
+        (numFastAtKernel s))
       (q := q) rfl
       (by
         simp only [numFastKernelRefuseAt, numFastKernelAt, numFastGateAt,
@@ -1294,7 +1372,8 @@ theorem numFast_tier2_refuse_chain {env : Env} {s : State} {d : Decimal} {fs : B
         repeat rw [lookupName_cons_ne _ _ (by decide)]
         exact hd)
   refine ⟨stateAt (numFastKernelRefuseAt env d fs p10 ten)
-      ({ numFastAtKernel s with pc := "if.end285", pre := some "cleanup282.thread462" }),
+      (numFastAtRefused
+        (numElWindowMemAt guardTable s.mem (ten * ip + fr) (exp10 - fdig)) s),
     rfl, rfl, rfl, rfl, hclass, ?_⟩
   intro k
   rw [show (3 : Nat) + k = 1 + (2 + k) from by omega,
@@ -1331,6 +1410,7 @@ theorem numFast_tier2_accept_run {env : Env} {s : State} {d : Decimal} {fs : Byt
     (hrow10 : readBytes s.mem (p10 + fracDigits d * 8) 8
       = some (natToBytes ten.toNat 8))
     (hdisj : q + 8 ≤ g ∨ g + 8 ≤ q)
+    (hdisjgw : g + 8 ≤ numElWindowAddr ∨ numElWindowAddr + 8 ≤ g)
     (hipb : Decimal.digitsNat d.ip < 2 ^ 64)
     (hfsb : Decimal.digitsNat (d.fr.getD empty) < 2 ^ 64)
     (h10 : 10 ^ fs.length < 2 ^ 64)
@@ -1339,11 +1419,12 @@ theorem numFast_tier2_accept_run {env : Env} {s : State} {d : Decimal} {fs : Byt
     (hsign : (sign = 1) ↔ d.neg = false) :
     runFuel (stage2NumFastCalls guardTable) 5 numFastBody (stateAt env s) =
       some (.ret (some (.int 32 1))
-        (numFastTier2Out s q g out gv (tier2Bits c) d).mem) ∧
+        (numFastTier2Out (numFastSiteMem s d fs ten) s.next q g out gv (tier2Bits c) d).mem) ∧
     UnchangedOutside s.mem
-      (writeBytes (writeBytes (writeBytes s.mem q (natToBytes (tier2Bits c) 8)) g
-        (natToBytes (gv + 1).toNat 8)) out (wordBytes 8 (strtodSpec d).toBits))
-      [(q, 8), (g, 8), (out, 8), (err, 8)] ∧
+      (writeBytes (writeBytes (writeBytes (numFastSiteMem s d fs ten) q
+        (natToBytes (tier2Bits c) 8)) g (natToBytes (gv + 1).toNat 8))
+        out (wordBytes 8 (strtodSpec d).toBits))
+      [(q, 8), (g, 8), (out, 8), (err, 8), (numElWindowAddr, 8)] ∧
     numClassOf (digitCount d) (numEff d) (kernelDecides d) = .kernel := by
   obtain ⟨hnt1, helig, hk⟩ := h2
   obtain ⟨hnd19, hlo45, hhi45⟩ := helig
@@ -1377,14 +1458,15 @@ theorem numFast_tier2_accept_run {env : Env} {s : State} {d : Decimal} {fs : Byt
     (sign := sign) (out := out) (g := g) (q := q) (p10 := p10) (err := err)
     (gv := gv) (ten := ten) (c := c) hc
     (s := { s with pc := "if.then241", pre := some "if.end230" }) rfl rfl
-    rfl rfl rfl rfl rfl hfs hsig hout hg hgv hp10 hd hten hrow10' hdisj hipb hfsb h10 hmbound
+    rfl rfl rfl rfl rfl hfs hsig hout hg hgv hp10 hd hten hrow10' hdisj hdisjgw hipb hfsb h10 hmbound
     hwf (show Tier2 d kernelDecides from ⟨hnt1, ⟨hnd19, hlo45, hhi45⟩, hk⟩) hsign
-  refine ⟨?_, hframe, hclass⟩
+  refine ⟨?_, by simpa only [numFastSiteMem] using hframe, hclass⟩
   rw [show (5 : Nat) = 1 + 4 from rfl, runFuel_jump_prefix h1 4]
-  exact hrun
+  simpa only [numFastSiteMem] using hrun
 set_option maxHeartbeats 2000000 in
 /-- The kernel's refusing arm, from the merge block: four control steps to
-`if.end285`'s entry, the caller's memory and the fallback's class. -/
+`if.end285`'s entry, the memory the kernel's counter arm leaves and the
+fallback's class. -/
 theorem numFast_tier2_refuse_run {env : Env} {s : State} {d : Decimal} {fs : Bytes}
     {q p10 : Nat} {ten : BitVec 64}
     (hpc : s.pc = "if.end230") (hpre : s.pre = some "if.end226")
@@ -1409,7 +1491,7 @@ theorem numFast_tier2_refuse_run {env : Env} {s : State} {d : Decimal} {fs : Byt
     (hwf : d.wellFormed) (hnt1 : ¬ Tier1 d) (helig : Tier2Eligible d)
     (hk : kernelDecides d = false) :
     ∃ e : State, e.pc = "if.end285" ∧ e.pre = some "cleanup282.thread462" ∧
-      e.mem = s.mem ∧ e.next = s.next ∧
+      e.mem = numFastSiteMem s d fs ten ∧ e.next = s.next ∧
       numClassOf (digitCount d) (numEff d) (kernelDecides d) = .fallback ∧
       ∀ k, runFuel (stage2NumFastCalls guardTable) (4 + k) numFastBody (stateAt env s) =
         runFuel (stage2NumFastCalls guardTable) k numFastBody e := by
@@ -1447,7 +1529,7 @@ theorem numFast_tier2_refuse_run {env : Env} {s : State} {d : Decimal} {fs : Byt
       (s := { s with pc := "if.then241", pre := some "if.end230" }) rfl rfl
       rfl rfl rfl rfl rfl hfs hp10 hd hten hrow10' hipb hfsb h10 hmbound hwf hnt1 hElig hk
   refine ⟨e, hepc, hepre, ?_, ?_, hclass, ?_⟩
-  · rw [← hemem]
+  · simpa only [numFastSiteMem] using hemem
   · rw [← henext]
   · intro k
     rw [show (4 : Nat) + k = 1 + (3 + k) from by omega,

@@ -32,12 +32,12 @@ use:
   `if.end268` (the 128-bit kernel) and at `if.then178.i.i` (the fallback's big
   multiply) the block's `denoteCode` is `none` and the body's `step` is `ub`, so
   the run is `some .ub`;
-* `NumFastBodyArm` is the arm's statement at the body: a `Calls` selection that
-  answers the three callees, the entry state (the program counter at `entry`,
-  no predecessor), a staging that stages the two tables (`NumFastTables`), and
-  the conclusion at that state — `strtodSpec`'s eight bytes at `out`, `err`
-  untouched, the cursor the caller resumes at, the memory outside the two slots
-  the caller's.
+* the arm's statement at the body, `JsonStage2NumFastTier2.NumFastBodyArm`, is
+  a `Calls` selection that answers the three callees, the entry state (the
+  program counter at `entry`, no predecessor), a staging that stages the two
+  tables (`NumFastTables`), and the conclusion at that state — `strtodSpec`'s
+  eight bytes at `out`, the cursor the caller resumes at, and a frame over the
+  caller's slots, the kernel's counter and the walk's own frame and counters.
 
 **What the supplied environment changes, and what it does not.**  The `calls`
 parameter is no longer missing a value: `JsonStage2NumFastCalls.numFastCalls`
@@ -915,46 +915,36 @@ def NumFastTables (env : Env) (mem : Mem) : Prop :=
     (∀ i, i < 23 →
       readBytes mem (pd + 8 * i) 8 = some (natToBytes (uitofpBits ((10 : Nat) ^ i)).toNat 8))
 
-/-- **The numeric arm at the pinned body.**  At a staging whose four arguments
-are the walk's, whose lexeme at `p` is a well-formed number's (`lex` is the
-bytes, and `literal lex` the lexeme they denote), whose state is the one the
-caller hands the body — the program counter at `entry`, no predecessor — and
-whose two tables are `NumFastTables`, the body runs — under a `Calls` selection
-that answers its three out-of-line callees — to its return, writing
-`strtodSpec`'s eight bytes at `out`, returning `1`, and leaving `err` untouched,
-the cursor where the caller resumes, and every byte outside the two slots the
-caller's.
+/-! ### The arm's statement, and where it lives
 
-The entry state is a hypothesis rather than an assumption about `s`: without it
-the statement quantifies over every block, and *The arm at the entry state*
-below proves the condition is load-bearing (`numFastArm_entry_necessary`).
+**The numeric arm at the pinned body** is `JsonStage2NumFastTier2.NumFastBodyArm`.
+The statement's *conclusion* names the kernel's own counter cell
+(`numElWindowAddr`) and the walk's two diagnostic counters, and its frame lists
+every region the conversion may write; those words are the staging's, so the
+statement is written beside the model and the guard that decide them rather than
+here, below them.  What this module supplies to it is what it supplied before:
+the pinned body (`numFastBody`), the two tables (`NumFastTables`), the entry
+state's shape, and the fact that at the walk's own `s2HelperCalls` each of the
+three callee sites is `ub` (`numFast_step_ifEnd268_ub` and its siblings), so no
+instantiation of the arm exists at that selection.
 
-The cursor conjunct is the contract level's convention: `runFuel`'s outcome
-carries the returned memory and not the allocator state, so the answer's `next`
-is the caller's, exactly as `numFastBody_contract_empty` reads the refusing
-arm's.
+The entry condition is not removable.  At `while.body232.i.i` — a fallback block
+whose residual cell the arm's hypotheses do not bind — the block's first
+instruction cannot read its operand, so the chain is `none` and the step is `ub`
+for *every* `Calls` selection (`numFast_step_divBody_ub`), which no number of
+steps recovers (`numFast_runFuel_divBody_ub`).  `numFastArm_entry_necessary` is
+that statement at the arm's own hypotheses: the conclusion has no witness at the
+state that differs from an arm state only in the two fields the entry condition
+fixes.
 
-The `calls` parameter is not decoration: at the walk's own `s2HelperCalls` the
-run is `ub` at each callee (the theorems above), so no instantiation of this
-statement exists there. -/
-def NumFastBodyArm (calls : Calls) : Prop :=
-  ∀ (d : Decimal) (lex : List UInt8) (env : Env) (s : State) (p out err : Nat),
-    d.wellFormed →
-    ByteString.literal lex = d.lexeme →
-    s.pc = "entry" →
-    s.pre = none →
-    lookupName env "%p" = some (.ptr p) →
-    lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 lex.length)) →
-    lookupName env "%out" = some (.ptr out) →
-    lookupName env "%err" = some (.ptr err) →
-    readBytes s.mem p lex.length = some lex →
-    NumFastTables env s.mem →
-    ∃ (k : Nat) (o : CallOutcome),
-      runFuel calls k numFastBody (stateAt env s) = some (.ret (some o.ret) o.mem) ∧
-      o.ret = .int 32 1 ∧
-      o.mem = writeBytes s.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
-      o.next = s.next ∧
-      UnchangedOutside s.mem o.mem [(out, 8), (err, 8)]
+`NumFastBodyArm` still quantifies over the state `s`, and its hypotheses are the
+entry state's: `s.pc = "entry"` with `s.pre = none`, the four argument cells, the
+lexeme's bytes at `p`, the two tables, and — since the counter's value is part of
+the conclusion — the counter's readable word and the disjointness that keeps it
+outside the walk's frame.  So the statement is the conversion's obligation at
+the state a caller stages, not at every block; `numFastBodyArm_at_entry` in the
+same module is the arm read at that state, and what a proof of it owes is the
+run's composition, not its environment. -/
 
 /-- **The arm is not instantiated at the walk's environment.**  The tier-2
 site's step is `ub` there (`numFast_step_ifEnd268_ub`), so the arm's conclusion
@@ -966,25 +956,11 @@ theorem numFastArm_witness_is_ub :
   refine ⟨[("%add244", .int 64 0), ("%sub231", .int 64 0), ("%d269", .ptr 0)], ?_⟩
   exact numFast_step_ifEnd268_ub rfl rfl rfl rfl
 
-/-! ### The arm at the entry state
+/-! ### The entry state's necessity
 
-`NumFastBodyArm` quantifies over the state `s`, and its hypotheses are the entry
-state's: `s.pc = "entry"` with `s.pre = none`, the four argument cells, the
-lexeme's bytes at `p`, and the two tables.  So the statement is the conversion's
-obligation at the state a caller stages, not at every block.
-
-The entry condition is not removable.  The arm's other hypotheses say nothing
-about the program counter, and at `while.body232.i.i` — a fallback block whose
-residual cell they do not bind — the block's first instruction cannot read its
-operand, so the chain is `none` and the step is `ub` for *every* `Calls`
-selection (`numFast_step_divBody_ub`), which no number of steps recovers
-(`numFast_runFuel_divBody_ub`).  `numFastArm_entry_necessary` is that statement
-at the arm's own hypotheses: the conclusion has no witness at the state that
-differs from an arm state only in the two fields the entry condition fixes.
-
-`numFastBodyArm_at_entry` is the arm read at a staged state, so a proof of it is
-a proof about the state a caller hands the body.  What the repaired statement
-then owes is the run's composition, not its environment. -/
+`numFastArm_entry_necessary` is the arm's entry condition read as a refutation:
+at a state whose `%e10.2.i.i` cell is unbound the division block cannot denote,
+so the arm's conclusion has no witness there. -/
 
 /-- A register the environment does not bind reads as `none`, so a block whose
 first instruction reads it does not denote. -/
@@ -1046,32 +1022,6 @@ theorem numFast_runFuel_divBody_ub (calls : Calls) {env : Env} {s : State} {k : 
     runFuel calls (k + 1) numFastBody (stateAt env s) = some .ub := by
   simp only [runFuel, numFast_step_divBody_ub calls hpc hne]
 
-/-- **The arm at the entry state.**  The arm's hypotheses are the entry
-state's, so its conclusion reads at the state a caller stages: the same
-environment, memory and cursor, with the program counter at `entry` and no
-predecessor. -/
-theorem numFastBodyArm_at_entry (calls : Calls) (h : NumFastBodyArm calls)
-    (d : Decimal) (lex : List UInt8) (env : Env) (mem : Mem) (next : Nat)
-    (p out err : Nat)
-    (hd : d.wellFormed) (hl : ByteString.literal lex = d.lexeme)
-    (hp : lookupName env "%p" = some (.ptr p))
-    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 lex.length)))
-    (ho : lookupName env "%out" = some (.ptr out))
-    (herr : lookupName env "%err" = some (.ptr err))
-    (hr : readBytes mem p lex.length = some lex)
-    (ht : NumFastTables env mem) :
-    ∃ (k : Nat) (o : CallOutcome),
-      runFuel calls k numFastBody
-          (stateAt env { env := [], mem := mem, next := next, pc := "entry",
-                         pre := none }) =
-        some (.ret (some o.ret) o.mem) ∧
-      o.ret = .int 32 1 ∧
-      o.mem = writeBytes mem out (wordBytes 8 (strtodSpec d).toBits) ∧
-      o.next = next ∧
-      UnchangedOutside mem o.mem [(out, 8), (err, 8)] :=
-  h d lex env { env := [], mem := mem, next := next, pc := "entry", pre := none }
-    p out err hd hl rfl rfl hp hn ho herr hr ht
-
 /-- **The entry condition is load-bearing.**  At every state whose `%e10.2.i.i`
 cell is unbound the division block's first instruction cannot read its operand,
 so the run there is `ub` and the arm's conclusion has no witness at all.  The
@@ -1099,10 +1049,11 @@ theorem numFastArm_entry_necessary (calls : Calls) {env : Env} {mem : Mem}
 
 `#print axioms` on the boundary theorems, pinned with `#guard_msgs` so the build
 checks the footprint rather than printing it.  The instrument prints `sorryAx`
-for a `sorry`-backed declaration — §7.6's control — and it did here while the arm
-definition was malformed: the failed elaboration left `sorryAx` in
-`NumFastBodyArm`'s footprint, which is why the pin below is evidence and not
-decoration. -/
+for a `sorry`-backed declaration — §7.6's control — and it did here when a
+definition in this module last failed to elaborate: the failed elaboration left
+`sorryAx` in its footprint, which is why the pins below are evidence and not
+decoration.  (`NumFastBodyArm`'s own pin lives with its definition in
+`JsonStage2NumFastTier2`.) -/
 
 /-- info: 'LeanLLVM.Refinement.numFast_entry_denote' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -1132,10 +1083,6 @@ decoration. -/
 #guard_msgs in
 #print axioms numFast_ifThen178_denote_none
 
-/-- info: 'LeanLLVM.Refinement.NumFastBodyArm' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms NumFastBodyArm
-
 /-- info: 'LeanLLVM.Refinement.numFast_step_divBody_ub' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms numFast_step_divBody_ub
@@ -1143,9 +1090,5 @@ decoration. -/
 /-- info: 'LeanLLVM.Refinement.numFastArm_entry_necessary' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms numFastArm_entry_necessary
-
-/-- info: 'LeanLLVM.Refinement.numFastBodyArm_at_entry' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms numFastBodyArm_at_entry
 
 end LeanLLVM.Refinement

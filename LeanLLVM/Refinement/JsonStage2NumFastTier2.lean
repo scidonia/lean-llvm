@@ -506,7 +506,8 @@ theorem numFast_ifEnd268_value {d : Decimal} {a b : BitVec 64}
 
 /-- **The gate's acceptance at the site.**  When the guard's decision is the code
 `c`, the block's kernel call accepts: `%call270` binds one, the decision's bit is
-zero, and the eight bytes written are the guard's encoding `c`. -/
+zero, and the eight bytes written are the guard's encoding `c`, over the memory
+the kernel's counter arm leaves. -/
 theorem numFast_ifEnd268_accept {env : Env} {s : State} {d : Decimal}
     {a b : BitVec 64} {q : Nat} {c : LeanLLVM.Code}
     (ha : lookupName env "%add244" = some (.int 64 a))
@@ -521,7 +522,11 @@ theorem numFast_ifEnd268_accept {env : Env} {s : State} {d : Decimal}
       some (stateAt
         (("%tobool271.not", .int 1 0) ::
          ("%call270", .int 32 1) :: env)
-        { s with mem := writeBytes s.mem q (natToBytes (tier2Bits c) 8), next := s.next }) := by
+        { s with
+          mem := writeBytes
+            (numElWindowMem s.mem numElWindowAddr
+              (numElWindow guardTable a.toNat b.toInt)) q (natToBytes (tier2Bits c) 8),
+          next := s.next }) := by
   have hvalue : numElEl1 guardTable a.toNat b.toInt
       = (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d)).map tier2Bits := by
     subst hmant; subst hexp
@@ -532,7 +537,7 @@ theorem numFast_ifEnd268_accept {env : Env} {s : State} {d : Decimal}
 
 /-- **The gate's refusal at the site.**  When the guard has no decision, the
 block's kernel call declines: `%call270` binds zero, the decision's bit is one,
-and the memory is the caller's. -/
+and the memory is the counter's (the caller's unless the window arm was taken). -/
 theorem numFast_ifEnd268_refuse {env : Env} {s : State} {d : Decimal}
     {a b : BitVec 64} {q : Nat}
     (ha : lookupName env "%add244" = some (.int 64 a))
@@ -547,7 +552,10 @@ theorem numFast_ifEnd268_refuse {env : Env} {s : State} {d : Decimal}
       some (stateAt
         (("%tobool271.not", .int 1 1) ::
          ("%call270", .int 32 0) :: env)
-        { s with mem := s.mem, next := s.next }) := by
+        { s with
+          mem := numElWindowMem s.mem numElWindowAddr
+            (numElWindow guardTable a.toNat b.toInt),
+          next := s.next }) := by
   have hvalue : numElEl1 guardTable a.toNat b.toInt
       = (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d)).map tier2Bits := by
     subst hmant; subst hexp
@@ -575,16 +583,120 @@ theorem numFast_ifEnd268_decision {env : Env} {s : State} {d : Decimal}
             some (stateAt
               (("%tobool271.not", .int 1 0) ::
                ("%call270", .int 32 1) :: env)
-              { s with mem := writeBytes s.mem q (natToBytes (tier2Bits c) 8), next := s.next })) ∧
+              { s with
+                mem := writeBytes
+                  (numElWindowMem s.mem numElWindowAddr
+                    (numElWindow guardTable a.toNat b.toInt)) q
+                  (natToBytes (tier2Bits c) 8),
+                next := s.next })) ∧
     (LeanLLVM.ElGuardRefine.elTier2Code d.mantissa (eff d) = none →
           denoteCode (stage2NumFastCalls guardTable) numFastIfEnd268Instrs
             (stateAt env s) =
             some (stateAt
               (("%tobool271.not", .int 1 1) ::
                ("%call270", .int 32 0) :: env)
-              { s with mem := s.mem, next := s.next })) :=
+              { s with
+                mem := numElWindowMem s.mem numElWindowAddr
+                  (numElWindow guardTable a.toNat b.toInt),
+                next := s.next })) :=
   ⟨fun _ hc => numFast_ifEnd268_accept ha hb hd hmant hexp hwf hnd heffr hc,
    fun hc => numFast_ifEnd268_refuse ha hb hd hmant hexp hwf hnd heffr hc⟩
+
+/-- `entry`'s five allocations, as the walk's own frame: `[768 x i8]` +
+`%struct.Stk` (1568) + two `i32` (4 each) + a `double` (8). -/
+def numFastFrameBytes : Nat := 2352
+
+/-- **The conversion arm's statement at the body.**  At a staging whose four
+arguments are the walk's, whose lexeme at `p` is a well-formed number's, whose
+state is the one the caller hands the body (`entry`, no predecessor), whose two
+tables are `NumFastTables`, and whose kernel counter at `numElWindowAddr` reads
+`k` (disjoint from the walk's own frame), the body runs — under a `Calls`
+selection that answers its three out-of-line callees — to its return, with
+`strtodSpec`'s eight bytes at `out`, `1` returned, and a frame over every region
+the conversion may write: the caller's two slots, the kernel's counter, the
+walk's frame at the entry cursor, and its two diagnostic counters.
+
+**Why the frame, and not a memory equality.**  The tier-2 acceptance writes the
+kernel's scratch `%d269` at `s.next + 2344` and `@g_nume1_el`, and the fallback
+writes `@g_nume1_slow`; the old shape's `o.mem = writeBytes s.mem out …` could
+not hold on either route.  The regions listed here are the ones the emitted
+body reaches, so the frame is the true form of that claim.
+
+**The counter's value is stated, not hidden.**  The frame exempts the counter's
+cell, so the conclusion also says what the cell holds: on the kernel class, when
+the guard's window is hit at the lexeme's own `(mantissa, eff)` words, the cell
+is the successor of the word it was handed.  A model of `num_el_el1` that omits
+the window arm's write therefore cannot satisfy this statement
+(`JsonStage2NumFastCalls.numElAnswer_counter_written` is the model-side half of
+the contradiction, and `numFast_ifEnd268_accept_counter_read` the site-side). -/
+def NumFastBodyArm (calls : Calls) : Prop :=
+  ∀ (d : Decimal) (lex : List UInt8) (env : Env) (s : State)
+    (p out err k g gs : Nat),
+    d.wellFormed →
+    ByteString.literal lex = d.lexeme →
+    s.pc = "entry" →
+    s.pre = none →
+    lookupName env "%p" = some (.ptr p) →
+    lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 lex.length)) →
+    lookupName env "%out" = some (.ptr out) →
+    lookupName env "%err" = some (.ptr err) →
+    lookupName env "@g_nume1_el" = some (.ptr g) →
+    lookupName env "@g_nume1_slow" = some (.ptr gs) →
+    readBytes s.mem p lex.length = some lex →
+    readBytes s.mem numElWindowAddr 8 = some (natToBytes k 8) →
+    k < 2 ^ 64 →
+    (numElWindowAddr + 8 ≤ s.next ∨ s.next + numFastFrameBytes ≤ numElWindowAddr) →
+    NumFastTables env s.mem →
+    ∃ (k' : Nat) (o : CallOutcome),
+      runFuel calls k' numFastBody (stateAt env s) = some (.ret (some o.ret) o.mem) ∧
+      o.ret = .int 32 1 ∧
+      readBytes o.mem out 8 = some (wordBytes 8 (strtodSpec d).toBits) ∧
+      o.next = s.next ∧
+      (numClassOf (digitCount d) (numEff d) (kernelDecides d) = .kernel →
+        numElWindow guardTable (BitVec.ofNat 64 d.mantissa).toNat
+            (BitVec.ofInt 64 (eff d)).toInt ≠ none →
+          readBytes o.mem numElWindowAddr 8 =
+            some (natToBytes ((k + 1) % 2 ^ 64) 8)) ∧
+      UnchangedOutside s.mem o.mem
+        [(out, 8), (err, 8), (numElWindowAddr, 8), (s.next, numFastFrameBytes),
+          (g, 8), (gs, 8)]
+
+/-- **The arm at the entry state.**  The arm's hypotheses are the entry state's,
+so its conclusion reads at the state a caller stages: the same environment,
+memory and cursor, with the program counter at `entry` and no predecessor. -/
+theorem numFastBodyArm_at_entry (calls : Calls) (h : NumFastBodyArm calls)
+    (d : Decimal) (lex : List UInt8) (env : Env) (mem : Mem) (next : Nat)
+    (p out err k g gs : Nat)
+    (hd : d.wellFormed) (hl : ByteString.literal lex = d.lexeme)
+    (hp : lookupName env "%p" = some (.ptr p))
+    (hn : lookupName env "%n" = some (.int 64 (BitVec.ofNat 64 lex.length)))
+    (ho : lookupName env "%out" = some (.ptr out))
+    (herr : lookupName env "%err" = some (.ptr err))
+    (hgel : lookupName env "@g_nume1_el" = some (.ptr g))
+    (hgsl : lookupName env "@g_nume1_slow" = some (.ptr gs))
+    (hr : readBytes mem p lex.length = some lex)
+    (hwin : readBytes mem numElWindowAddr 8 = some (natToBytes k 8))
+    (hk : k < 2 ^ 64)
+    (hdisj : numElWindowAddr + 8 ≤ next ∨ next + numFastFrameBytes ≤ numElWindowAddr)
+    (ht : NumFastTables env mem) :
+    ∃ (k' : Nat) (o : CallOutcome),
+      runFuel calls k' numFastBody
+          (stateAt env { env := [], mem := mem, next := next, pc := "entry",
+                         pre := none }) =
+        some (.ret (some o.ret) o.mem) ∧
+      o.ret = .int 32 1 ∧
+      readBytes o.mem out 8 = some (wordBytes 8 (strtodSpec d).toBits) ∧
+      o.next = next ∧
+      (numClassOf (digitCount d) (numEff d) (kernelDecides d) = .kernel →
+        numElWindow guardTable (BitVec.ofNat 64 d.mantissa).toNat
+            (BitVec.ofInt 64 (eff d)).toInt ≠ none →
+          readBytes o.mem numElWindowAddr 8 =
+            some (natToBytes ((k + 1) % 2 ^ 64) 8)) ∧
+      UnchangedOutside mem o.mem
+        [(out, 8), (err, 8), (numElWindowAddr, 8), (next, numFastFrameBytes),
+          (g, 8), (gs, 8)] :=
+  h d lex env { env := [], mem := mem, next := next, pc := "entry", pre := none }
+    p out err k g gs hd hl rfl rfl hp hn ho herr hgel hgsl hr hwin hk hdisj ht
 
 /-! ### Axiom footprints -/
 
@@ -607,5 +719,9 @@ theorem numFast_ifEnd268_decision {env : Env} {s : State} {d : Decimal}
 #print axioms numFast_ifEnd268_accept
 
 #print axioms numFast_ifEnd268_refuse
+
+#print axioms NumFastBodyArm
+
+#print axioms numFastBodyArm_at_entry
 
 end LeanLLVM.Refinement

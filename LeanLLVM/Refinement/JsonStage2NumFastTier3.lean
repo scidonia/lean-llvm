@@ -1460,9 +1460,9 @@ theorem t3_scale_of_ulp {m : Nat} {E : Int} {J : Nat} {eB : Int} {w u : Nat}
 
 /-! ### The arm at the supplied environment and staging
 
-`JsonStage2NumFastArm.NumFastBodyArm` takes two parameters: a `Calls` selection
-that answers the three out-of-line callees, and a staging that stages the two
-tables (`NumFastTables`).  Both are values now rather than paragraphs —
+`JsonStage2NumFastTier2.NumFastBodyArm` takes a `Calls` selection that answers
+the three out-of-line callees, and a staging that stages the two tables
+(`NumFastTables`).  Both are values now rather than paragraphs —
 `stage2NumFastCalls` answers the callees, with each site's `denoteCode` defined
 and its step a jump (`JsonStage2NumFastCalls.numFast_ifEnd268_denote_some`,
 `numFast_whileBodyPreheader_denote_some`, `numFast_ifThen178_denote_some`, with

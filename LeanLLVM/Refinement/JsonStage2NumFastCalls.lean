@@ -23,7 +23,14 @@ by a `uint64`).  Each is modelled here from that text:
   kernel reads a `static const` array that is data, not code: a model that
   invented the 91 rows would be asserting the table rather than reading it.
   A missing row is a refusal, which is the staging's default and not the
-  kernel's own range test;
+  kernel's own range test.  The model also carries the window arm's diagnostic
+  counter: the emitted `if.then18` increments `@g_el_window` before it calls
+  `el_exact`, and the other arms leave the cell alone.  `numElWindow` names that
+  arm, `numElWindowMem` is the memory it leaves, and `numElAnswerAt` writes the
+  counter at a staging address (`numElWindowAddr` at the fixture's staging);
+  `numElAnswerAt_frame` bounds the answer's write set to `out` and that cell.
+  The counter's address is the staging's, like the tables', and the model's
+  `numElWindowAddr` is the one `JsonStage2NumFastCalleeEl.numElGlobals` elects;
 * `numStkMulAnswer` reads a `StkBn` (96 `uint64` limbs and the `int` count at
   offset 768), multiplies it by the second argument with `stk_mul_add`'s
   carry chain, and writes the count and limbs back.
@@ -286,18 +293,230 @@ def numElEl1 (epow : Int → Option EPow) (w : Nat) (q : Int) : Option Nat :=
         if hh ≤ hp + 2 ∧ hp ≤ hh then elExact W lz t q
         else elPack (Ahi / 2 ^ (10 + ub)) (if hp > hh then 1 else 0) ub t lz
 
-/-- The kernel's answer: accepted writes the eight bytes and returns one;
-declined writes nothing and returns zero. -/
-def numElAnswer (epow : Int → Option EPow) (args : List Value) (mem : Mem)
-    (next : Nat) : Option CallOutcome :=
+/-! ### The window counter
+
+The emitted `if.then18` is the one arm of the body that touches a global besides
+`out`: it loads `@g_el_window`, adds one, stores it back, and only then calls
+`el_exact`.  The other arms leave the cell alone.  The model carries that write,
+so its answer is the body's on every arm: `numElWindow` names the arm,
+`numElWindowMem` is the memory the counter leaves, and `numElAnswerAt` writes it
+at a staging address.  `numElWindowAddr` is the address the fixture's staging
+elects (`JsonStage2NumFastCalleeEl.numElGlobals`); `numElAnswerAt` takes any
+address and `numElAnswerAt_frame` bounds the write set to `out` and that cell. -/
+
+/-- The staging's address for `@g_el_window`, as `numElGlobals` elects it. -/
+def numElWindowAddr : Nat := 0x200000
+
+/-- The kernel's window arm, `some (W, lz, t)` exactly when the emitted
+`if.then18` is taken: the normalised word and the row it hands `el_exact`.  The
+range gate, the zero mantissa and the table miss are `none`.  This is
+`numElEl1`'s branch written out; `numElEl1_window` states that the two agree, so
+a drift between them fails the build rather than the model. -/
+def numElWindow (epow : Int → Option EPow) (w : Nat) (q : Int) :
+    Option (Nat × Nat × EPow) :=
+  if q < -45 ∨ 45 < q then none
+  else if w = 0 then none
+  else
+    match epow q with
+    | none => none
+    | some t =>
+        let lz := 64 - Nat.size w
+        let W := w * 2 ^ lz
+        let Ahi := (W * t.hi) / 2 ^ 64
+        let ub := Ahi / 2 ^ 63
+        let hp := Ahi % 2 ^ (10 + ub)
+        let hh := elHalf ub
+        if hh ≤ hp + 2 ∧ hp ≤ hh then some (W, lz, t) else none
+
+/-- The counter's cell after the window arm: its word plus one, wrapped.  An
+absent cell reads as zero — the convention `numD8Answer` uses for an absent
+byte — and `numElCounterMem_read` is the reading at a staged cell. -/
+def numElCounterMem (mem : Mem) (win : Nat) : Mem :=
+  writeBytes mem win
+    (natToBytes ((bytesToNat ((readBytes mem win 8).getD []) + 1) % 2 ^ 64) 8)
+
+/-- The memory the kernel leaves at the counter: the next word on the window
+arm, the caller's memory on the other arms. -/
+def numElWindowMem (mem : Mem) (win : Nat) (o : Option (Nat × Nat × EPow)) : Mem :=
+  match o with
+  | some _ => numElCounterMem mem win
+  | none => mem
+
+/-- The memory the kernel leaves at a site's two arguments: the counter's arm's
+memory at `numElWindow`'s decision on those words. -/
+def numElWindowMemAt (epow : Int → Option EPow) (mem : Mem) (a b : BitVec 64) : Mem :=
+  numElWindowMem mem numElWindowAddr (numElWindow epow a.toNat b.toInt)
+
+/-- The kernel's answer at the counter's address `win`: `numElEl1`'s bits, the
+window arm's counter write, and `out`'s eight bytes on an acceptance; a decline
+returns zero. -/
+def numElAnswerAt (win : Nat) (epow : Int → Option EPow) (args : List Value)
+    (mem : Mem) (next : Nat) : Option CallOutcome :=
   match args with
   | [.int 64 w, .int 64 q, .ptr out] =>
+      let mem' := numElWindowMem mem win (numElWindow epow w.toNat q.toInt)
       match numElEl1 epow w.toNat q.toInt with
       | some bits =>
-          some { ret := .int 32 1, mem := writeBytes mem out (natToBytes bits 8),
+          some { ret := .int 32 1, mem := writeBytes mem' out (natToBytes bits 8),
                  next := next }
-      | none => some { ret := .int 32 0, mem := mem, next := next }
+      | none => some { ret := .int 32 0, mem := mem', next := next }
   | _ => none
+
+/-- The kernel's answer, at the staging's address for `@g_el_window`. -/
+def numElAnswer (epow : Int → Option EPow) (args : List Value) (mem : Mem)
+    (next : Nat) : Option CallOutcome :=
+  numElAnswerAt numElWindowAddr epow args mem next
+
+/-- **The window arm is `numElEl1`'s `el_exact` branch.**  `numElWindow` is
+`numElEl1`'s own branch written out, so on it the kernel's decision is
+`elExact`'s. -/
+theorem numElEl1_window {epow : Int → Option EPow} {w : Nat} {q : Int} {W lz : Nat}
+    {t : EPow} (h : numElWindow epow w q = some (W, lz, t)) :
+    numElEl1 epow w q = elExact W lz t q := by
+  unfold numElWindow at h
+  unfold numElEl1
+  by_cases hq : q < -45 ∨ 45 < q
+  · rw [if_pos hq] at h
+    cases h
+  · rw [if_neg hq] at h
+    rw [if_neg hq]
+    by_cases hw : w = 0
+    · rw [if_pos hw] at h
+      cases h
+    · rw [if_neg hw] at h
+      rw [if_neg hw]
+      cases hep : epow q with
+      | none =>
+          rw [hep] at h
+          cases h
+      | some t' =>
+          rw [hep] at h
+          dsimp only at h ⊢
+          split at h
+          · rename_i hcond
+            cases h
+            rw [if_pos hcond]
+          · cases h
+
+/-- The counter's cell holds its next word after the window arm. -/
+theorem numElCounterMem_read (mem : Mem) (win k : Nat) (hk : k < 2 ^ 64)
+    (h : readBytes mem win 8 = some (natToBytes k 8)) :
+    readBytes (numElCounterMem mem win) win 8 = some (natToBytes ((k + 1) % 2 ^ 64) 8) := by
+  have hb : bytesToNat ((readBytes mem win 8).getD []) = k := by
+    rw [h]
+    simp only [Option.getD_some, natToBytes_toNat,
+      show (256 : Nat) ^ 8 = 2 ^ 64 from by decide, Nat.mod_eq_of_lt hk]
+  unfold numElCounterMem
+  rw [hb]
+  show readBytes (writeBytes mem win (natToBytes ((k + 1) % 2 ^ 64) 8)) win
+      (natToBytes ((k + 1) % 2 ^ 64) 8).length = _
+  rw [readBytes_writeBytes_same]
+
+/-- A read outside a write's span is unaffected by it. -/
+theorem readBytes_writeBytes_span (m : Mem) (bs : List UInt8) (start p n : Nat)
+    (h : p + n ≤ start ∨ start + bs.length ≤ p) :
+    readBytes (writeBytes m start bs) p n = readBytes m p n := by
+  induction n generalizing p with
+  | zero => rfl
+  | succ n ih =>
+      have h' : p < start ∨ start + bs.length ≤ p := by
+        rcases h with h | h
+        · exact Or.inl (by omega)
+        · exact Or.inr h
+      simp only [readBytes]
+      rw [readByte_writeBytes_outside m bs h']
+      cases hr : readByte m p with
+      | none => rfl
+      | some b =>
+          rw [ih (p + 1) (by
+            rcases h with h | h
+            · exact Or.inl (by omega)
+            · exact Or.inr (by omega))]
+
+/-- A read outside the counter's cell is unaffected by the counter's arm. -/
+theorem readBytes_numElWindowMem_outside (mem : Mem) (win : Nat)
+    (o : Option (Nat × Nat × EPow)) {p n : Nat}
+    (h : p + n ≤ win ∨ win + 8 ≤ p) :
+    readBytes (numElWindowMem mem win o) p n = readBytes mem p n := by
+  unfold numElWindowMem
+  cases o with
+  | none => rfl
+  | some x =>
+      unfold numElCounterMem
+      exact readBytes_writeBytes_span mem _ win p n
+        (by
+          rcases h with h | h
+          · exact Or.inl h
+          · exact Or.inr (by rw [natToBytes_length]; exact h))
+
+/-- The counter's arm leaves every byte outside its cell alone. -/
+theorem numElWindowMem_frame (mem : Mem) (win : Nat) (o : Option (Nat × Nat × EPow)) :
+    UnchangedOutside mem (numElWindowMem mem win o) [(win, 8)] := by
+  unfold numElWindowMem
+  cases o with
+  | none => exact UnchangedOutside.refl' mem [(win, 8)]
+  | some x =>
+      unfold numElCounterMem
+      exact (UnchangedOutside.refl' mem [(win, 8)]).write_le
+        (a := win) (w := 8)
+        (bs := natToBytes ((bytesToNat ((readBytes mem win 8).getD []) + 1) % 2 ^ 64) 8)
+        ⟨(win, 8), by simp, le_rfl, by omega⟩ (by rw [natToBytes_length])
+
+/-- **The model's frame.**  Every answer writes only the eight bytes at `out`
+and, on the window arm, the counter's cell at `win`. -/
+theorem numElAnswerAt_frame (win : Nat) (epow : Int → Option EPow) (w q : BitVec 64)
+    (out : Nat) (mem : Mem) (next : Nat) {r : CallOutcome}
+    (h : numElAnswerAt win epow [.int 64 w, .int 64 q, .ptr out] mem next = some r) :
+    ∀ a n, a + n ≤ out ∨ out + 8 ≤ a →
+      a + n ≤ win ∨ win + 8 ≤ a → readBytes r.mem a n = readBytes mem a n := by
+  intro a n hout hwin
+  unfold numElAnswerAt at h
+  dsimp only at h
+  cases hdec : numElEl1 epow w.toNat q.toInt with
+  | none =>
+      simp only [hdec] at h
+      cases h
+      dsimp only
+      exact readBytes_numElWindowMem_outside mem win _ hwin
+  | some bits =>
+      simp only [hdec] at h
+      cases h
+      dsimp only
+      rw [readBytes_writeBytes_span (numElWindowMem mem win _) (natToBytes bits 8) out a n
+        (by
+          rcases hout with h | h
+          · exact Or.inl h
+          · exact Or.inr (by rw [natToBytes_length]; exact h))]
+      exact readBytes_numElWindowMem_outside mem win _ hwin
+
+/-- **The counter write is real.**  At a staged counter the window arm's answer
+leaves the cell holding the next word, so the answer is not the caller's memory
+inside that cell. -/
+theorem numElAnswer_counter_written {epow : Int → Option EPow} {w q : BitVec 64}
+    {out : Nat} {mem : Mem} {next k : Nat}
+    (hwin : numElWindow epow w.toNat q.toInt ≠ none)
+    (hread : readBytes mem numElWindowAddr 8 = some (natToBytes k 8))
+    (hk : k < 2 ^ 64) (hout : out + 8 ≤ numElWindowAddr) :
+    ∀ r, numElAnswer epow [.int 64 w, .int 64 q, .ptr out] mem next = some r →
+      readBytes r.mem numElWindowAddr 8 =
+        some (natToBytes ((k + 1) % 2 ^ 64) 8) := by
+  intro r h
+  unfold numElAnswer numElAnswerAt at h
+  dsimp only at h
+  cases hw : numElWindow epow w.toNat q.toInt with
+  | none => exact absurd hw hwin
+  | some x =>
+      cases hdec : numElEl1 epow w.toNat q.toInt with
+      | none =>
+          simp only [hw, hdec, numElWindowMem, Option.some.injEq] at h
+          obtain rfl := h
+          exact numElCounterMem_read mem numElWindowAddr k hk hread
+      | some bits =>
+          simp only [hw, hdec, numElWindowMem, Option.some.injEq] at h
+          obtain rfl := h
+          rw [readBytes_writeBytes_span (numElCounterMem mem numElWindowAddr)
+            (natToBytes bits 8) out numElWindowAddr 8 (Or.inr hout)]
+          exact numElCounterMem_read mem numElWindowAddr k hk hread
 
 /-! ### The environment
 
@@ -542,7 +761,8 @@ theorem numFast_ifEnd268_denote_answer (epow : Int → Option EPow) {env : Env}
   rfl
 
 /-- The kernel's refusal: the block binds zero and the decision's bit is one, and
-the memory is the caller's. -/
+the memory is the counter's (the caller's unless the window arm was taken, where
+the block's counter write stands even though `el_exact` declined). -/
 theorem numFast_ifEnd268_denote_refused (epow : Int → Option EPow) {env : Env}
     {s : State} {a b : BitVec 64} {q : Nat}
     (ha : lookupName env "%add244" = some (.int 64 a))
@@ -553,14 +773,20 @@ theorem numFast_ifEnd268_denote_refused (epow : Int → Option EPow) {env : Env}
       some (stateAt
         (("%tobool271.not", .int 1 1) ::
          ("%call270", .int 32 0) :: env)
-        { s with mem := s.mem, next := s.next }) := by
+        { s with
+          mem := numElWindowMem s.mem numElWindowAddr (numElWindow epow a.toNat b.toInt),
+          next := s.next }) := by
   refine numFast_ifEnd268_denote_answer epow ha hb hd
-    (r := { ret := .int 32 0, mem := s.mem, next := s.next }) (x := 0) rfl ?_
+    (r := { ret := .int 32 0,
+            mem := numElWindowMem s.mem numElWindowAddr
+              (numElWindow epow a.toNat b.toInt),
+            next := s.next }) (x := 0) rfl ?_
   rw [stage2NumFastCalls_num_el]
-  simp only [numElAnswer, hdec]
+  simp only [numElAnswer, numElAnswerAt, hdec]
 
 /-- The kernel's acceptance: the block binds one, the decision's bit is zero, and
-the answer's eight bytes are written at the output. -/
+the answer's eight bytes are written at the output, over the counter's arm's
+memory. -/
 theorem numFast_ifEnd268_denote_accepted (epow : Int → Option EPow) {env : Env}
     {s : State} {a b : BitVec 64} {q bits : Nat}
     (ha : lookupName env "%add244" = some (.int 64 a))
@@ -571,12 +797,62 @@ theorem numFast_ifEnd268_denote_accepted (epow : Int → Option EPow) {env : Env
       some (stateAt
         (("%tobool271.not", .int 1 0) ::
          ("%call270", .int 32 1) :: env)
-        { s with mem := writeBytes s.mem q (natToBytes bits 8), next := s.next }) := by
+        { s with
+          mem := writeBytes
+            (numElWindowMem s.mem numElWindowAddr
+              (numElWindow epow a.toNat b.toInt)) q (natToBytes bits 8),
+          next := s.next }) := by
   refine numFast_ifEnd268_denote_answer epow ha hb hd
-    (r := { ret := .int 32 1, mem := writeBytes s.mem q (natToBytes bits 8),
+    (r := { ret := .int 32 1,
+            mem := writeBytes
+              (numElWindowMem s.mem numElWindowAddr
+                (numElWindow epow a.toNat b.toInt)) q (natToBytes bits 8),
             next := s.next }) (x := 1) rfl ?_
   rw [stage2NumFastCalls_num_el]
-  simp only [numElAnswer, hdec]
+  simp only [numElAnswer, numElAnswerAt, hdec]
+
+/-- **The window arm's acceptance at the walk's site.**  On the window arm the
+site's accepted answer leaves the kernel's counter cell written, so the block's
+memory is the counter's and `out`'s bytes — not the caller's with only `out`
+written. -/
+theorem numFast_ifEnd268_denote_accepted_window (epow : Int → Option EPow)
+    {env : Env} {s : State} {a b : BitVec 64} {q bits : Nat}
+    (ha : lookupName env "%add244" = some (.int 64 a))
+    (hb : lookupName env "%sub231" = some (.int 64 b))
+    (hd : lookupName env "%d269" = some (.ptr q))
+    (hdec : numElEl1 epow a.toNat b.toInt = some bits)
+    (hwin : numElWindow epow a.toNat b.toInt ≠ none) :
+    denoteCode (stage2NumFastCalls epow) numFastIfEnd268Instrs (stateAt env s) =
+      some (stateAt
+        (("%tobool271.not", .int 1 0) ::
+         ("%call270", .int 32 1) :: env)
+        { s with
+          mem := writeBytes (numElCounterMem s.mem numElWindowAddr) q (natToBytes bits 8),
+          next := s.next }) := by
+  cases hw : numElWindow epow a.toNat b.toInt with
+  | none => exact absurd hw hwin
+  | some x =>
+      simpa only [hw, numElWindowMem] using
+        numFast_ifEnd268_denote_accepted (s := s) epow ha hb hd hdec
+
+/-- **The walk's counter cell holds the next word.**  A read at `numElWindowAddr`
+after the window arm's acceptance is the counter's successor: the fact the walk's
+acceptance shape has to name. -/
+theorem numFast_ifEnd268_accept_counter_read (epow : Int → Option EPow) {env : Env}
+    {s : State} {a b : BitVec 64} {q bits k : Nat}
+    (hdec : numElEl1 epow a.toNat b.toInt = some bits)
+    (hwin : numElWindow epow a.toNat b.toInt ≠ none)
+    (hread : readBytes s.mem numElWindowAddr 8 = some (natToBytes k 8)) (hk : k < 2 ^ 64)
+    (hq : q + 8 ≤ numElWindowAddr ∨ numElWindowAddr + 8 ≤ q) :
+    readBytes (writeBytes (numElCounterMem s.mem numElWindowAddr) q (natToBytes bits 8))
+      numElWindowAddr 8 = some (natToBytes ((k + 1) % 2 ^ 64) 8) := by
+  rw [readBytes_writeBytes_span (numElCounterMem s.mem numElWindowAddr) (natToBytes bits 8)
+    q numElWindowAddr 8 (by
+      rw [natToBytes_length]
+      rcases hq with h | h
+      · exact Or.inr h
+      · exact Or.inl h)]
+  exact numElCounterMem_read s.mem numElWindowAddr k hk hread
 
 /-- `if.end268`'s run: the marker, the kernel, the decision's bit. -/
 theorem numFast_ifEnd268_denote_some (epow : Int → Option EPow) {env : Env}
@@ -592,10 +868,16 @@ theorem numFast_ifEnd268_denote_some (epow : Int → Option EPow) {env : Env}
           { s with mem := r.mem, next := r.next }) := by
   cases hdec : numElEl1 epow a.toNat b.toInt with
   | none =>
-      exact ⟨{ ret := .int 32 0, mem := s.mem, next := s.next }, 0, rfl,
+      exact ⟨{ ret := .int 32 0,
+                mem := numElWindowMem s.mem numElWindowAddr
+                  (numElWindow epow a.toNat b.toInt), next := s.next }, 0, rfl,
         numFast_ifEnd268_denote_refused epow ha hb hd hdec⟩
   | some bits =>
-      exact ⟨{ ret := .int 32 1, mem := writeBytes s.mem q (natToBytes bits 8), next := s.next },
+      exact ⟨{ ret := .int 32 1,
+                mem := writeBytes
+                  (numElWindowMem s.mem numElWindowAddr
+                    (numElWindow epow a.toNat b.toInt)) q (natToBytes bits 8),
+                next := s.next },
         1, rfl, numFast_ifEnd268_denote_accepted epow ha hb hd hdec⟩
 
 /-- The tier-2 site's control step, at the answered environment: a jump. -/
@@ -860,5 +1142,33 @@ declaration, which is the control the other modules in this tree record. -/
 /-- info: 'LeanLLVM.Refinement.numFast_ifThen178_denote_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms numFast_ifThen178_denote_some
+
+/-- info: 'LeanLLVM.Refinement.numElEl1_window' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numElEl1_window
+
+/-- info: 'LeanLLVM.Refinement.numElCounterMem_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numElCounterMem_read
+
+/-- info: 'LeanLLVM.Refinement.numElAnswerAt_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numElAnswerAt_frame
+
+/-- info: 'LeanLLVM.Refinement.numElAnswer_counter_written' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numElAnswer_counter_written
+
+/-- info: 'LeanLLVM.Refinement.numFast_ifEnd268_denote_accepted' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numFast_ifEnd268_denote_accepted
+
+/-- info: 'LeanLLVM.Refinement.numFast_ifEnd268_denote_refused' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numFast_ifEnd268_denote_refused
+
+/-- info: 'LeanLLVM.Refinement.numElWindowMem_frame' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms numElWindowMem_frame
 
 end LeanLLVM.Refinement
