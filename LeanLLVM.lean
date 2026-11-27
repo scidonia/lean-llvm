@@ -384,3 +384,4 @@ import LeanLLVM.Refinement.JsonStage2NumFastEpilogueShape
 import LeanLLVM.Refinement.JsonStage2NumFastCalleeMul
 import LeanLLVM.Refinement.JsonStage2NumFastToDoubleLadder
 import LeanLLVM.Refinement.JsonStage2NumFastEpilogueLoop
+import LeanLLVM.Refinement.JsonStage2WalkSpansNil
