@@ -37,9 +37,15 @@ restated here.
 
 The big multiply's layer is begun (`for.body132.i.i`'s staging edge and the
 chunk loop's back edge, `stk_mul_u64.exit.i.i`'s three sites, `while.end.i.i`)
-and the epilogue's blocks (`for.cond255.i.i`, `for.end359.i.i`) are not stated
-here yet.  The peel loop (`for.body.i.i`, entered from the peel and re-entered
-from its latch) is an induction here (`peelRunAux`, `peelRun`); the main parse
+and its far end is here: `while.end176.i.i` spills the group count and tests the
+residual, and `end176_run_ladder` carries that edge into the ladder's head as
+the continuation `if.end198.i.i`'s own step leaves.  The block groups between
+the two ends (`for.cond.cleanup.i.i`, `if.then140.i.i` and the four unrolled
+digit-ingest nests), the outer loops after the first rung (`while.body187.i.i`,
+`while.end190.i.i`, `if.end195.i.i`), and the epilogue's blocks
+(`for.cond255.i.i`, `for.end359.i.i`) are not stated here yet.  The peel loop
+(`for.body.i.i`, entered from the peel and re-entered from its latch) is an
+induction here (`peelRunAux`, `peelRun`); the main parse
 loop's traversal (`for.body.outer.i.i` with its latch and dot back edges) and
 the composition from the outer entry to the copy's entry are not stated yet.
 There is no `sorry`, `admit` or `native_decide` below.
@@ -5690,6 +5696,196 @@ theorem peelRun {calls : Calls} (mem0 : Mem) (p n digA : Nat) (bs : List UInt8)
     rw [hrun]
     exact hcont e hexit hout
   exact runFuel_mono_le (by omega) hone
+
+/-! ### The outer multiply's exit: `while.end176.i.i`
+
+The block where the `%pow` chunk multiply hands the ladder its start.
+`%n.i539.i.i` is the frame's `+ 0x608` field, set at `if.end151.i.i`; the store
+spills the group count `%inc12.us.i.i581758.i.i` back into it.  The test is the
+residual group's own: `%sub175.i.i` is `%k168.0762.i.i - 19`, so the word is zero
+exactly at nineteen groups, and that arm opens `if.end198.i.i` — the block that
+forms the ladder's two inputs — while a non-zero word takes `if.then178.i.i`'s
+`stk_mul_u64`.
+
+Both steps are at the block's own pin, and `end176_run_ladder` composes the
+exit's step with `NumFastTier3Fold.t3_fold_step`, so the interior that starts at
+the copy's entry has its far end: the run it owes `FbCopyEntryPos` continues
+from this block's word into `while.cond203.i.i` without re-deriving the fold's
+block.  The store binds no cell, so the two lookups below are the incoming ones.
+-/
+
+/-- A four-byte store: `store i32 %v, ptr %p` at the word the address names. -/
+theorem denoteCode_store32 (calls : Calls) (env : Env) (s : State) (v p : String)
+    {x : BitVec 32} {a : Nat}
+    (hv : lookupName env v = some (.int 32 x))
+    (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store (.int 32) (.reg v) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is
+        (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
+  have hs : storeValue (stateAt env s) (.int 32) (.int 32 x) a
+      = some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
+    simp [storeValue, stateAt, show (32 + 7) / 8 = 4 from rfl]
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [JsonS1MasksIR.evalInstr_store (s := stateAt env s)
+      (vv := .int 32 x) (a := a)
+      (s' := stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) })
+      (hv := evalOperand_reg_of env s v (.int 32 x) hv)
+      (hp := evalOperand_reg_of env s p (.ptr a) hp) (hs := hs)])]
+
+/-- The block's instructions. -/
+def end176Instrs : List Instr :=
+  [Instr.store (Ty.int 32) (Operand.reg "%inc12.us.i.i581758.i.i")
+     (Operand.reg "%n.i539.i.i"),
+   Instr.icmp "%tobool177.not.i.i" (IPred.eq) 64 (Operand.reg "%sub175.i.i")
+     (Operand.imm (Const.int 64 0x0000000000000000#64))]
+
+theorem end176_find :
+    numFastBody.findBlock "while.end176.i.i" =
+      some ⟨"while.end176.i.i", end176Instrs,
+        Term.condbr (Operand.reg "%tobool177.not.i.i") "if.end198.i.i"
+          "if.then178.i.i"⟩ := by
+  simpa only [end176Instrs] using numFast_findBlock_while_end176_i_i
+
+/-- The environment the block leaves: the residual test's bit in front of the
+incoming cells. -/
+def end176Env (env : Env) (r : BitVec 64) : Env :=
+  ("%tobool177.not.i.i", .int 1 (evalICmp .eq r 0x0#64)) :: env
+
+/-- A lookup through the cell the block binds. -/
+theorem end176Env_lookup {env : Env} {r : BitVec 64} {d : String} {v : Value}
+    (h : lookupName env d = some v) (hne : d ≠ "%tobool177.not.i.i") :
+    lookupName (end176Env env r) d = some v := by
+  have h' : lookupName (("%tobool177.not.i.i", .int 1 (evalICmp .eq r 0x0#64)) :: env) d
+      = lookupName env d :=
+    lookupName_cons_ne _ _ (Ne.symm hne)
+  rw [show end176Env env r
+      = ("%tobool177.not.i.i", .int 1 (evalICmp .eq r 0x0#64)) :: env from rfl, h', h]
+
+/-- The block's chain: the count's spill at the frame's `+ 0x608`, then the
+residual test. -/
+theorem end176_denote {calls : Calls} {env : Env} {s : State}
+    {k : BitVec 32} {n : Nat} {r : BitVec 64}
+    (hk : lookupName env "%inc12.us.i.i581758.i.i" = some (.int 32 k))
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr n))
+    (hr : lookupName env "%sub175.i.i" = some (.int 64 r)) :
+    denoteCode calls end176Instrs (stateAt env s) =
+      some (stateAt (end176Env env r)
+        { s with mem := writeBytes s.mem n (natToBytes k.toNat 4) }) := by
+  unfold end176Instrs
+  rw [denoteCode_store32 calls env s "%inc12.us.i.i581758.i.i" "%n.i539.i.i" hk hn]
+  rw [denoteCode_icmp_eq_imm calls env
+    { s with mem := writeBytes s.mem n (natToBytes k.toNat 4) }
+    "%tobool177.not.i.i" "%sub175.i.i" hr]
+  simp only [denoteCode_nil, end176Env, stateAt]
+
+/-- **The exit step: the residual group is empty.**  The count is spilled and the
+run continues at `if.end198.i.i`, the block that forms the ladder's inputs. -/
+theorem end176_step_end {calls : Calls} {env : Env} {s : State}
+    {k : BitVec 32} {n : Nat} {r : BitVec 64}
+    (hpc : s.pc = "while.end176.i.i")
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr n))
+    (hk : lookupName env "%inc12.us.i.i581758.i.i" = some (.int 32 k))
+    (hr : lookupName env "%sub175.i.i" = some (.int 64 r))
+    (hbit : evalICmp .eq r 0x0#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (end176Env env r)
+        { s with mem := writeBytes s.mem n (natToBytes k.toNat 4),
+                 pc := "if.end198.i.i", pre := some "while.end176.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (end176Env env r)
+      { s with mem := writeBytes s.mem n (natToBytes k.toNat 4) })
+    (b := ⟨"while.end176.i.i", end176Instrs,
+      Term.condbr (Operand.reg "%tobool177.not.i.i") "if.end198.i.i"
+        "if.then178.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end176_find
+  · simpa only [stateAt] using end176_denote (calls := calls) hk hn hr
+  · rw [numFast_execTerm_condbr_one (s := stateAt (end176Env env r)
+        { s with mem := writeBytes s.mem n (natToBytes k.toNat 4) })
+      "%tobool177.not.i.i" "if.end198.i.i" "if.then178.i.i"
+      (by simp [end176Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- **The exit step: a residual group is left.**  The count is spilled and the
+run continues at `if.then178.i.i`, the table row's `stk_mul_u64`. -/
+theorem end176_step_then {calls : Calls} {env : Env} {s : State}
+    {k : BitVec 32} {n : Nat} {r : BitVec 64}
+    (hpc : s.pc = "while.end176.i.i")
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr n))
+    (hk : lookupName env "%inc12.us.i.i581758.i.i" = some (.int 32 k))
+    (hr : lookupName env "%sub175.i.i" = some (.int 64 r))
+    (hbit : evalICmp .eq r 0x0#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (end176Env env r)
+        { s with mem := writeBytes s.mem n (natToBytes k.toNat 4),
+                 pc := "if.then178.i.i", pre := some "while.end176.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (end176Env env r)
+      { s with mem := writeBytes s.mem n (natToBytes k.toNat 4) })
+    (b := ⟨"while.end176.i.i", end176Instrs,
+      Term.condbr (Operand.reg "%tobool177.not.i.i") "if.end198.i.i"
+        "if.then178.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end176_find
+  · simpa only [stateAt] using end176_denote (calls := calls) hk hn hr
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (end176Env env r)
+        { s with mem := writeBytes s.mem n (natToBytes k.toNat 4) })
+      "%tobool177.not.i.i" "if.end198.i.i" "if.then178.i.i"
+      (by simp [end176Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The spill reads back: the four bytes the block writes at the frame's
+`+ 0x608` field are the count it held. -/
+theorem end176_store_read {m : Mem} {k : BitVec 32} {n : Nat} :
+    readBytes (writeBytes m n (natToBytes k.toNat 4)) n 4
+      = some (natToBytes k.toNat 4) := by
+  have h := readBytes_writeBytes_same m (natToBytes k.toNat 4) (addr := n)
+  rwa [natToBytes_length] at h
+
+/-- The ladder's full run leaves no residual group: `%sub175.i.i` is `%k - 19`,
+and at nineteen the residual is empty — the bit that opens `if.end198.i.i`. -/
+theorem end176_residual_empty :
+    (0x0000000000000013#64 + 0xffffffffffffffed#64) = (0x0#64 : BitVec 64) := by
+  decide
+
+/-- **The exit's run into the ladder's head.**  From `while.end176.i.i` with an
+empty residual, the two control steps reach `while.cond203.i.i` with the fold's
+environment — the residual exponent and the widened head — and the spilled
+count's memory.  This is the far end of the interior `FbCopyEntryPos` states. -/
+theorem end176_run_ladder {calls : Calls} {env : Env} {s : State}
+    {k : BitVec 32} {n : Nat} {r u re top : BitVec 64}
+    (hpc : s.pc = "while.end176.i.i")
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr n))
+    (hk : lookupName env "%inc12.us.i.i581758.i.i" = some (.int 32 k))
+    (hr : lookupName env "%sub175.i.i" = some (.int 64 r))
+    (hu : lookupName env "%add110.i.i" = some (.int 64 u))
+    (htn : lookupName env "%topn.0711.i.i" = some (.int 64 re))
+    (ht : lookupName env "%top.0709.i.i" = some (.int 64 top))
+    (hbit : evalICmp .eq r 0x0#64 = (1 : BitVec 1)) :
+    ∀ j, runFuel calls (2 + j) numFastBody (stateAt env s) =
+      runFuel calls j numFastBody
+        (stateAt (NumFastTier3Fold.t3FoldEnv (end176Env env r) u re top.toNat)
+          { s with pc := "while.cond203.i.i", pre := some "if.end198.i.i",
+                   mem := writeBytes s.mem n (natToBytes k.toNat 4) }) := by
+  intro j
+  have h1 := end176_step_end (calls := calls) hpc hn hk hr hbit
+  have h2 := NumFastTier3Fold.t3_fold_step (calls := calls)
+    (env := end176Env env r)
+    (s := { s with mem := writeBytes s.mem n (natToBytes k.toNat 4), pc := "if.end198.i.i", pre := some "while.end176.i.i" })
+    (u := u) (re := re) (top := top) rfl
+    (end176Env_lookup hu (by decide))
+    (end176Env_lookup htn (by decide))
+    (end176Env_lookup ht (by decide))
+  rw [show 2 + j = 1 + (1 + j) from by omega]
+  rw [runFuel_jump_prefix h1]
+  rw [runFuel_jump_prefix h2]
+
+/-! ### Axiom footprints -/
+
+#print axioms NumFastToDouble.denoteCode_store32
+#print axioms NumFastToDouble.end176_find
+#print axioms NumFastToDouble.end176_denote
+#print axioms NumFastToDouble.end176_step_end
+#print axioms NumFastToDouble.end176_step_then
+#print axioms NumFastToDouble.end176_store_read
+#print axioms NumFastToDouble.end176_residual_empty
+#print axioms NumFastToDouble.end176_run_ladder
 
 end NumFastToDouble
 
