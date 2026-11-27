@@ -609,7 +609,7 @@ theorem denoteCode_icmp_imm_w (calls : Calls) (env : Env) (s : State) (d a : Str
       denoteCode calls is (stateAt ((d, .int 1 (evalICmp pred x c)) :: env) s) := by
   rw [denoteCode_cons_of _ _ _ _ _ (step_icmp_imm_w calls env s d a pred w ha)]
 
-theorem denoteCode_load32 (calls : Calls) (env : Env) (s : State) (d p : String)
+theorem denoteCode_load32_word (calls : Calls) (env : Env) (s : State) (d p : String)
     {a : Nat} {v : BitVec 32}
     (hp : lookupName env p = some (.ptr a))
     (hv : readBytes s.mem a 4 = some (natToBytes v.toNat 4)) (is : List Instr) :
@@ -659,7 +659,7 @@ macro "stk_block_step" : tactic => `(tactic|
    | rw [denoteCode_gep8_imm _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_gep8_reg _ _ _ _ _ _ ?_ ?_ ?_ _]
    | rw [denoteCode_load64 _ _ _ _ _ ?_ ?_ _]
-   | rw [denoteCode_load32 _ _ _ _ _ ?_ ?_ _]
+   | rw [denoteCode_load32_word _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_store64 _ _ _ _ _ ?_ ?_ _]
    | rw [denoteCode_store32 _ _ _ _ _ ?_ ?_ _]
    | block_phi_run))
