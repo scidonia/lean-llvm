@@ -400,3 +400,5 @@ import LeanLLVM.Refinement.JsonStage2NumFastCalleeMulRun
 import LeanLLVM.Refinement.JsonStage2NumFastProducerCount
 import LeanLLVM.Refinement.JsonStage2NumFastIngestAppend
 import LeanLLVM.Refinement.JsonEventCallerResult
+import LeanLLVM.Refinement.JsonStage2NumFastPowAppend
+import LeanLLVM.Refinement.JsonStage2NumFastFoldAppend

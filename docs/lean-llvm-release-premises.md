@@ -96,10 +96,15 @@ the tie's `x + 1 ≤ nestSteps 19 R` from the chunk loop's exit invariant,
 (`JsonStage2NumFastIngestAppend`). The same invariant gives `%78 ≤ nestSteps 19
 R`, so `fbStkCounts_of_chunkEnd151` feeds the cleanup path's
 `fbStkCounts_of_cleanup_end151`. What remains there is that invariant at the
-loop's own exit. The other blocks that append a limb and bump the count —
-`while.body.us.i.i557.i.i`, `while.body.us.i624.i.i`, and the fold's spill
-`while.end190.i.i` — are the ones `JsonStage2NumFastToDouble`'s header records
-as not stated.
+loop's own exit. The fold's append is now stated with its readback —
+`while.body.us.i.i624.i.i` (`bus624_step`, `bus624_readback`) — and the count
+store outside it, `while.end190.i.i`'s `%116` spill, reads back at the count's
+cell with the limbs untouched (`end190_readback`, `end190_spill_tie`), both in
+`JsonStage2NumFastFoldAppend`. The exact power's append of the same shape,
+`while.body.us.i.i557.i.i`, is stated with its readback in
+`JsonStage2NumFastPowAppend` (`bus557_readback`, `bus557_bnLimbs`), taking the
+loop invariant that the counter and the index name the same number
+(`c.toNat = w`) — which is the one premise no block statement can supply.
 
 ## Outside the proof: two items
 

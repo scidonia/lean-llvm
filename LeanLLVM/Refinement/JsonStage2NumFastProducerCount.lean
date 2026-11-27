@@ -988,10 +988,16 @@ and bump the count in one step — `while.body.us.i.i.i`
 the ingest, `while.body.us.i.i557.i.i` (`:1853`) and `while.body.us.i.i624.i.i`
 (`:2303`) for the power and the fold — are not stated in
 `JsonStage2NumFastToDouble`: its header names the unrolled bodies and the carry
-blocks as "not stated here yet".  `while.end190.i.i`, which spills the fold's
-count `%116` at `%n.i.i.i` (`JsonStage2HelperIRNumFast:2229`), has none either.  A
-tie at those cells is a lemma about a block that does not have one, so their
-counts are reached here only through the exits that do. -/
+blocks as "not stated here yet".  They are stated beside it: the ingest's two in
+`JsonStage2NumFastIngestAppend` (`bus1415_*`, `bus520_*`), the exact power's in
+`JsonStage2NumFastPowAppend` (`bus557_*`), the fold's in
+`JsonStage2NumFastFoldAppend` (`bus624_*`), and `while.end190.i.i`, which spills
+the fold's count `%116` at `%n.i.i.i` (`JsonStage2HelperIRNumFast:2229`), has its
+own `denote` in `JsonStage2NumFastToDouble` with the readback and the tie beside
+it (`end190_readback`, `end190_spill_tie`).  What those modules do not supply is
+the loop invariant that hands each append its counter — `bus557_readback` takes
+`c.toNat = w` for exactly that reason — so the counts are reached here through
+the exits until the loops' invariants are stated. -/
 
 /-- **A count store reads back at its own cell.**  The store writes four bytes at
 `base + 768` and `stkCount mem base` reads exactly those four bytes. -/
