@@ -1587,11 +1587,15 @@ pre-change side is an absence (a timed-out call), not a measured wall.
 
 ### What remains unproved at this revision
 
-- **The two readers are equal only where they were compared.**  `indexed-check`
-  compared them on 76 admitted streams and `tests/json-indexed-reader.lean` on
-  29 hand-built buffers.  No theorem states
-  `eventsOfBytesIndexed = eventsOfBytes` for arbitrary buffers, and a buffer the
-  routed object never returns is outside both instruments.
+- **The readers are equal as a theorem, and were also compared.**  The equality
+  is proved for arbitrary document, event and arena buffers -
+  `eventsOfBytesIndexedAgrees`, via `walkerAgrees` and the record step's equality
+  with the specification's - so it is not a claim about tested samples.
+  `indexed-check` compared them on 76 admitted streams and
+  `tests/json-indexed-reader.lean` on 29 hand-built buffers; those are the
+  empirical counts that accompany the theorem, not its basis.  What remains
+  outside the theorem is a buffer the routed object never returns, since both
+  instruments then have nothing to compare.
 - **The emitted-stream step is an assumption, not a proof.**  `EvbEmission`
   (`LeanLLVM/Refinement/JsonEventEmission.lean`) is the declared premise that the
   selected object leaves the arena and the trace's event bytes at their
