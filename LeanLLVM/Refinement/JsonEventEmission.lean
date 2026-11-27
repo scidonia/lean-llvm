@@ -71,6 +71,7 @@ There is no `sorry`, `admit` or `native_decide`; the axiom pins are at the end.
 -/
 import LeanLLVM.Refinement.JsonEventPremisesOneParse
 import LeanLLVM.Refinement.JsonEventCursorInterface
+import LeanLLVM.Refinement.JsonAsciiSkip
 
 set_option autoImplicit false
 set_option maxRecDepth 10000
@@ -698,7 +699,254 @@ weakened.  A release theorem that consumes only the units post still takes the
 arena datum, because the units post still binds no trace.
 -/
 
+/-! ### The terminating run from the staged entry
+
+`evb_emission_of_evidence` concludes the emission from the outcome evidence
+`hev`.  This section states the run that supplies it and proves every conjunct
+the staged entry determines on its own.
+
+**The fuel and the staging.**  `pipelineBudget` reads the document's block count
+off the ABI's third argument, and `[1]` is one block: `pipelineBudget evbArgs
+evbMem = 20` (`evb_budget`).  `routePre` establishes the body's staging
+(`evb_staging`), which is the record's precondition through `routeSpecPre`.
+
+**The run.**  `Γ_pipeline_units` is the record the pinned body satisfies: its
+completion conjunct names a returning run at the record's own fuel from
+`EntryState JsonPipelineIR.pipelineBody evbArgs evbMem (routeNext evbLayout evbDoc)`, and its
+post is forced at that outcome.  `evb_run_terminates` is that instantiation; the
+post pins the return to the ABI's verdict word (`routePost_result` reads the two
+values off it).
+
+**The evidence at the run's accepted outcome.**  Beyond the specification post,
+the evidence at `[1]` carries two walk facts: the record trace related to the
+tape's tokens, and the reported arena extent being the staged cursor plus the
+trace's accounting.  The first is *not* a fact about the run at this document —
+`[1]`'s trace is `evbRecords`, and its relation to `evbTape`'s tokens is
+`evb_records`, read off the document's spelling — and the second's accounting is
+zero (`evb_arenaExtent_nil`).  So the only fact left is that the cursor the run
+reports is the staged one, zero here.  `evb_evidence_of_spec` assembles the
+evidence from the specification post at the accepting verdict and that cursor
+fact; `evb_emission_of_spec` is `evb_emission_of_evidence` at it, and
+`evb_run_to_emission` states the pair at the run that produces it.
+
+**The boundary.**  The specification post at the accepting outcome is the stage-2
+call's own: the parser's tape, the event stream's relation to its tokens and the
+two buffer reads.  Its producer is the walk's accepted arm, and on the number's
+route that arm still needs the numeral's read-back — the record `num_fast_el1`'s
+output slot holds, `f.ev = EventRecord.number (strtodSpec d).toBits`, which
+`JsonStage2WalkRowArms.numberArmSegment` takes and does not prove.  The
+conversion's run is not in the tree: `JsonStage2NumFastCalleeD8` models the
+callees' bodies and the arm's segment and record are produced, but the three
+digit runs, the inlined tier-1 arithmetic and the tier-2 kernel's exactness bound
+are the open region.  The statements below therefore stop there: the terminating
+run at the record's fuel, and the evidence from the run's accepting outcome given
+that call's post. -/
+
+/-- `[1]` is one 64-byte block. -/
+theorem evb_blocks : pipelineBlocks evbDoc.length = 1 := by
+  unfold pipelineBlocks evbDoc
+  decide
+
+/-- **The run's fuel at `[1]`**: one block and the tail's allowance. -/
+theorem evb_budget : pipelineBudget evbArgs evbMem = 20 := by
+  unfold pipelineBudget evbArgs routeArgs evbLayout evbDoc
+    pipelineBlockAllowance pipelineFinalisationAllowance
+  decide
+
+/-- **The staging, from the route's precondition.** -/
+theorem evb_staging (hpre : routePre evbLayout evbDoc) :
+    pipelineStaging evbLayout.tab evbLayout.base evbArgs evbMem :=
+  routeStaging evbLayout evbDoc hpre
+
+/-- The event stream's width, from the records': two tag bytes and the number
+record's nine. -/
+theorem evbEvents_length : evbEvents.length = 11 := by
+  simp [evbEvents, evbRecords, EventRecord.encodedBytes, numberRecord, wordBytes,
+    List.flatten_cons, List.flatten_nil, natToBytes_length]
+
+/-- The event stream's extent is inside the cursor word's width. -/
+theorem evbEvents_length_lt : evbEvents.length < 2 ^ 64 := by
+  rw [evbEvents_length]
+  decide
+
+/-- **The terminating run from the staged entry.**  At the route's arguments and
+cursor the record's precondition holds (`routeSpecPre`), so the body has a
+returning run at the record's own fuel and the record's post at that outcome.
+The return carries a value — a void return and `.ub` are outside the post — and
+that value is the ABI's verdict word. -/
+theorem evb_run_terminates {calls : Calls}
+    (hunits : Satisfies calls JsonPipelineIR.pipelineBody
+      (Γ_pipeline_units evbLayout.tab evbLayout.base))
+    (hpre : routePre evbLayout evbDoc) :
+    ∃ (v : Value) (m : Mem),
+      runFuel calls (pipelineBudget evbArgs evbMem) JsonPipelineIR.pipelineBody
+        (EntryState JsonPipelineIR.pipelineBody evbArgs evbMem (routeNext evbLayout evbDoc)) =
+        some (.ret (some v) m) ∧
+      pipelineUnitsPost evbArgs evbMem (routeNext evbLayout evbDoc)
+        (.ret (some v) m) := by
+  obtain ⟨hst, hbelow, hwork, -⟩ := routeSpecPre evbLayout evbDoc hpre
+  obtain ⟨hcom, hpostAll⟩ := hunits evbArgs evbMem (routeNext evbLayout evbDoc)
+    ⟨hst, hbelow, hwork⟩
+  obtain ⟨v₀, m, hrun⟩ := hcom
+  cases v₀ with
+  | none =>
+      have hbad : pipelineUnitsPost evbArgs evbMem (routeNext evbLayout evbDoc)
+          (.ret none m) := hpostAll (.ret none m) (Or.inr ⟨_, hrun⟩)
+      exact absurd hbad (by
+        intro h
+        unfold pipelineUnitsPost at h
+        exact h)
+  | some v =>
+      exact ⟨v, m, hrun, hpostAll (.ret (some v) m) (Or.inr ⟨_, hrun⟩)⟩
+
+/-- **The evidence from the run's accepting outcome.**  The specification post at
+the accepting verdict names the parser's tape, the event stream and the two
+buffer reads; at `[1]` the trace is `evbRecords` and the arena accounting is
+zero, so the only run fact the post does not carry is that the reported arena
+cursor is the staged one — zero at this staging.  With it the evidence holds at
+the reported extents. -/
+theorem evb_evidence_of_spec {m : Mem} {next ndstU nev' : Nat}
+    (hpre : routePre evbLayout evbDoc)
+    (hext : pipelineOutputExtents evbArgs (.ret (some (.int 64 1)) m) ndstU nev')
+    (hspec : Sigma_pipeline stage2EventRel evbLayout.base evbArgs evbMem next
+      (.ret (some (.int 64 1)) m))
+    (hndst : readBytes m evbLayout.ndst 8 = some (wordBytes 8 0)) :
+    Stage2OutcomeEvidence evbLayout.base evbArgs evbMem ndstU nev'
+      (.ret (some (.int 64 1)) m) := by
+  obtain ⟨-, hb3, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsep⟩ := hpre
+  -- the header extents, and their bound on the cursor word
+  simp only [pipelineOutputExtents, evbArgs, routeArgs] at hext
+  obtain ⟨hndstLt, hnevLt, hndstSlot, hnevSlot⟩ := hext
+  have hndstU : ndstU = 0 :=
+    slotExtent_eq (x := ndstU) (y := 0) hndstLt (Nat.two_pow_pos 64) hndstSlot hndst
+  -- the specification post at the accepting verdict
+  simp only [Sigma_pipeline, evbArgs, routeArgs] at hspec
+  obtain ⟨bs, nk', nxp', ndstUs, ndsts, nevs, hlen, hread, -, -, -, -,
+    hnevSlotS, -, -, haccepted, -, -⟩ := hspec
+  have hn : (BitVec.ofNat 64 evbDoc.length).toNat = evbDoc.length :=
+    bitVecOfNat_toNat (by decide)
+  rw [hn] at hread
+  have hbs : bs = evbDoc :=
+    Option.some.inj (hread.symm.trans (stagedDoc_read evbLayout evbDoc hsep hb3))
+  obtain ⟨t, v, arena, evs, hparse, -, -, -, hevS, hrel, -, -⟩ :=
+    haccepted trivial
+  rw [hbs] at hparse
+  have ht : t = evbTape := ParseResult.ok.inj (hparse.symm.trans evb_parse)
+  have hrel' : Stage2EventRel evbDoc arena evs evbTokens := by
+    have h' := hrel
+    simp only [stage2EventRel] at h'
+    rw [hbs, ht] at h'
+    exact h'
+  have hevs : evs = evbEvents := evb_events_of_rel hrel'
+  -- the specification's event extent is the header's: both are the slot's word
+  have hevsLen : evs.length = nevs :=
+    JsonEntrySteps.readBytes_length m evbLayout.ev nevs hevS
+  have hnevs : nevs = evbEvents.length := by rw [← hevsLen, hevs]
+  have hnevsLt : nevs < 2 ^ 64 := by
+    rw [hnevs]
+    exact evbEvents_length_lt
+  have hnevEq : nevs = nev' :=
+    slotExtent_eq (x := nevs) (y := nev') hnevsLt hnevLt hnevSlotS hnevSlot
+  have hev : readBytes m evbLayout.ev nev' = some evs := by
+    rw [← hnevEq]
+    exact hevS
+  simp only [Stage2OutcomeEvidence, evbArgs, routeArgs]
+  refine ⟨evbDoc, hn, ?_, Or.inl ⟨trivial, ?_, evbTape, evbRecords, [], evs,
+    evb_parse, ?_, hev, ?_, evb_records, 0, evb_stage_ndst hsep, ?_⟩⟩
+  · rw [hn]
+    exact stagedDoc_read evbLayout evbDoc hsep hb3
+  · rw [show pipelineBlocks evbDoc.length = JsonScanSpec.blocksOf evbDoc.length
+        from rfl]
+    exact skip_sound evbDoc (by decide : ∀ x ∈ evbDoc, x.toNat < 0x80)
+  · rw [hndstU]
+    rfl
+  · exact hevs.trans evb_events
+  · rw [hndstU]
+    simp [evb_arenaExtent_nil]
+
+/-- **The emission from the specification post and the reported cursor.**  This
+is `evb_emission_of_evidence` at `evb_evidence_of_spec`: the emission theorem
+with no outcome evidence as a premise, only the call's post at the accepting
+verdict and the cursor the run reports. -/
+theorem evb_emission_of_spec {m : Mem} {next ndstU nev' : Nat}
+    (hpre : routePre evbLayout evbDoc)
+    (hext : pipelineOutputExtents evbArgs (.ret (some (.int 64 1)) m) ndstU nev')
+    (hspec : Sigma_pipeline stage2EventRel evbLayout.base evbArgs evbMem next
+      (.ret (some (.int 64 1)) m))
+    (hndst : readBytes m evbLayout.ndst 8 = some (wordBytes 8 0)) :
+    ∃ (arena evs : List UInt8),
+      readBytes m evbLayout.ndst 8 = some (wordBytes 8 ndstU) ∧
+      readBytes m evbLayout.nev 8 = some (wordBytes 8 nev') ∧
+      readBytes m evbLayout.dst ndstU = some arena ∧
+      readBytes m evbLayout.ev nev' = some evs ∧
+      (eventsOfBytesIndexed (ByteString.literal evbDoc)
+          (ByteString.literal evs) (ByteString.literal arena)).bind valueOfEvents =
+        scalarCanonValueOfBytes evbDoc ∧
+      Nonempty EvbCertificate :=
+  evb_emission_of_evidence hpre hext
+    (evb_evidence_of_spec hpre hext hspec hndst)
+
+/-- **The run and what it leaves.**  The terminating run from the staged entry at
+the record's fuel, whose accepting outcome satisfies the call's post and reports
+the staged arena cursor, produces the emission.  The run equality is
+`evb_run_terminates`'s witness once the verdict is the accepting one; the two
+post conditions are the walk's accepted arm, named in this section's docstring. -/
+theorem evb_run_to_emission {calls : Calls} {m : Mem} {next ndstU nev' : Nat}
+    (hpre : routePre evbLayout evbDoc)
+    (hrun : runFuel calls (pipelineBudget evbArgs evbMem) JsonPipelineIR.pipelineBody
+      (EntryState JsonPipelineIR.pipelineBody evbArgs evbMem (routeNext evbLayout evbDoc)) =
+      some (.ret (some (.int 64 1)) m))
+    (hext : pipelineOutputExtents evbArgs (.ret (some (.int 64 1)) m) ndstU nev')
+    (hspec : Sigma_pipeline stage2EventRel evbLayout.base evbArgs evbMem next
+      (.ret (some (.int 64 1)) m))
+    (hndst : readBytes m evbLayout.ndst 8 = some (wordBytes 8 0)) :
+    runFuel calls (pipelineBudget evbArgs evbMem) JsonPipelineIR.pipelineBody
+        (EntryState JsonPipelineIR.pipelineBody evbArgs evbMem (routeNext evbLayout evbDoc)) =
+        some (.ret (some (.int 64 1)) m) ∧
+      ∃ (arena evs : List UInt8),
+        readBytes m evbLayout.ndst 8 = some (wordBytes 8 ndstU) ∧
+        readBytes m evbLayout.nev 8 = some (wordBytes 8 nev') ∧
+        readBytes m evbLayout.dst ndstU = some arena ∧
+        readBytes m evbLayout.ev nev' = some evs ∧
+        (eventsOfBytesIndexed (ByteString.literal evbDoc)
+            (ByteString.literal evs) (ByteString.literal arena)).bind valueOfEvents =
+          scalarCanonValueOfBytes evbDoc ∧
+        Nonempty EvbCertificate :=
+  ⟨hrun, evb_emission_of_spec hpre hext hspec hndst⟩
+
 /-! ### Axiom footprints -/
+
+/-- info: 'LeanLLVM.Refinement.evb_blocks' does not depend on any axioms -/
+#guard_msgs in
+#print axioms evb_blocks
+
+/-- info: 'LeanLLVM.Refinement.evb_budget' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms evb_budget
+
+/-- info: 'LeanLLVM.Refinement.evb_staging' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms evb_staging
+
+/-- info: 'LeanLLVM.Refinement.evbEvents_length' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms evbEvents_length
+
+/-- info: 'LeanLLVM.Refinement.evb_run_terminates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms evb_run_terminates
+
+/-- info: 'LeanLLVM.Refinement.evb_evidence_of_spec' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms evb_evidence_of_spec
+
+/-- info: 'LeanLLVM.Refinement.evb_emission_of_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms evb_emission_of_spec
+
+/-- info: 'LeanLLVM.Refinement.evb_run_to_emission' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms evb_run_to_emission
 
 /-- info: 'LeanLLVM.Refinement.evb_records_of_rel' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
