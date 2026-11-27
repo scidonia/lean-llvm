@@ -228,3 +228,15 @@ backend, one for the ABI the certificate names.
 **Re-measure when** the fixture is regenerated, the transform changes, the
 helper set changes, or the optimisation level moves — the same cadence as the
 measurements above.
+
+## The decision this section exists to support
+
+The certificate is scoped to the modelled IR and its stated hypotheses; the
+fixture-to-production correspondence above is a **separate, open premise**, with
+the differential tests as its evidence; the pinned LLVM toolchain is trusted to
+compile the identified IR, and the Lean/C ABI assumptions are stated explicitly
+beside the certificate.  The structural fix, recorded for the work that follows
+it, is to emit the production IR once, prove that module against the caller
+contract, and compile and link that same artifact — which removes the transfer
+rather than discharging it.  Per-helper correspondence is deferred unless it
+closes a specific obligation on that path.

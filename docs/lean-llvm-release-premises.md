@@ -1,6 +1,6 @@
 # The release claim, and every premise under it
 
-**27 November 2026 · `main` at `a88eba5` (64 commits since the handoff at `e88ee2d`)**
+**27 November 2026 · `main` at `2039998` (70 commits since the handoff at `e88ee2d`)**
 
 This page exists so that a reader can see, without reconstructing it from the
 tree, exactly what a release claim for the certified JSON parser rests on at
@@ -106,10 +106,21 @@ the fixture→object correspondence as measured, the compiler/backend trust row,
 and the transfer of each differing helper's contract. None of the three is
 implied by the shared filename.
 
-**The compiler and ABI step.** That the emitted IR the proofs analyse is what the
-compiler produces for the measured C, at the measured flags, and that the ABI the
-certificate names is the one the driver calls. This is a scoping decision for the
-release, not a proved statement, and it is recorded as such.
+**The compiler and ABI step — decided, and scoped.** The certificate is scoped to
+the modelled IR and its stated hypotheses. For the existing production object, the
+fixture-to-production correspondence is a **separate, open premise**; the
+differential tests (`tests/json-*`) are its evidence, not its proof. The pinned
+LLVM toolchain is trusted to compile the identified IR, and the Lean/C ABI
+assumptions are to be stated explicitly beside the certificate rather than implied
+by its fields.
+
+The direction that closes the gap structurally is stated here so it is not lost:
+**emit the production IR once, prove that module against the caller contract, and
+compile and link that same artifact**, so no fixture-versus-production step exists
+to transfer. A validated semantics-preserving bridge from the existing fixture is
+an acceptable alternative. Per-helper correspondence is deferred unless it closes
+a specific obligation on this path — and the measurements above say it would be
+partial by nature (six of eleven bodies differ under the transform).
 
 ## The one-line summary
 
