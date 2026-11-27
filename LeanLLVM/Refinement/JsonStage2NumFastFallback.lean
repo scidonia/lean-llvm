@@ -337,14 +337,68 @@ def fbPreRound (d : Decimal) : BitVec 64 :=
   if fbEInt d < 0 then t3DivCarried d0 (t3Rows E) (t3Rows E).length
   else t3MulCarried d0 (t3Rows E) (t3Rows E).length
 
+/-- `StkBn`'s limb capacity: `uint64_t w[96]`.  Neither `stk_mul_add` nor
+`stk_shl` tests the count against it, so a count above `96` writes past the
+array; the bound is a property of the producer's inputs, not of the code. -/
+def fbStkCapacity : Nat := 96
+
+/-- The two limb counts of the `Stk` the epilogue's `%v.i.i` names, and the
+array capacity they must not exceed.  `Stk` is `StkBn m; StkBn pow; int64_t S;
+int sticky`, so the counts are the `int`s at `v + 768` and `v + 776 + 768 =
+v + 1544`. -/
+def fbStkCounts (mem : Mem) (v : Nat) : Prop :=
+  ∃ (nm np : Nat),
+    stkCount mem v = some nm ∧
+    stkCount mem (v + 776) = some np ∧
+    nm ≤ fbStkCapacity ∧ np ≤ fbStkCapacity
+
+/-- A memory whose `Stk` at `v` has both counts zero: the capacity's lower end,
+and the shape the two witnesses below use. -/
+def fbZeroCountMem (v : Nat) : Mem :=
+  writeBytes (writeBytes [] (v + 768) (natToBytes 0 4)) (v + 1544) (natToBytes 0 4)
+
+/-- The zero-count memory satisfies the count tie. -/
+theorem fbZeroCountMem_counts (v : Nat) : fbStkCounts (fbZeroCountMem v) v := by
+  have hz : bytesToNat (natToBytes 0 4) = 0 := by
+    simp [natToBytes_toNat]
+  have hread768 : readBytes (writeBytes [] (v + 768) (natToBytes 0 4)) (v + 768) 4
+      = some (natToBytes 0 4) := by
+    simpa only [natToBytes_length] using
+      (readBytes_writeBytes_same ([] : Mem) (natToBytes 0 4) (addr := v + 768))
+  have hread1544 : readBytes
+      (writeBytes (writeBytes [] (v + 768) (natToBytes 0 4)) (v + 1544) (natToBytes 0 4))
+      (v + 1544) 4 = some (natToBytes 0 4) := by
+    simpa only [natToBytes_length] using
+      (readBytes_writeBytes_same (writeBytes [] (v + 768) (natToBytes 0 4))
+        (natToBytes 0 4) (addr := v + 1544))
+  refine ⟨0, 0, ?_, ?_, by decide, by decide⟩
+  · unfold fbZeroCountMem stkCount stkCountOffset
+    rw [readBytes_writeBytes_below (writeBytes [] (v + 768) (natToBytes 0 4))
+      (natToBytes 0 4) 4 (v + 768) (v + 1544) (by omega)]
+    rw [hread768, Option.map_some, hz]
+  · unfold fbZeroCountMem stkCount stkCountOffset
+    rw [show v + 776 + 768 = v + 1544 from by omega]
+    rw [hread1544, Option.map_some, hz]
+
 /-- The epilogue's model tie at `while.end253.i.i`: the ladder's two exit cells
-are the model's pre-round word, and the window is the one the rounding loop
-reads. -/
+are the model's pre-round word, the window is the one the rounding loop reads,
+and the `Stk` at that window has both limb counts within its array.
+
+**The count's half is a premise, not a theorem.**  The blocks that fill `%v` are
+the converter's producer, which `JsonStage2NumFastToDouble` does not state: the
+`stk_mul_u64` calls and the copy's entry are named, but the `Stk` the ladder
+builds is not modelled, so no proof here reaches `v + 768` or `v + 1544`.  The
+invariant the producer owes is `fbStkCounts`: after the lead clamps and the
+ladder, both counts are at most the array's `96` limbs (the C's own clamps put
+`m` within 40 limbs and `pow` within 59).  Stating it at the tie is what lets the
+comparator's copy fit be *derived* (`numCmp_copyLen_le_of_stkCounts`) instead of
+carried as a separate hypothesis at every copy. -/
 def fbEpilogueModel (d : Decimal) (e : State) : Prop :=
   ∃ (v : Nat),
     lookupName e.env "%v.i.i" = some (.ptr v) ∧
     lookupName e.env "%.cast.i629.i.i" = some (.int 64 (fbPreRound d)) ∧
-    lookupName e.env "%d201.3.i.i" = some (.float (fbPreRound d))
+    lookupName e.env "%d201.3.i.i" = some (.float (fbPreRound d)) ∧
+    fbStkCounts e.mem v
 
 /-! ### The epilogue boundary and the `cleanup300` tail -/
 

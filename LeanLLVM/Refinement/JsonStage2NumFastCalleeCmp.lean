@@ -32,23 +32,32 @@ answered the three conversion callees, `s2HelperCalls` the lifetime markers,
 every path that carries a nonzero significand, so the body's run was `ub` at its
 first copy and the epilogue's loop undefined before its first comparison.
 
-**The destination-size check, and its status: a hypothesis, not a theorem.**
-`__memcpy_chk(dst, src, n, destlen)` copies `n` bytes when they fit `destlen` and
-calls `__chk_fail` otherwise.  At each of this body's three copies `destlen` is
-the constant `776`, and `n` is `(size_t)v->n * 8` — `numCmpCopyLen_eq` proves the
-count is `8 * v->n` and `numCmpCopyLen_le` that it is at most `768 ≤ 776` for
-every count up to `96`, which is what the source object (`uint64_t w[96]`) holds.
-**The tree carries no such bound.**  The comparator's `%v` is a pointer read from
-the caller's state and nothing in the model of `Stk`/`StkBn` constrains the count
-cell — the same boundary `JsonStage2NumFastCalleeMul` records for `stk_mul_u64`
-("Why the count is bounded by 96").  So the check's non-firing is stated as a
-hypothesis of the copy's contract (`numMemcpyChkAnswer_copy`, and `hfit` on the
-runs below) rather than proved unreachable.  It is not a defensive hypothesis:
-`numMemcpyChkAnswer_fires_at_98` exhibits a count of `98` — one limb more than
-the object holds — at this very `776`-byte destination, whose length `784` the
-model answers with `none`.  Closing it needs an invariant on the bignum the
-epilogue's loop is handed, and that invariant belongs to the producer of `%v`,
-not to `stk_cmp`'s body.
+**The destination-size check, and its status: derived from the producer's count
+premise.**  `__memcpy_chk(dst, src, n, destlen)` copies `n` bytes when they fit
+`destlen` and calls `__chk_fail` otherwise.  At each of this body's copies
+`destlen` is the constant `776`, and `n` is `(size_t)v->n * 8` —
+`numCmpCopyLen_eq` proves the count is `8 * v->n` and `numCmpCopyLen_le` that it
+is at most `768 ≤ 776` for every count up to `96`, which is what the source
+object (`uint64_t w[96]`) holds.  **The tree still carries no bound on the
+count.**  The comparator's `%v` is a pointer read from the caller's state, and
+nothing in the model of `Stk`/`StkBn` constrains either count cell — the same
+boundary `JsonStage2NumFastCalleeMul` records for `stk_mul_u64` ("Why the count
+is bounded by 96").  What changed is where the bound is named:
+`NumFastFallback.fbStkCounts` states it at the epilogue's tie (both `Stk` counts
+at most the array's `96`), and `numCmp_count_le_of_stkCounts` /
+`numCmp_copyLen_le_of_stkCounts` turn the count word the body reads at
+`%v + 1544` into the copy's fit.  The run theorems below take `fbStkCounts` and
+that word and derive `hfit`; they no longer carry it as a hypothesis.
+
+The one link still owed is the producer's: `JsonStage2NumFastToDouble` does not
+model the blocks that fill `%v`, so `fbStkCounts` is a premise at the tie, not a
+theorem.  The C's own clamps (`-324 ≤ f ≤ 308`, `R < 768`) put `m` within 40
+limbs and `pow` within 59, both below `96`, but that is not a Lean theorem.  The
+premise is not vacuous: `numMemcpyChkAnswer_fires_at_98` exhibits a count of
+`98` — one limb more than the object holds — at this very `776`-byte
+destination, whose length `784` the model answers with `none`.  Closing it needs
+an invariant on the bignum the epilogue's loop is handed, and that invariant
+belongs to the producer of `%v`, not to `stk_cmp`'s body.
 
 **What this module establishes.**
 
@@ -58,6 +67,8 @@ not to `stk_cmp`'s body.
 * the copy's count and its contract — `numCmpCopyLen` is the byte count the body
   passes, `numCmpCopyLen_eq` its value at a count that
   fits the object (`8 * v->n`) and `numCmpCopyLen_le` its bound there (`768`);
+  `numCmp_count_le_of_stkCounts` and `numCmp_copyLen_le_of_stkCounts` derive the
+  fit from the epilogue's count tie, `NumFastFallback.fbStkCounts`;
   `FbMemcpyAnswered` is the fifth answer's clause, `numCmpCalls_memcpy` the
   body's delegation of the symbol to the base, and
   `stage2NumFastCalls_memcpyAnswered` the release selection satisfying it;
@@ -65,7 +76,8 @@ not to `stk_cmp`'s body.
   answered copy: the block's four instructions and the state it jumps from, with
   the destination holding the source's bytes; `numCmp_run_copy` is the
   three-step run from the entry state to `stk_copy.exit`, with the copy's
-  answer; `numCmp_copy_span` and `numCmp_copy_count` are what the comparator
+  answer and its fit derived from `fbStkCounts`; `numCmp_copy_span` and
+  `numCmp_copy_count` are what the comparator
   relies on after it — the destination reads back the copied bytes, and the
   count cell `if.then` wrote at `b + 768` lies outside the copy's range, so the
   multiply that follows reads the count and limbs it expects;
@@ -1552,8 +1564,11 @@ sign-extended to `i64` and shifted left three bits.  At a count that fits the
 source's 96-limb array the sign extension is zero extension, the shift does not
 wrap, and the count is `8 * v->n ≤ 768`, which the destination's declared `776`
 bytes cover.  That is the whole of the check's non-firing condition at this
-body's copies, and it is a hypothesis below because the tree has no invariant
-that supplies `v->n ≤ 96`. -/
+body's copies.  The count's bound is not proved here — it belongs to the
+producer of `%v` — but it is named at the epilogue's tie
+(`NumFastFallback.fbStkCounts`), and `numCmp_count_le_of_stkCounts` turns the
+count word the body reads into it, so the runs below derive the fit instead of
+carrying it. -/
 
 /-- The byte count the comparator's copies pass, as a `Nat`: the length the copy
 takes.  It is the `.toNat` of the `i64` the block binds, whose shift amount is
@@ -1602,11 +1617,49 @@ theorem numCmpCopyLen_eq {nw : BitVec 32} (hn : nw.toNat ≤ 96) :
 /-- **The count fits the destination.**  `96` limbs are `768` bytes, and the
 comparator's `StkBn` is declared `776`: a count that fits the source object's own
 array is a length the check passes.  This is the constant-sizes half of the
-non-firing argument; the count's own bound is not derivable here. -/
+non-firing argument; the count's bound is the producer's premise
+(`fbStkCounts`), supplied to the runs by `numCmp_count_le_of_stkCounts`. -/
 theorem numCmpCopyLen_le {nw : BitVec 32} (hn : nw.toNat ≤ 96) :
     numCmpCopyLen nw ≤ 776 := by
   rw [numCmpCopyLen_eq hn]
   omega
+
+/-- **The producer's count word bounds the comparator's.**  At a `Stk` whose two
+counts fit its `StkBn` array (`fbStkCounts`), the count the body reads at
+`%v + 1544` is the array's `pow` count, so the body's `%1` is at most `96`. -/
+theorem numCmp_count_le_of_stkCounts {mem : Mem} {v : Nat}
+    (hcounts : NumFastFallback.fbStkCounts mem v) {nw : BitVec 32}
+    (hread : readBytes mem (v + 1544) 4 = some (natToBytes nw.toNat 4)) :
+    nw.toNat ≤ 96 := by
+  obtain ⟨nm, np, -, hp, -, hnp⟩ := hcounts
+  unfold stkCount at hp
+  obtain ⟨bs, hbs, hbval⟩ := Option.map_eq_some_iff.mp hp
+  have haddr : v + 776 + stkCountOffset = v + 1544 := by
+    unfold stkCountOffset
+    omega
+  rw [haddr] at hbs
+  have hbsEq : bs = natToBytes nw.toNat 4 := by
+    have hsome : some bs = some (natToBytes nw.toNat 4) := by
+      rw [← hbs]
+      exact hread
+    exact Option.some.inj hsome
+  rw [hbsEq] at hbval
+  have hb2 : bytesToNat (natToBytes nw.toNat 4) = nw.toNat := by
+    rw [natToBytes_toNat]
+    rw [show (256 : Nat) ^ 4 = 2 ^ 32 from by decide, Nat.mod_eq_of_lt nw.isLt]
+  rw [hb2] at hbval
+  have hcap : NumFastFallback.fbStkCapacity = 96 := rfl
+  omega
+
+/-- **The epilogue's tie discharges the copy's fit.**  A count word the
+producer's tie bounds gives a copy length at most `8 * 96 = 768` bytes, and the
+destination is declared `776`: this is `hfit` derived from the named premise
+rather than assumed at the copy. -/
+theorem numCmp_copyLen_le_of_stkCounts {mem : Mem} {v : Nat}
+    (hcounts : NumFastFallback.fbStkCounts mem v) {nw : BitVec 32}
+    (hread : readBytes mem (v + 1544) 4 = some (natToBytes nw.toNat 4)) :
+    numCmpCopyLen nw ≤ 776 :=
+  numCmpCopyLen_le (numCmp_count_le_of_stkCounts hcounts hread)
 
 /-- **What the comparator reads back after the copy.**  The destination's first
 `numCmpCopyLen` bytes are the source's: the copy is the identity on that span,
@@ -1875,16 +1928,16 @@ def numCmpIfThenIEnv (v J eB nxt b : Nat) (sw nw : BitVec 32) : Env :=
 /-- **`if.then.i` at an answered copy.**  The block forms the destination's byte
 count and calls `__memcpy_chk`; when the selection answers that call, the run
 continues to `stk_copy.exit` with the destination holding the source's `n` bytes
-and the allocator state unchanged.  The count's fit (`hfit`) and the source's
-readability (`hread`) are the copy contract's hypotheses: neither follows from
-the body, and `hfit` is where the destination-size check is carried. -/
+and the allocator state unchanged.  The source's readability (`hread`) is the
+copy contract's remaining hypothesis; the count's fit is derived from the
+count's own bound (`numCmpCopyLen_le`), which the epilogue's tie supplies. -/
 theorem numCmp_ifThenI_denote_copy {base : Calls} {env : Env} {s : State}
     {b v : Nat} {nw : BitVec 32} {bs : List UInt8}
     (hcopy : FbMemcpyAnswered base)
     (hb : lookupName env "%b" = some (.ptr b))
     (hv : lookupName env "%v" = some (.ptr v))
     (h1 : lookupName env "%1" = some (.int 32 nw))
-    (hfit : numCmpCopyLen nw ≤ 776)
+    (hcount : nw.toNat ≤ 96)
     (hread : readBytes s.mem (v + 776) (numCmpCopyLen nw) = some bs) :
     denoteCode (numCmpCalls base) numCmpIfThenIInstrs (stateAt env s) =
       some (stateAt
@@ -1949,7 +2002,7 @@ theorem numCmp_ifThenI_denote_copy {base : Calls} {env : Env} {s : State}
       s.mem s.next bs ?_ hread
     show numCmpCopyLen nw ≤ (BitVec.ofNat 64 776).toNat
     rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by decide : 776 < 2 ^ 64)]
-    exact hfit
+    exact numCmpCopyLen_le hcount
   · rfl
 
 /-! ### The step at a pinned block -/
@@ -2076,15 +2129,15 @@ theorem numCmp_run_ub (base : Calls) (v J eB : Nat) (mem : Mem) (next : Nat)
 /-- **The run passes through the copy.**  With the fifth answer supplied, the
 three control steps that led to `some .ub` at an unanswered base lead instead to
 `stk_copy.exit`, and the run has the destination holding the source's bytes:
-`runFuel` at `3 + k` steps is `runFuel` at `k` from that state.  The hypotheses
-on the count and the source range are the copy's contract — `hfit` is the
-destination-size check, carried rather than discharged. -/
+`runFuel` at `3 + k` steps is `runFuel` at `k` from that state.  The count's fit
+is *derived* from the epilogue's tie (`fbStkCounts`) and the count word the body
+read at `%v + 1544`; the source range's readability is the copy contract's. -/
 theorem numCmp_run_copy (base : Calls) (hcopy : FbMemcpyAnswered base)
     (v J eB : Nat) (mem : Mem) (next : Nat) (sw nw : BitVec 32) (bs : List UInt8)
     (hsw : readBytes mem (v + 1560) 4 = some (natToBytes sw.toNat 4))
     (hnw : readBytes mem (v + 1544) 4 = some (natToBytes nw.toNat 4))
     (hsw0 : evalICmp .eq sw 0 = 0) (hnw0 : evalICmp .eq nw 0 = 0)
-    (hfit : numCmpCopyLen nw ≤ 776)
+    (hcounts : NumFastFallback.fbStkCounts mem v)
     (hread : readBytes (writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4))
       (v + 776) (numCmpCopyLen nw) = some bs) :
     ∀ k,
@@ -2097,6 +2150,7 @@ theorem numCmp_run_copy (base : Calls) (hcopy : FbMemcpyAnswered base)
                 (next + 776) bs,
               pc := "stk_copy.exit", pre := some "if.then.i" }) := by
   intro k
+  have hcount : nw.toNat ≤ 96 := numCmp_count_le_of_stkCounts hcounts hnw
   have hpc0 : (numCmpEntryState v J eB mem next).pc = "entry" := rfl
   have hcode0 : denoteCode (numCmpCalls base) numCmpEntryInstrs
       (numCmpEntryState v J eB mem next) =
@@ -2166,7 +2220,7 @@ theorem numCmp_run_copy (base : Calls) (hcopy : FbMemcpyAnswered base)
     (by simp only [numCmpIfThenEnv, numCmpAfterEntryEnv]; block_lk)
     (by simp only [numCmpIfThenEnv, numCmpAfterEntryEnv, numCmpEntryEnv]; block_lk)
     (by simp only [numCmpIfThenEnv]; block_lk)
-    hfit hread
+    hcount hread
   have hpc2 : (stateAt (numCmpIfThenEnv v J eB next sw nw)
       { numCmpRaw mem next with
         next := next + 776 + 776,
@@ -2201,12 +2255,12 @@ theorem numCmp_run_copy_unfinished (base : Calls) (hcopy : FbMemcpyAnswered base
     (hsw : readBytes mem (v + 1560) 4 = some (natToBytes sw.toNat 4))
     (hnw : readBytes mem (v + 1544) 4 = some (natToBytes nw.toNat 4))
     (hsw0 : evalICmp .eq sw 0 = 0) (hnw0 : evalICmp .eq nw 0 = 0)
-    (hfit : numCmpCopyLen nw ≤ 776)
+    (hcounts : NumFastFallback.fbStkCounts mem v)
     (hread : readBytes (writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4))
       (v + 776) (numCmpCopyLen nw) = some bs) :
     runFuel (numCmpCalls base) 3 numCmpBody (numCmpEntryState v J eB mem next) = none := by
   rw [show (3 : Nat) = 3 + 0 from rfl,
-    numCmp_run_copy base hcopy v J eB mem next sw nw bs hsw hnw hsw0 hnw0 hfit hread 0]
+    numCmp_run_copy base hcopy v J eB mem next sw nw bs hsw hnw hsw0 hnw0 hcounts hread 0]
   rfl
 
 /-! ### The body's answer at an unanswered base
@@ -2279,15 +2333,15 @@ theorem numCmpBodyCalls_none (base : Calls) (v : Nat) (J eB : BitVec 64)
 /-- **The release selection runs the body through its copy.**  `numCmp_run_copy`
 with the copy's clause discharged by `stage2NumFastCalls_memcpyAnswered`: the
 binding is what turns the three-step `ub` into the run at `stk_copy.exit`, and
-the destination holds the source's bytes there.  The count's fit and the source's
-range are still hypotheses — the check they satisfy is the one the tree cannot
-rule out. -/
+the destination holds the source's bytes there.  The count's fit is derived from
+the epilogue's tie (`fbStkCounts`); the source range's readability is the copy
+contract's. -/
 theorem numCmp_run_copy_stage2 (epow : Int → Option EPow) (v J eB : Nat)
     (mem : Mem) (next : Nat) (sw nw : BitVec 32) (bs : List UInt8)
     (hsw : readBytes mem (v + 1560) 4 = some (natToBytes sw.toNat 4))
     (hnw : readBytes mem (v + 1544) 4 = some (natToBytes nw.toNat 4))
     (hsw0 : evalICmp .eq sw 0 = 0) (hnw0 : evalICmp .eq nw 0 = 0)
-    (hfit : numCmpCopyLen nw ≤ 776)
+    (hcounts : NumFastFallback.fbStkCounts mem v)
     (hread : readBytes (writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4))
       (v + 776) (numCmpCopyLen nw) = some bs) :
     ∀ k,
@@ -2301,7 +2355,7 @@ theorem numCmp_run_copy_stage2 (epow : Int → Option EPow) (v J eB : Nat)
                 (next + 776) bs,
               pc := "stk_copy.exit", pre := some "if.then.i" }) :=
   numCmp_run_copy (stage2NumFastCalls epow) (stage2NumFastCalls_memcpyAnswered epow)
-    v J eB mem next sw nw bs hsw hnw hsw0 hnw0 hfit hread
+    v J eB mem next sw nw bs hsw hnw hsw0 hnw0 hcounts hread
 
 /-! ### The restated boundary
 

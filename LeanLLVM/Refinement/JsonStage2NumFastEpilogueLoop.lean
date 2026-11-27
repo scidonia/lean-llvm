@@ -586,7 +586,7 @@ def epiLoopEnv (d : Decimal) (v : Nat) : Env :=
 
 /-- The witness: at the epilogue's entry, entered from the ladder's head. -/
 def epiLoopState (d : Decimal) (v : Nat) : State :=
-  { env := epiLoopEnv d v, mem := [], next := 0,
+  { env := epiLoopEnv d v, mem := fbZeroCountMem v, next := 0,
     pc := "while.end253.i.i", pre := some "while.cond229.i.i" }
 
 theorem epiLoopEnv_v (d : Decimal) (v : Nat) :
@@ -627,7 +627,7 @@ theorem epiLoop_exitWord (d : Decimal) (v : Nat) :
 /-- The witness satisfies the corrected tie. -/
 theorem epiLoop_tie (d : Decimal) (v : Nat) :
     FbEpilogueTie d (epiLoopState d v) := by
-  refine ⟨⟨v, ?_, ?_, ?_⟩, ?_, ?_⟩
+  refine ⟨⟨v, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩
   · show lookupName (epiLoopEnv d v) "%v.i.i" = some (.ptr v)
     exact epiLoopEnv_v d v
   · show lookupName (epiLoopEnv d v) "%.cast.i629.i.i" =
@@ -636,6 +636,8 @@ theorem epiLoop_tie (d : Decimal) (v : Nat) :
   · show lookupName (epiLoopEnv d v) "%d201.3.i.i" =
       some (.float (fbPreRound d))
     exact epiLoopEnv_d201_3 d v
+  · show fbStkCounts (epiLoopState d v).mem v
+    exact fbZeroCountMem_counts v
   · show lookupName (epiLoopEnv d v) "%d201.2.i.i" =
       some (.float (fbPreRound d))
     exact epiLoopEnv_d201_2 d v

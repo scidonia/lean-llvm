@@ -402,7 +402,7 @@ def epiWitnessEnv (d : Decimal) (digA out : Nat) : Env :=
 
 /-- The witness: at the epilogue's entry, entered from the ladder's head. -/
 def epiWitness (d : Decimal) (digA out : Nat) : State :=
-  { env := epiWitnessEnv d digA out, mem := [], next := 0,
+  { env := epiWitnessEnv d digA out, mem := fbZeroCountMem 0, next := 0,
     pc := "while.end253.i.i", pre := some "while.cond229.i.i" }
 
 theorem epiWitnessEnv_v (d : Decimal) (digA out : Nat) :
@@ -463,7 +463,7 @@ theorem epiWitness_divExit (d : Decimal) (digA out : Nat) :
 /-- The witness satisfies the boundary's model tie. -/
 theorem epiWitness_model (d : Decimal) (digA out : Nat) :
     fbEpilogueModel d (epiWitness d digA out) := by
-  refine ⟨0, ?_, ?_, ?_⟩
+  refine ⟨0, ?_, ?_, ?_, ?_⟩
   · show lookupName (epiWitnessEnv d digA out) "%v.i.i" = some (.ptr 0)
     exact epiWitnessEnv_v d digA out
   · show lookupName (epiWitnessEnv d digA out) "%.cast.i629.i.i"
@@ -472,6 +472,8 @@ theorem epiWitness_model (d : Decimal) (digA out : Nat) :
   · show lookupName (epiWitnessEnv d digA out) "%d201.3.i.i"
       = some (.float (fbPreRound d))
     exact epiWitnessEnv_d201_3 d digA out
+  · show fbStkCounts (epiWitness d digA out).mem 0
+    exact fbZeroCountMem_counts 0
 
 /-- At the witness the epilogue's first block is undefined: the `phi` selects
 an `int` and the `bitcastToInt` has no meaning there. -/
@@ -588,9 +590,11 @@ write: `%d201.2.i.i` for the pre-round word and `%cmp1.i` for the sign.  The
 conclusion is `FbEpilogue`'s, so the fallback's tail is unchanged.
 -/
 
-/-- The tie the epilogue's own blocks consume: the head's edge cell, and the
-sign the select reads.  On a well-formed lexeme the reader binds `%cmp1.i` to
-`if d.neg then 1 else 0` (`epiSign_of_scan`). -/
+/-- The tie the epilogue's own blocks consume: the head's edge cell, the sign
+the select reads, and — through `fbEpilogueModel` — the `Stk`'s two limb counts
+within its array.  On a well-formed lexeme the reader binds `%cmp1.i` to
+`if d.neg then 1 else 0` (`epiSign_of_scan`); the counts are the producer's
+premise (`fbStkCounts`). -/
 def FbEpilogueTie (d : Decimal) (e : State) : Prop :=
   fbEpilogueModel d e ∧
   lookupName e.env "%d201.2.i.i" = some (.float (fbPreRound d)) ∧
