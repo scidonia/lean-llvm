@@ -41,6 +41,7 @@ parser's acceptance of a document outside the pilot's domain, and
 `refused: ...` on stderr (exit 2) is the reference's refusal of one.
 -/
 import LeanLLVM.JsonKernelDomain
+import LeanLLVM.JSON.ByteString
 import LeanLLVM.JSON.Parse
 import LeanLLVM.JSON.Render
 import LeanLLVM.Refinement.JsonEventBytes
@@ -105,6 +106,7 @@ def usage : String :=
   "       leanllvm-json-route --consume-noevent <file> [reps]  (the same arm)\n" ++
   "       leanllvm-json-route --consume-events <file> [reps]   (the certified event arm)\n" ++
   "       leanllvm-json-route --value <file>                   (the decoded value)\n" ++
+  "       leanllvm-json-route --value-bench <file> [reps]      (in-process valueOf)\n" ++
   "       leanllvm-json-route --indexed-check <file>           (the two readers agree)\n" ++
   "       leanllvm-json-route --arm <events|noevent> --consume <file> [reps]"
 
@@ -129,6 +131,87 @@ def indexWord (bs : ByteArray) (i : Nat) : UInt64 :=
   let g (k : Nat) : UInt64 := (bs.get! (i + k)).toUInt64
   g 0 + 256 * g 1 + 65536 * g 2 + 16777216 * g 3 +
     4294967296 * (g 4 + 256 * g 5 + 65536 * g 6 + 16777216 * g 7)
+
+/-! ### `be64` is the indexed read where the header is in bounds
+
+`decodeResult` reads the header with `indexWord`, so the two word readers must
+name the same number wherever the header's size check puts the read.  `be64`
+reaches each byte through `bs.toList.getD`; `indexWord` reaches it through
+`bs.get!`.  At an in-bounds offset the list's byte is the array's, and the
+eight-byte composition is below `2^64`, so the `UInt64` steps never truncate a
+term away. -/
+
+/-- A list lookup at an in-bounds offset is the indexed accessor's byte. -/
+theorem toList_getD_eq_get! (bs : ByteArray) (j : Nat) (hj : j < bs.size) :
+    bs.toList.getD j 0 = bs.get! j := by
+  rw [LeanLLVM.JSON.ByteString.toList_eq_data_toList, List.getD_eq_getElem?_getD]
+  have hsz : j < bs.data.size := by simpa [ByteArray.size_data] using hj
+  rw [Array.getElem?_toList, Array.getElem?_eq_getElem hsz, Option.getD_some]
+  show bs.data[j] = bs.get! j
+  rw [ByteArray.get!, Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?,
+    Array.getElem?_eq_getElem hsz]
+  simp only [Option.getD_some]
+
+/-- The eight bytes of `indexWord`, composed in `Nat`: the polynomial `be64`
+spells, with every `UInt64` step shown not to wrap. -/
+private theorem uint64_toNat_eight (b0 b1 b2 b3 b4 b5 b6 b7 : UInt8) :
+    ((b0.toUInt64 + 256 * b1.toUInt64 + 65536 * b2.toUInt64 +
+      16777216 * b3.toUInt64 +
+      4294967296 * (b4.toUInt64 + 256 * b5.toUInt64 +
+        65536 * b6.toUInt64 + 16777216 * b7.toUInt64))).toNat =
+      b0.toNat + 256 * b1.toNat + 65536 * b2.toNat +
+      16777216 * b3.toNat +
+      4294967296 * (b4.toNat + 256 * b5.toNat +
+        65536 * b6.toNat + 16777216 * b7.toNat) := by
+  have h0 : b0.toNat < 2 ^ 8 := b0.toNat_lt
+  have h1 : b1.toNat < 2 ^ 8 := b1.toNat_lt
+  have h2 : b2.toNat < 2 ^ 8 := b2.toNat_lt
+  have h3 : b3.toNat < 2 ^ 8 := b3.toNat_lt
+  have h4 : b4.toNat < 2 ^ 8 := b4.toNat_lt
+  have h5 : b5.toNat < 2 ^ 8 := b5.toNat_lt
+  have h6 : b6.toNat < 2 ^ 8 := b6.toNat_lt
+  have h7 : b7.toNat < 2 ^ 8 := b7.toNat_lt
+  simp only [UInt64.toNat_add, UInt64.toNat_mul, UInt64.toNat_ofNat,
+    UInt8.toNat_toUInt64, Nat.reducePow]
+  omega
+
+/-- The word `indexWord` reads, as the `Nat` its bytes name. -/
+private theorem indexWord_toNat_eq (bs : ByteArray) (i : Nat) :
+    (indexWord bs i).toNat =
+      (bs.get! i).toNat + 256 * (bs.get! (i + 1)).toNat +
+      65536 * (bs.get! (i + 2)).toNat +
+      16777216 * (bs.get! (i + 3)).toNat +
+      4294967296 * ((bs.get! (i + 4)).toNat +
+        256 * (bs.get! (i + 5)).toNat +
+        65536 * (bs.get! (i + 6)).toNat +
+        16777216 * (bs.get! (i + 7)).toNat) := by
+  unfold indexWord
+  dsimp only
+  simpa only [Nat.add_zero] using
+    uint64_toNat_eight (bs.get! i) (bs.get! (i + 1)) (bs.get! (i + 2))
+      (bs.get! (i + 3)) (bs.get! (i + 4)) (bs.get! (i + 5))
+      (bs.get! (i + 6)) (bs.get! (i + 7))
+
+/-- **The two word readers agree on a header word.**  The bound is the one the
+header's size check supplies: eight bytes at `i` are inside the result. -/
+theorem be64_eq_indexWord (bs : ByteArray) (i : Nat) (h : i + 8 ≤ bs.size) :
+    be64 bs i = (indexWord bs i).toNat := by
+  rw [indexWord_toNat_eq]
+  unfold be64
+  dsimp only
+  have h0 : i + 0 < bs.size := by omega
+  have h1 : i + 1 < bs.size := by omega
+  have h2 : i + 2 < bs.size := by omega
+  have h3 : i + 3 < bs.size := by omega
+  have h4 : i + 4 < bs.size := by omega
+  have h5 : i + 5 < bs.size := by omega
+  have h6 : i + 6 < bs.size := by omega
+  have h7 : i + 7 < bs.size := by omega
+  rw [toList_getD_eq_get! bs (i + 0) h0, toList_getD_eq_get! bs (i + 1) h1,
+    toList_getD_eq_get! bs (i + 2) h2, toList_getD_eq_get! bs (i + 3) h3,
+    toList_getD_eq_get! bs (i + 4) h4, toList_getD_eq_get! bs (i + 5) h5,
+    toList_getD_eq_get! bs (i + 6) h6, toList_getD_eq_get! bs (i + 7) h7]
+  simp only [Nat.add_zero]
 
 /-- A header word as the two's-complement `Int` the adapter wrote.  The depth
 statistics are signed -- a document whose running depth goes negative has a
@@ -197,6 +280,21 @@ def tagObserved : Nat := 0
 
 /-- The adapter tagged the object's refusal. -/
 def tagRefused : Nat := 1
+
+/-- **The header's seven words are the `be64` words.**  `decodeResult` proceeds
+only after the size check has shown `headerBytes ≤ result.size`, which puts
+eight bytes at each of these offsets inside the result. -/
+theorem be64_eq_indexWord_header (bs : ByteArray) (h : headerBytes ≤ bs.size) :
+    be64 bs 0 = (indexWord bs 0).toNat ∧
+    be64 bs 32 = (indexWord bs 32).toNat ∧
+    be64 bs 40 = (indexWord bs 40).toNat ∧
+    be64 bs 48 = (indexWord bs 48).toNat ∧
+    be64 bs 56 = (indexWord bs 56).toNat ∧
+    be64 bs 64 = (indexWord bs 64).toNat ∧
+    be64 bs 72 = (indexWord bs 72).toNat := by
+  have h80 : 80 ≤ bs.size := by simpa [headerBytes] using h
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    apply be64_eq_indexWord <;> omega
 
 /-- What the adapter's precondition index names, in `shim.c`'s order. -/
 def preconditionName : Nat → String
@@ -395,13 +493,13 @@ parts with a clock read between them, so the dissection prices the code that
 runs — the same `decodeResult`, `payloads`, `observationLine` and `payloadLine`
 — rather than a copy written for the instrument.
 
-`decodeResult` is the header decode the route has always done: `be64` materialises
-`result.toList` at every byte it reads, so one word costs eight list traversals
-of the whole result and the seven words an observation needs cost fifty-six; that
-is the read `--consume-events` below replaces with indexing.  `payloads` cuts the
-arena and the events with `ByteArray.extract`: one copy per payload and no
-materialisation of the result, so `outcome_slice_ns` prices the cut rather than a
-list walk.
+`decodeResult` reads the header's seven words by index, through `indexWord`.
+`be64`, which reaches each byte through `result.toList.getD`, remains the failure
+report's reader; `be64_eq_indexWord` proves both name the same number while the
+header's size check holds, so the indexed read changes no decoded word.  `payloads`
+cuts the arena and the events with `ByteArray.extract`: one copy per payload and
+no materialisation of the result, so `outcome_slice_ns` prices the cut rather than
+a list walk.
 -/
 
 /-- The observation's six words, decoded from the adapter's header. -/
@@ -422,6 +520,36 @@ def decodeResult (result : ByteArray) : IO (Except UInt32 Observation) := do
     IO.eprintln s!"route: internal contract violation: the adapter returned \
       {result.size} bytes, fewer than its {headerBytes}-byte header"
     return .error 5
+  -- The size check above puts every header word inside the result, which is
+  -- what makes the indexed read total here and equal to `be64` on the same
+  -- bytes (`be64_eq_indexWord`).
+  let tag := (indexWord result 0).toNat
+  if tag != tagObserved && tag != tagRefused then
+    return .error (← reportAdapterFailure result tag)
+  let o : Observation :=
+    { verdict := (indexWord result 32).toNat
+      nk := (indexWord result 40).toNat
+      nxp := (indexWord result 48).toNat
+      ndst := (indexWord result 56).toNat
+      nev := (indexWord result 64).toNat
+      err := (indexWord result 72).toNat }
+  -- The header names the payload's extent; a result of another length has lost
+  -- or gained bytes, and printing it as the observation would hide that.
+  if result.size ≠ headerBytes + o.ndst + o.nev then
+    IO.eprintln s!"route: internal contract violation: the result is \
+      {result.size} bytes, and its header names {headerBytes + o.ndst + o.nev}"
+    return .error 5
+  return .ok o
+
+/-- The previous revision's header decode: the same seven words through `be64`,
+whose accessor materialises `result.toList` at every byte.  It is not a route
+path; `--value-bench` times it beside `decodeResult` so the indexed read and
+the read it replaced are measured on the same bytes in one process. -/
+def decodeResultListed (result : ByteArray) : IO (Except UInt32 Observation) := do
+  if result.size < headerBytes then
+    IO.eprintln s!"route: internal contract violation: the adapter returned \
+      {result.size} bytes, fewer than its {headerBytes}-byte header"
+    return .error 5
   let tag := be64 result 0
   if tag != tagObserved && tag != tagRefused then
     return .error (← reportAdapterFailure result tag)
@@ -432,8 +560,6 @@ def decodeResult (result : ByteArray) : IO (Except UInt32 Observation) := do
       ndst := be64 result 56
       nev := be64 result 64
       err := be64 result 72 }
-  -- The header names the payload's extent; a result of another length has lost
-  -- or gained bytes, and printing it as the observation would hide that.
   if result.size ≠ headerBytes + o.ndst + o.nev then
     IO.eprintln s!"route: internal contract violation: the result is \
       {result.size} bytes, and its header names {headerBytes + o.ndst + o.nev}"
@@ -857,21 +983,18 @@ def fallbackValue (doc : ByteArray) : IO RouteValue := do
             document and produced no canonical value"
           exitStatus 5
 
-/-- **The document's value.**  An admitted document takes the native event call
-and is read back from the emitted stream; every other outcome — a refusal, an
-unreadable stream, or an event list that is not one value — is the reference
-parser's to answer.  The two branches are canonicalised once each: the fallback
-by `canonValue` in `fallbackValue`, and the fast path by `valueOfEvents`, whose
-numbers already carry the canonical rendering (`JsonEventValue`), so neither
-value is canonicalised twice. -/
-def valueOf (doc : ByteArray) : IO RouteValue := do
+/-- The value arm with its header decoder as a parameter: `valueOf` supplies the
+route's `decodeResult`, and `--value-bench` supplies `decodeResultListed` so the
+baseline and the indexed read run the same arm. -/
+def valueOfUsing (decode : ByteArray → IO (Except UInt32 Observation))
+    (doc : ByteArray) : IO RouteValue := do
   match ← decide2 doc with
   | .failed status => exitStatus status
   | .refused _ => fallbackValue doc
   | .admitted f =>
       let staged ← stage doc doc.size
       let result ← call staged f.escapeSkip
-      match ← decodeResult result with
+      match ← decode result with
       | .error status => exitStatus status
       | .ok o =>
           -- A refusal word on an admitted document is the reference's to
@@ -885,6 +1008,16 @@ def valueOf (doc : ByteArray) : IO RouteValue := do
                 | some v => return .value v
                 | none => fallbackValue doc
             | none => fallbackValue doc
+
+/-- **The document's value.**  An admitted document takes the native event call
+and is read back from the emitted stream; every other outcome — a refusal, an
+unreadable stream, or an event list that is not one value — is the reference
+parser's to answer.  The two branches are canonicalised once each: the fallback
+by `canonValue` in `fallbackValue`, and the fast path by `valueOfEvents`, whose
+numbers already carry the canonical rendering (`JsonEventValue`), so neither
+value is canonicalised twice. -/
+def valueOf (doc : ByteArray) : IO RouteValue :=
+  valueOfUsing decodeResult doc
 
 /-- The value line: the arm's prefix, the verdict word the observation uses, and
 the value's rendering as lowercase hex of its UTF-8 bytes on acceptance; the
@@ -1034,6 +1167,88 @@ def valueProbe (doc arena events : ByteArray) : IO ValueProbe := do
           return { bytes := b1 - b0, decode := d1 - d0, decodeRan := true,
                    outcome := "value", tokens := ces.length,
                    eventsSum := eventDigest ces, valueSum := valueDigest v }
+
+/-! ### The in-process `valueOf` benchmark
+
+`--value-bench <file> [reps]` loads the document once and times `valueOf` on it
+`reps` times, with no file read, no process start and no rendering inside the
+interval.  Each repetition's answer is digested after the clock read that closes
+its interval, so the measured call is the one the route makes and the digest is
+what keeps the compiler from dropping it.
+
+The same harness times two baselines on the same bytes: the previous revision's
+header decode (`decodeResultListed`, the seven `be64` reads) and the scalar
+canonical reference (`fallbackValue`).  The three answers' digests must agree,
+which is the equal-output check; a disagreement is exit 5.  `--stages` on the
+same document prices the reader alone, so the value arm's total can be read
+against the review's 77.91 ms reader figure. -/
+
+/-- A value arm's answer as a digest, outside every timed interval.  A value
+folds its rendering's bytes; a refusal folds its class and offset. -/
+def routeValueDigest : RouteValue → UInt64
+  | .value v => valueDigest v
+  | .refused e =>
+      let h := (parseErrorName e).toUTF8.toList.foldl
+        (fun h b => probeStep h b.toNat) (UInt64.ofNat ((parseErrorOffset e).getD 0))
+      h
+
+/-- One arm's repetitions: the median, the extremes, the outcome class and the
+digest every repetition produced. -/
+structure BenchArm where
+  median : Nat := 0
+  minNs : Nat := 0
+  maxNs : Nat := 0
+  runs : Nat := 0
+  outcome : String := "-"
+  sum : UInt64 := 0
+
+/-- Time `f` `reps` times.  The digest of each answer is taken after `t1`, so it
+is not inside the interval it checks.  One untimed call warms the arm, so the
+median is not the first call's page faults. -/
+def benchArm (reps : Nat) (f : Unit → IO RouteValue) : IO BenchArm := do
+  let _ ← f ()
+  let mut xs : Array Nat := #[]
+  let mut sum : UInt64 := 0
+  let mut outcome := "-"
+  for _ in List.range reps do
+    let t0 ← IO.monoNanosNow
+    let a ← f ()
+    let t1 ← IO.monoNanosNow
+    xs := xs.push (t1 - t0)
+    -- Sum, not xor: an even repetition count would cancel an xor and make the
+    -- equal-output check compare zeros.
+    sum := sum + routeValueDigest a
+    outcome := match a with
+      | .value _ => "value"
+      | .refused _ => "refused"
+  let mn := xs.foldl (fun m x => if x < m then x else m) stageUnfilled
+  let mx := xs.foldl (fun m x => if m < x then x else m) 0
+  return { median := median xs, minNs := mn, maxNs := mx, runs := xs.size,
+           outcome := outcome, sum := sum }
+
+/-- `--value-bench <file> [reps]`. -/
+def runValueBench (path : String) (reps : Nat) : IO UInt32 := do
+  let doc ← try
+      IO.FS.readBinFile path
+    catch e =>
+      IO.eprintln s!"route: cannot read '{path}': {e}"
+      return 2
+  let name := (System.FilePath.fileName path).getD path
+  let indexed ← benchArm reps (fun _ => valueOfUsing decodeResult doc)
+  let listed ← benchArm reps (fun _ => valueOfUsing decodeResultListed doc)
+  let reference ← benchArm reps (fun _ => fallbackValue doc)
+  let report (arm : String) (a : BenchArm) : IO Unit :=
+    IO.println s!"valuebench doc={name} size={doc.size} reps={a.runs} \
+      arm={arm} median_ns={a.median} min_ns={a.minNs} max_ns={a.maxNs} \
+      outcome={a.outcome} digest={a.sum}"
+  report "indexed" indexed
+  report "listed" listed
+  report "reference" reference
+  let sameIL := decide (indexed.sum = listed.sum) && decide (indexed.outcome = listed.outcome)
+  let sameIR := decide (indexed.sum = reference.sum) && decide (indexed.outcome = reference.outcome)
+  IO.println s!"valuebench doc={name} size={doc.size} equal={if sameIL && sameIR then 1 else 0} \
+    indexed_vs_listed={if sameIL then 1 else 0} indexed_vs_reference={if sameIR then 1 else 0}"
+  return if sameIL && sameIR then 0 else 5
 
 /-! ### The indexed reader's differential check
 
@@ -1883,6 +2098,8 @@ def main (args : List String) : IO UInt32 := do
   | ["--consume-events", path] => runConsume path 11
   | ["--consume-events", path, reps] => runConsume path reps.toNat!
   | ["--value", path] => runValue path
+  | ["--value-bench", path] => runValueBench path 5
+  | ["--value-bench", path, reps] => runValueBench path reps.toNat!
   | ["--indexed-check", path] => runIndexedCheck path
   | _ =>
       IO.eprintln usage

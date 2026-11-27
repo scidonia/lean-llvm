@@ -1585,6 +1585,81 @@ same-host, same-session and same shape, which is what makes the ratio
 meaningful, but it is not a quiet-host measurement, and the 1 MiB point on the
 pre-change side is an absence (a timed-out call), not a measured wall.
 
+### The header decode, indexed
+
+`decodeResult` reads the adapter's seven header words before the value arm reaches
+the reader.  The words were read with `be64`, whose accessor calls
+`bs.toList.getD`; on a returned result the whole buffer is materialised at each of
+the fifty-six byte reads, so at 1 MiB the header cost a list of the full result
+per byte.  The normal path now reads the header with the indexed `indexWord`,
+which already served the consumer's event walk; the failure report keeps `be64`
+and both size checks are unchanged.  `be64_eq_indexWord` proves the two readers
+name the same number for any word whose eight bytes are in bounds, and
+`be64_eq_indexWord_header` states the seven header offsets under the check that
+admits a result (`headerBytes ≤ result.size`).
+
+`--value-bench <file> [reps]` loads the document once and times `valueOf` in
+process: no file read, no process start and no rendering inside the interval.
+Each repetition's answer is digested after the clock read that closes its
+interval, and one untimed call warms each arm.  The same harness times the
+previous revision's header decode (`decodeResultListed`, the seven `be64` reads)
+and the scalar canonical reference (`fallbackValue`) on the same loaded bytes, so
+the three arms differ in the decoder and nothing else.  A digest or outcome
+disagreement exits 5.
+
+The documents are the generator's fixed seed (`0x243F6A8885A308D3`): `dense` at
+64 KiB and 1 MiB, `strings` (ASCII with `\n`, `\"`, `\\` and `\u00e9` escapes) at
+1 MiB, the 23-byte `corpus/doc-nested.json` for a small admitted document, and
+the 4-byte `corpus/esc-bad.json` for a malformed one.  Host `rv-wd-01a21253`
+(`europe-west1-b`): Intel Xeon Platinum 8581C at 2.10 GHz, 8 vCPUs, 62 GiB,
+Linux 6.18.64, a shared spot machine with no PMU.  Build `OPT=-O2`, kernel
+`-O2`, adapter `-O2`, `TIMING=1` for the reader column and `TIMING=0` for the
+`valueOf` rows; Lean 4.35.0.  Every row is `taskset -c 2`, the median of 3
+repetitions at 1 MiB and 5 at 64 KiB and below.  The reader column is the same
+host's instrumented `--stages` `value_bytes_ns`, the median of 3; it repeats the
+earlier 1 MiB reader measurement here because the earlier 77.91 ms came from a
+different machine.
+
+| shape | size (B) | indexed `valueOf` (ms) | previous decode (ms) | previous / indexed | scalar reference (ms) | reader (ms) |
+|---|---|---|---|---|---|---|
+| dense | 1,048,576 | 150.361 | 2,117.386 | 14.1 | 30,658.758 | 99.729 |
+| strings | 1,048,576 | 67.745 | 808.117 | 11.9 | 128.259 | 45.139 |
+| dense | 65,536 | 7.511 | 108.375 | 14.4 | 1,889.852 | 7.800 |
+| small `doc-nested` | 23 | 0.004413 | 0.083493 | 18.9 | 0.005039 | — |
+| malformed `esc-bad` | 4 | 0.002104 | 0.062425 | 29.7 | 0.000419 | — |
+
+All five rows reported `equal=1 indexed_vs_listed=1 indexed_vs_reference=1`: one
+digest per shape from all three arms.  The value digests are
+`15528671326543812410` (dense 1 MiB), `16664960774532209245` (strings 1 MiB),
+`2181283897724872311` (dense 64 KiB), `14529324086165368568` (small) and
+`16520821915782133370` (malformed).  The document SHA-256s are
+`f2589d02d011b63ad799dc40c2ea05b7c4f4259726fc215fbf62f52a16c21f9c`,
+`06fe689dfaa9529cf840c0610e71013ea5e660979dc70e169518a91bafb04c4d`,
+`3d9e0237ec66adb2d77848a24f1998fa4b56b4dbe77a11431b02176fcd162995`,
+`e823a0e5383f039f36ae667f87758395317c5a4f63b8805a73d2b9fd21f4c998` and
+`722cd80a90dd9305fea073dd4dfeeace433b327fccf462fcf466cd13551c6aa9`.  The
+route scenario passes on the same build: 107 fast-path rows agree with the
+driver on the observation, arena and events, every fallback agrees with the
+manifest, and the two-phase admission agrees with `admission` on 265 rows.
+
+**What the numbers say.**  The indexed header decode removes a cost that grows
+with the returned buffer.  In absolute terms the previous decode's 1 MiB dense
+row is 1,967 ms slower than the indexed one, its 64 KiB row 100.9 ms slower, and
+its small-document rows 79.1 µs and 60.3 µs slower.  In ratio the dense 1 MiB row
+is 14.1 times the indexed one, the 64 KiB row 14.4 times, and the 23-byte and
+4-byte documents 18.9 and 29.7 times, because `be64` pays its list at every word
+even when the header is the whole result.  The indexed
+`valueOf` at 1 MiB dense is 150.4 ms against this host's 99.7 ms reader, 1.51
+times the reader; against the earlier 77.91 ms figure it is 1.93 times, but that
+figure is a different machine's and is not a same-host ratio.  At 64 KiB the
+whole indexed `valueOf` (7.51 ms) and the reader (7.80 ms) are within the
+repetition spread, so header and staging are not separately visible there.  The
+scalar reference is the slowest arm on the dense shapes (30.7 s at 1 MiB) and
+faster than the fast path only on the two tiny documents, where the route pays
+admission and the native call and the reference parses four bytes.  On the
+escaped-string 1 MiB shape the indexed arm is 67.7 ms, 1.50 times its 45.1 ms
+reader and still 1.9 times faster than the scalar reference.
+
 ### What remains unproved at this revision
 
 - **The readers are equal as a theorem, and were also compared.**  The equality
