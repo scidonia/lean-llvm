@@ -3,8 +3,8 @@ The core extension's acceptance scenario: the address conversions, the global
 symbol operand, the binary64 forms and the aggregate layouts, in one program.
 
 Three surfaces meet here because one emitted body needs all of them.
-`probes/install/ir/stage2.helper.s2_string_body.ll` stores the message word
-`@.str.14` through a `ptrtoint`, and `num_fast_el1`'s emission computes in
+`probes/install/ir/stage2.helper.s2_string_body.ll` computes with a `ptrtoint`
+pair and stores a `null` message word, and `num_fast_el1`'s emission computes in
 binary64 over `[23 x double]` tables; each construct below is pinned to the text
 it reads, the AST it becomes, the form it prints, the value it computes and the
 neighbour it refuses.
@@ -607,9 +607,12 @@ def s2InitSrc : String :=
   include_str "../probes/install/ir/stage2.helper.s2_init.ll"
 
 -- The captured body is a program of the fragment: its `ptrtoint` pair and its
--- global-symbol operand are both modelled, and its sibling carries neither.
+-- `null` message operand are both modelled.  The message is `null` because the
+-- capture's call boundary carries no global table, so the body names no symbol
+-- at all; its sibling names none either.
 #guard parses s2Src = true
-#guard hasSubstr s2Src "@.str.14" = true
+#guard hasSubstr s2Src "@.str.14" = false
+#guard hasSubstr s2Src "store ptr null" = true
 #guard hasSubstr s2Src "ptrtoint ptr" = true
 #guard hasSubstr s2InitSrc "@.str.14" = false
 #guard parses s2InitSrc = true
@@ -619,30 +622,29 @@ def s2Body : Option Function :=
   | .ok ⟨_, f :: _⟩ => some f
   | _ => none
 
-/-- The body's global use, read off the parsed AST: one `store` of the symbol's
-address into `%msg2.i.i`.  The symbol is not loaded, GEP'd through, compared or
-passed: the body needs the address and nothing else. -/
-def storesGlobalAt (f : Function) (reg sym : String) : Bool :=
+/-- The body's message store, read off the parsed AST: one `store` of a `null`
+pointer into `%msg2.i.i`, the third word of the context record.  The operand is
+the `null` the capture wrote, because the call boundary has no global table to
+read a symbol's address from; the target is still the emitted one. -/
+def storesNullAt (f : Function) (reg : String) : Bool :=
   (f.blocks.flatMap (·.instrs)).any fun i =>
     match i with
-    | .store .ptr (.global g) (.reg r) => r == reg && g == sym
+    | .store .ptr (.imm .null) (.reg r) => r == reg
     | _ => false
 
-#guard s2Body.any (fun f => storesGlobalAt f "%msg2.i.i" "@.str.14")
+#guard s2Body.any (fun f => storesNullAt f "%msg2.i.i")
 
--- It is the only global operand in the body, and no instruction loads through
--- one: the fixture declares no contents and the body reads none.
+-- The body names no global symbol at all: none of the names any instruction or
+-- terminator reads is a `@`-spelling, so every named operand is a register.  The
+-- message word is therefore a value the fixture states, not one the loader
+-- supplies, and no load, GEP, comparison or call in the body reads a symbol
+-- either.
 #guard
   match s2Body with
   | some f =>
-      decide ((f.blocks.flatMap (·.instrs)).filterMap (fun i =>
-        match i with
-        | .store .ptr (.global g) _ => some g
-        | _ => none) = ["@.str.14"]) &&
-      decide ((f.blocks.flatMap (·.instrs)).any (fun i =>
-        match i with
-        | .load _ _ (.global _) => true
-        | _ => false) = false)
+      decide ((((f.blocks.flatMap (·.instrs)).flatMap Instr.uses ++
+                (f.blocks.map (·.term)).flatMap Term.uses).filter
+                  (fun n => n.startsWith "@")) = [])
   | none => false
 
 -- The body's two address conversions, in the emitted order.
@@ -668,10 +670,11 @@ def storesGlobalAt (f : Function) (reg sym : String) : Bool :=
       | .error _ => false
   | .error _ => false
 
--- The run: the refusal path's message word is the loader's address.  Staging
--- follows the emitted call's eight arguments, the body's own base word at `%c`,
--- the cursor list `[8, 24]`, the context's pointer word at `%c + 1112` and the
--- escape routine's `-1` answer.
+-- The run: the refusal path's message word is `null`, the operand the body was
+-- emitted with, even though the staging offers an address for the symbol the
+-- fixture used to name.  Staging follows the emitted call's eight arguments, the
+-- body's own base word at `%c`, the cursor list `[8, 24]`, the context's pointer
+-- word at `%c + 1112` and the escape routine's `-1` answer.
 def C : Nat := 16
 def P : Nat := 40
 def XP : Nat := 100
@@ -698,27 +701,29 @@ def s2Staged (f : Function) (g : Globals) : State :=
   match s2Body with
   | some f =>
       match runFuel testCalls 400 f (s2Staged f [("@.str.14", G)]) with
-      | some (.ret (some (.int 32 0)) mem) => readBytes mem (E + 16) 8 = some (natToBytes G 8)
+      | some (.ret (some (.int 32 0)) mem) => readBytes mem (E + 16) 8 = some (natToBytes 0 8)
       | _ => false
   | none => false
 
--- The same staging with the symbol unassigned is undefined behaviour at the
--- store that reads it.
+-- The body reads no symbol, so an unbound global table is not a fault here:
+-- the empty staging returns exactly the outcome the staging above returns, with
+-- the `null` word in place.  The `ub` this guard used to pin was the unresolved
+-- symbol's read; the store's operand is now a value, so there is nothing to be
+-- unresolved.
 #guard
   match s2Body with
   | some f =>
-      decide (runFuel testCalls 400 f (s2Staged f []) = some .ub)
+      decide (runFuel testCalls 400 f (s2Staged f []) =
+              runFuel testCalls 400 f (s2Staged f [("@.str.14", G)]))
   | none => false
 
--- A different loader assignment puts a different word there: the run is a
--- function of the staging, not of the text.
+-- A different assignment for the symbol the older fixture named changes
+-- nothing: the run is a function of the text alone, not of the staging's table.
 #guard
   match s2Body with
   | some f =>
-      match runFuel testCalls 400 f (s2Staged f [("@.str.14", 9000)]) with
-      | some (.ret (some (.int 32 0)) mem) =>
-          readBytes mem (E + 16) 8 = some (natToBytes 9000 8)
-      | _ => false
+      decide (runFuel testCalls 400 f (s2Staged f [("@.str.14", 9000)]) =
+              runFuel testCalls 400 f (s2Staged f []))
   | none => false
 
 -- The rest of the record is the body's own arithmetic: the flag word is zero and
