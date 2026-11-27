@@ -20,8 +20,10 @@ proves what the count readback needs: the store extends the list `stkLimbs`
 reads by the carry's low word, the count's cell is untouched, and the bumped
 word the block carries is that list's length.  Composed with the sink split's
 own store (`sinkSplit_step`), the residual block therefore leaves
-`stkCount mem v = some (ws ++ [w]).length`: the tie's `∃ n` is discharged and
-only its `n ≤ nestSteps 19 R` comparison is left.
+`stkCount mem v = some (ws ++ [w]).length`: the tie's `∃ n` is discharged.
+`bus520_count_tie` closes its `n ≤ nestSteps 19 R` from the chunk loop's exit
+invariant (`ingestChunkInvariant`), and that invariant is also the premise of
+the cleanup path's `fbStkCounts_of_cleanup_end151`.
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
@@ -37,6 +39,7 @@ open LeanLLVM
 open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.Refinement.NumFastTier1
 open LeanLLVM.Refinement.NumFastToDouble
+open LeanLLVM.Refinement.NumFastFallback
 open LeanLLVM.Refinement.NumFastProducerCount
 
 namespace NumFastIngestAppend
@@ -469,6 +472,129 @@ theorem bus520_count_read {calls : Calls} {env : Env} {s : State}
     exact stkLimbs_writeCount_frame s1.mem v
       (ws ++ [(BitVec.ofNat 64 (c.toNat % 2 ^ 64)).toNat])
       (by rw [hwlen]; exact hlimbs1) hlen96
+
+/-! ### The chunk loop's invariant, and the tie it supplies
+
+The chunk loop (`for.body132.i.i` … `for.inc143.i.i`) calls `stk_mul_add` once
+per nineteen digits, and one call appends at most one limb
+(`stkMulAddCalls_length_le`), so at its exit the significand holds at most
+`R / 19` limbs and the count's cell names exactly the limbs present.  The
+residual chunk's call is the nest's last: `for.cond.cleanup.i.i` reaches
+`if.then148.i.i` and the drain `while.body.us.i520.i.i` only when `%cn.1.i.i`
+is non-zero, which is the non-zero remainder `R % 19`.  So the counter the
+drain reads is below `nestSteps 19 R`, and its bump reaches that bound.  That
+is the hypothesis `bus520_count_read` takes — its `≤ 95` bound, sign extension
+and 64-bit limbs all follow from `R ≤ 768` — and the postcondition is the
+epilogue's tie `ingestCountTie`, which `fbStkCounts_of_ties` reads. -/
+
+/-- The chunk loop's exit, as the residual drain reads it: the count's cell
+holds the limbs present, the counter is at most one per nineteen digits, and
+the residual chunk exists (the drain is reached only on a non-zero
+`%cn.1.i.i`, which is the non-zero remainder). -/
+def ingestChunkInvariant (mem : Mem) (v R : Nat) (x : BitVec 32)
+    (ws : List Nat) : Prop :=
+  x.toNat ≤ R / 19 ∧ R % 19 ≠ 0 ∧ stkBnLimbs mem v ws ∧ ws.length = x.toNat
+
+/-- The residual call exists exactly on the non-zero remainder: `nestSteps`
+counts the chunk loop's `R / 19` calls and the residual one. -/
+theorem nestSteps_of_residual {R : Nat} (h : R % 19 ≠ 0) :
+    nestSteps 19 R = R / 19 + 1 := by
+  simp [nestSteps, h]
+
+/-- **The invariant is the count bound the cleanup store takes.**  Each of the
+chunk loop's `R / 19` calls appends at most one limb, so the counter is inside
+the nest's call count: `x ≤ nestSteps 19 R`, exactly the premise
+`fbStkCounts_of_cleanup_end151` reads for `%78`. -/
+theorem ingestChunkInvariant_count_le {mem : Mem} {v R : Nat} {x : BitVec 32}
+    {ws : List Nat} (hinv : ingestChunkInvariant mem v R x ws) :
+    x.toNat ≤ nestSteps 19 R := by
+  unfold ingestChunkInvariant at hinv
+  have hx := hinv.1
+  unfold nestSteps
+  split <;> omega
+
+/-- **The residual drain's count tie, from the chunk loop's invariant.**  From
+`x ≤ R / 19` the counter is at most `40`, so the block's sign extension and
+`≤ 95` bound hold; `bus520_count_read` then leaves the extended limb list and
+the bumped count `x + 1`, which is at most `nestSteps 19 R` because the residual
+call is the nest's last.  The conclusion is `stkBnLimbs` at the new list and
+`ingestCountTie`, the premise the epilogue's `fbStkCounts_of_ties` consumes. -/
+theorem bus520_count_tie {calls : Calls} {env : Env} {s : State}
+    {x : BitVec 32} {c : BitVec 128} {v R : Nat} {ws : List Nat}
+    (hpc : s.pc = "while.body.us.i520.i.i")
+    (hx : lookupName env "%78" = some (.int 32 x))
+    (hc : lookupName env "%carry.0.lcssa.i518.i.i" = some (.int 128 c))
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr (v + stkCountOffset)))
+    (hR : R ≤ 768)
+    (hwords : ∀ z ∈ ws, z < 2 ^ 64)
+    (hinv : ingestChunkInvariant s.mem v R x ws) :
+    ∃ (s1 s2 : State),
+      step calls numFastBody (stateAt env s) = .jump s1
+      ∧ step calls numFastBody s1 = .jump s2
+      ∧ stkBnLimbs s2.mem v (ws ++ [(BitVec.ofNat 64 (c.toNat % 2 ^ 64)).toNat])
+      ∧ ingestCountTie s2.mem v R := by
+  unfold ingestChunkInvariant at hinv
+  obtain ⟨hxdiv, hres, hbl, hlen⟩ := hinv
+  have hx40 : x.toNat ≤ 40 := by
+    have hdiv : R / 19 ≤ 40 := by omega
+    omega
+  have hmsb : x.msb = false := msb32_false_of_lt (by omega : x.toNat < 2 ^ 31)
+  have hpos : x.toNat < 2 ^ 63 := by omega
+  have hxle : x.toNat ≤ 95 := by omega
+  have hlimbs : stkLimbs s.mem v x.toNat = some ws := by
+    rw [← hlen]
+    exact hbl.2
+  obtain ⟨s1, s2, h1, h2, hcnt, hlimbs'⟩ :=
+    bus520_count_read (calls := calls) hpc hx hc hv hn hmsb hpos hxle hwords hlimbs
+  have hlen' : (ws ++ [(BitVec.ofNat 64 (c.toNat % 2 ^ 64)).toNat]).length
+      = x.toNat + 1 := by
+    simp only [List.length_append, List.length_singleton, hlen]
+  have hx1 : x.toNat + 1 ≤ nestSteps 19 R := by
+    rw [nestSteps_of_residual hres]
+    omega
+  refine ⟨s1, s2, h1, h2, ⟨?_, ?_⟩, ⟨x.toNat + 1, hcnt, hx1⟩⟩
+  · rw [hlen']
+    exact hcnt
+  · rw [hlen']
+    exact hlimbs'
+
+/-- **The cleanup exit, from the same invariant.**  `fbStkCounts_of_cleanup_end151`
+takes `%78 ≤ nestSteps 19 R`; `ingestChunkInvariant_count_le` supplies it, so
+the cleanup path reaches `fbStkCounts` with no count bound carried separately.
+This is the residual drain's sibling path: the invariant is what both stores
+read. -/
+theorem fbStkCounts_of_chunkEnd151 {calls : Calls} {env : Env} {s : State}
+    {x : BitVec 32} {c : BitVec 32} {st : BitVec 32} {v R : Nat} {ws : List Nat}
+    (hx : lookupName env "%78" = some (.int 32 x))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr (v + stkCountOffset)))
+    (hc : lookupName env "%cn.1.i.i" = some (.int 32 c))
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hst : lookupName env "%sticky.0714.i.i" = some (.int 32 st))
+    (hR : R ≤ 768) (hinv : ingestChunkInvariant s.mem v R x ws) :
+    ∃ (env1 : Env) (s1 : State) (env2 : Env) (s2 : State),
+      denoteCode calls cleanupInstrs (stateAt env s) = some (stateAt env1 s1) ∧
+      denoteCode calls end151Instrs (stateAt env1 s1) = some (stateAt env2 s2) ∧
+      fbStkCounts s2.mem v :=
+  fbStkCounts_of_cleanup_end151 hx hn hc hv hst hR (ingestChunkInvariant_count_le hinv)
+
+/-! ### Axiom footprints
+
+The readback and the tie from the invariant, pinned so the build checks them. -/
+
+/-- info: 'LeanLLVM.Refinement.NumFastIngestAppend.bus520_count_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms bus520_count_read
+
+/-- info: 'LeanLLVM.Refinement.NumFastIngestAppend.bus520_count_tie' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms bus520_count_tie
+
+/-- info: 'LeanLLVM.Refinement.NumFastIngestAppend.fbStkCounts_of_chunkEnd151' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms fbStkCounts_of_chunkEnd151
 
 end NumFastIngestAppend
 

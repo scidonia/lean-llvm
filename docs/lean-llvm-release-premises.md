@@ -88,11 +88,18 @@ left at each of them is one `Nat` inequality on the word the block stored, with
 no memory shape carried (`fbStkCounts_of_cleanup_end151` takes `fbStkCounts`
 across the ingest's spill and the staging's two stores from `%78 ≤ nestSteps 19
 R`, and `powOneCountTie_of_end151` needs no bound at all). The remaining
-inequality is the nest's trip count, and the lemmas that would carry it — the
-blocks that append the last limb and bump the count in one step,
-`while.body.us.i520.i.i`, `while.body.us.i.i557.i.i`, `while.body.us.i624.i.i`,
-and the fold's spill `while.end190.i.i` — are the blocks
-`JsonStage2NumFastToDouble`'s header records as not stated yet.
+inequality is the nest's trip count. The residual digit-ingest append is stated:
+`while.body.us.i520.i.i` has its step and count readback (`bus520_step`,
+`bus520_count_read`), and `bus520_count_tie` derives both the `≤ 95` bound and
+the tie's `x + 1 ≤ nestSteps 19 R` from the chunk loop's exit invariant,
+`ingestChunkInvariant`, leaving `ingestCountTie` at `nestSteps 19 R`
+(`JsonStage2NumFastIngestAppend`). The same invariant gives `%78 ≤ nestSteps 19
+R`, so `fbStkCounts_of_chunkEnd151` feeds the cleanup path's
+`fbStkCounts_of_cleanup_end151`. What remains there is that invariant at the
+loop's own exit. The other blocks that append a limb and bump the count —
+`while.body.us.i.i557.i.i`, `while.body.us.i624.i.i`, and the fold's spill
+`while.end190.i.i` — are the ones `JsonStage2NumFastToDouble`'s header records
+as not stated.
 
 ## Outside the proof: two items
 
