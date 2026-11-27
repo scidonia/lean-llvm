@@ -55,11 +55,16 @@ carried.  What remains is that the emitted body *is* that run:
 a statement about the inlined bodies (`for.body.i.i.i`:1415,
 `while.body.us.i.i.i.i`:1709, `for.body.i566.i.i`:2012) which this tree does not
 state; the store itself, the step lemma, the ceiling and the bridge are proved.
+The last section below takes the tie from the other side: the store's own block
+says which word it writes, so the tie is that word within the bound, and only the
+nest's trip count is left (`stkCount_writeCount_bytes`,
+`fbStkCounts_of_cleanup_end151`).
 
 There is no `sorry`, `admit` or `native_decide` below.
 -/
 import LeanLLVM.Refinement.JsonStage2NumFastStkArith
 import LeanLLVM.Refinement.JsonStage2NumFastCalleeMul
+import LeanLLVM.Refinement.JsonStage2NumFastToDouble
 
 set_option autoImplicit false
 set_option maxRecDepth 20000
@@ -68,9 +73,11 @@ set_option maxHeartbeats 1000000
 namespace LeanLLVM.Refinement
 
 open LeanLLVM
+open LeanLLVM.Refinement.BlockEval
 open LeanLLVM.Refinement.NumFastCalleeCmp
 open LeanLLVM.Refinement.NumFastFallback
 open LeanLLVM.Refinement.NumFastStkArith
+open LeanLLVM.Refinement.NumFastToDouble
 
 namespace NumFastProducerCount
 
@@ -958,10 +965,242 @@ theorem numCmp_copyLen_le_of_sticky_runs {mem0 : Mem} {v R k : Nat} {nw : BitVec
   exact numCmp_copyLen_le_of_ties hties.1 hties.2
     (ingest_limbs_le_capacity hR) (pow_five_limbs_le_capacity hk) hread
 
+/-! ### The ties read off the stores' own blocks
+
+The route above carries the whole memory: `stkMulAddRun` names the run a nest's
+calls make, and a tie follows once the memory *is* that run.  The tie itself asks
+for less.  `stkBnCountTie` wants the count cell to hold some `n` within the
+emitted bound, and a count store writes one four-byte word, so the cell's read is
+that word — independent of the limbs, of the multiplies, and of any model.
+
+The block the store sits in says which word and where.  `JsonStage2NumFastToDouble`
+states the stores below at their own pins: `cleanup_denote` and
+`sinkSplit_denote` write the ingest's limb counter at `%v + 0x300` (`%78` at the
+cleanup, its increment at the residue's spill), `end151_denote` writes the
+literal `1` at `%v + 0x608`, and `end176_denote` and `whileEnd_denote` write the
+power's limb counter there.  Composing a store with the readback therefore *is*
+the tie, and what stays behind is a single `Nat` inequality on the word the block
+stored — not a memory shape and not a limb list.
+
+**The stores that have no block lemma.**  The blocks that append the last limb
+and bump the count in one step — `while.body.us.i.i.i`
+(`JsonStage2HelperIRNumFast:1415`) and `while.body.us.i520.i.i` (`:1549`) for
+the ingest, `while.body.us.i.i557.i.i` (`:1853`) and `while.body.us.i.i624.i.i`
+(`:2303`) for the power and the fold — are not stated in
+`JsonStage2NumFastToDouble`: its header names the unrolled bodies and the carry
+blocks as "not stated here yet".  `while.end190.i.i`, which spills the fold's
+count `%116` at `%n.i.i.i` (`JsonStage2HelperIRNumFast:2229`), has none either.  A
+tie at those cells is a lemma about a block that does not have one, so their
+counts are reached here only through the exits that do. -/
+
+/-- **A count store reads back at its own cell.**  The store writes four bytes at
+`base + 768` and `stkCount mem base` reads exactly those four bytes. -/
+theorem stkCount_writeCount_bytes (mem : Mem) (base k : Nat) (hk : k < 2 ^ 32) :
+    stkCount (writeBytes mem (base + stkCountOffset) (natToBytes k 4)) base = some k := by
+  have hread : readBytes (writeBytes mem (base + stkCountOffset) (natToBytes k 4))
+      (base + stkCountOffset) (natToBytes k 4).length = some (natToBytes k 4) :=
+    readBytes_writeBytes_same mem (natToBytes k 4)
+  rw [natToBytes_length] at hread
+  unfold stkCount
+  rw [hread]
+  show some (bytesToNat (natToBytes k 4)) = some k
+  rw [natToBytes_toNat, show (256 : Nat) ^ 4 = 2 ^ 32 from by decide,
+    Nat.mod_eq_of_lt hk]
+
+/-- A write at or above a `StkBn`'s count cell leaves the cell's read alone. -/
+theorem stkCount_writeBytes_above (mem : Mem) (base start : Nat) (bs : List UInt8)
+    (h : base + stkCountOffset + 4 ≤ start) :
+    stkCount (writeBytes mem start bs) base = stkCount mem base := by
+  unfold stkCount
+  rw [readBytes_writeBytes_below mem bs 4 (base + stkCountOffset) start h]
+
+/-- The memory `if.end151.i.i` leaves: one limb and the count `1` of the power,
+at the frame's `+ 0x308` and `+ 0x608`. -/
+def end151Mem (mem : Mem) (v : Nat) : Mem :=
+  writeBytes (writeBytes mem (v + 776) (natToBytes 1 8)) (v + 1544) (natToBytes 1 4)
+
+/-- `if.end151.i.i`'s chain, with its two stores written at the frame's own
+offsets — `0x308` is `776` and `0x608` is `776 + 768`. -/
+theorem end151_denote_mem {calls : Calls} {env : Env} {s : State}
+    {v : Nat} {st : BitVec 32}
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hst : lookupName env "%sticky.0714.i.i" = some (.int 32 st)) :
+    denoteCode calls end151Instrs (stateAt env s) =
+      some (stateAt (end151Env env v st) { s with mem := end151Mem s.mem v }) := by
+  rw [end151_denote hv hst]
+  simp only [end151Mem,
+    show ((0x0000000000000308#64).signExtend 64).toNat = 776 from by decide,
+    show ((0x0000000000000608#64).signExtend 64).toNat = 1544 from by decide,
+    show (0x0000000000000001#64).toNat = 1 from by decide,
+    show (0x0000000000000001#32).toNat = 1 from by decide]
+
+/-- **The staging's own store is the power's `1`.**  `if.end151.i.i` sets
+`%n.i539.i.i` to the literal, and the four bytes it writes are the read
+`stkCount` performs at `v + 776`; the tie holds with no hypothesis beyond the
+block's own. -/
+theorem powOneCountTie_of_end151 {calls : Calls} {env : Env} {s : State}
+    {v : Nat} {st : BitVec 32}
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hst : lookupName env "%sticky.0714.i.i" = some (.int 32 st)) :
+    ∃ (env' : Env) (s' : State),
+      denoteCode calls end151Instrs (stateAt env s) = some (stateAt env' s')
+      ∧ powOneCountTie s'.mem v := by
+  refine ⟨end151Env env v st, { s with mem := end151Mem s.mem v },
+    end151_denote_mem hv hst, ?_⟩
+  have hoff : (v + 776) + stkCountOffset = v + 1544 := by
+    unfold stkCountOffset; omega
+  refine ⟨1, ?_, by decide⟩
+  unfold end151Mem
+  rw [← hoff]
+  exact stkCount_writeCount_bytes (writeBytes s.mem (v + 776) (natToBytes 1 8))
+    (v + 776) 1 (by decide)
+
+/-- **The cleanup's own store is the ingest's count.**  `for.cond.cleanup.i.i`
+writes the limb counter `%78` at `%v + 0x300`; the tie's `n` is that word, so
+the tie follows from a bound on the counter alone. -/
+theorem ingestCountTie_of_cleanup {calls : Calls} {env : Env} {s : State}
+    {x : BitVec 32} {v : Nat} {c : BitVec 32} {R : Nat}
+    (hx : lookupName env "%78" = some (.int 32 x))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr (v + stkCountOffset)))
+    (hc : lookupName env "%cn.1.i.i" = some (.int 32 c))
+    (hR : R ≤ 768) (hxle : x.toNat ≤ nestSteps 19 R) :
+    ∃ (env' : Env) (s' : State),
+      denoteCode calls cleanupInstrs (stateAt env s) = some (stateAt env' s')
+      ∧ ingestCountTie s'.mem v R := by
+  have hx32 : x.toNat < 2 ^ 32 := by
+    have := ingest_limbs_le hR
+    omega
+  refine ⟨cleanupEnv env c,
+    { s with mem := writeBytes s.mem (v + stkCountOffset) (natToBytes x.toNat 4) },
+    cleanup_denote hx hn hc, ?_⟩
+  exact ⟨x.toNat, stkCount_writeCount_bytes s.mem v x.toNat hx32, hxle⟩
+
+/-- **The residue's exit is the ingest's count.**  `if.end151.i.i.sink.split`
+writes the counter `%inc12.us.i522.i.i.sink` — the chunk loop's phi — at
+`%v + 0x300`, so the tie is that word, and a bound on it is what remains. -/
+theorem ingestCountTie_of_sinkSplit {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op : Operand} {k : BitVec 32} {v : Nat} {R : Nat}
+    (hpre : s.pre = some pre)
+    (hop : phiIncoming pre
+      [("while.body.us.i520.i.i", (Operand.reg "%inc12.us.i522.i.i")),
+       ("if.end126.i.i", (Operand.imm (Const.int 32 0x00000000#32)))] = some op)
+    (hov : evalOperand (stateAt env s) op = some (.int 32 k))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr (v + stkCountOffset)))
+    (hR : R ≤ 768) (hkle : k.toNat ≤ nestSteps 19 R) :
+    ∃ (env' : Env) (s' : State),
+      denoteCode calls sinkSplitBlock (stateAt env s) = some (stateAt env' s')
+      ∧ ingestCountTie s'.mem v R := by
+  have hk32 : k.toNat < 2 ^ 32 := by
+    have := ingest_limbs_le hR
+    omega
+  refine ⟨_, { s with mem := writeBytes s.mem (v + stkCountOffset) (natToBytes k.toNat 4) },
+    sinkSplit_denote hpre hop hov hn, ?_⟩
+  exact ⟨k.toNat, stkCount_writeCount_bytes s.mem v k.toNat hk32, hkle⟩
+
+/-- **The outer multiply's spill is the power's count.**  `while.end176.i.i`
+writes the group counter `%inc12.us.i.i581758.i.i` at `%v + 0x608`, which is the
+read `stkCount` performs at `v + 776`; the tie is that word within `em`. -/
+theorem powCountTie_of_end176 {calls : Calls} {env : Env} {s : State}
+    {k : BitVec 32} {r : BitVec 64} {v em : Nat}
+    (hk : lookupName env "%inc12.us.i.i581758.i.i" = some (.int 32 k))
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr ((v + 776) + stkCountOffset)))
+    (hr : lookupName env "%sub175.i.i" = some (.int 64 r))
+    (hem : em < 2 ^ 32) (hkle : k.toNat ≤ em) :
+    ∃ (env' : Env) (s' : State),
+      denoteCode calls end176Instrs (stateAt env s) = some (stateAt env' s')
+      ∧ stkBnCountTie s'.mem (v + 776) em := by
+  have hk32 : k.toNat < 2 ^ 32 := Nat.lt_of_le_of_lt hkle hem
+  refine ⟨end176Env env r,
+    { s with mem := writeBytes s.mem ((v + 776) + stkCountOffset) (natToBytes k.toNat 4) },
+    end176_denote hk hn hr, ?_⟩
+  exact ⟨k.toNat, stkCount_writeCount_bytes s.mem (v + 776) k.toNat hk32, hkle⟩
+
+/-- **The sticky peel's merge is the power's count.**  `while.end.i.i` writes the
+counter `%inc12.us.i.i744.i.i` at `%v + 0x608` after the out-of-line multiplies;
+the tie is that word within `em`.  `whileEnd_denote` is the block's chain, and
+`whileEndState` is the state that chain leaves. -/
+theorem powCountTie_of_whileEnd {calls : Calls} {env : Env} {s : State}
+    {inc12 : BitVec 32} {d : BitVec 64} {v em : Nat}
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr ((v + 776) + stkCountOffset)))
+    (hinc : lookupName env "%inc12.us.i.i744.i.i" = some (.int 32 inc12))
+    (hd : lookupName env "%sub158.i.i" = some (.int 64 d))
+    (hem : em < 2 ^ 32) (hle : inc12.toNat ≤ em) :
+    ∃ (env' : Env) (s' : State),
+      denoteCode calls whileEndInstrs (stateAt env s) = some (stateAt env' s')
+      ∧ stkBnCountTie s'.mem (v + 776) em := by
+  refine ⟨whileEndEnv env inc12 d,
+    { s with mem := writeBytes s.mem ((v + 776) + stkCountOffset) (natToBytes inc12.toNat 4) },
+    ?_, ?_⟩
+  · exact whileEnd_denote hn hinc hd
+  · refine ⟨inc12.toNat, ?_, hle⟩
+    exact stkCount_writeCount_bytes s.mem (v + 776) inc12.toNat (Nat.lt_of_le_of_lt hle hem)
+
+/-- **The two count stores leave `fbStkCounts`.**  The ingest's count sits at
+`v + 768`; the staging's two writes at `v + 776` and `v + 1544` are above it, so
+the first survives them, and the second is the power's own cell. -/
+theorem fbStkCounts_of_count_stores (mem : Mem) (v x : Nat) (hx : x ≤ 96) :
+    fbStkCounts
+      (end151Mem (writeBytes mem (v + stkCountOffset) (natToBytes x 4)) v) v := by
+  have hx32 : x < 2 ^ 32 := by
+    have hcap : fbStkCapacity = 96 := rfl
+    omega
+  have h1 : v + stkCountOffset + 4 ≤ v + 1544 := by
+    unfold stkCountOffset; omega
+  have h2 : v + stkCountOffset + 4 ≤ v + 776 := by
+    unfold stkCountOffset; omega
+  have h3 : (v + 776) + stkCountOffset = v + 1544 := by
+    unfold stkCountOffset; omega
+  refine ⟨x, 1, ?_, ?_, hx, by decide⟩
+  · unfold end151Mem
+    rw [stkCount_writeBytes_above _ v (v + 1544) _ h1,
+      stkCount_writeBytes_above _ v (v + 776) _ h2]
+    exact stkCount_writeCount_bytes mem v x hx32
+  · unfold end151Mem
+    rw [← h3]
+    exact stkCount_writeCount_bytes _ (v + 776) 1 (by decide)
+
+/-- **The ingest's exit into the staging, end to end.**  `for.cond.cleanup.i.i`
+writes the significand's count and `if.end151.i.i` the power's one limb and count;
+the two stores are the two blocks' own `denote`s, and after them `fbStkCounts`
+holds.  The only fact left is the limb counter's bound. -/
+theorem fbStkCounts_of_cleanup_end151 {calls : Calls} {env : Env} {s : State}
+    {x : BitVec 32} {c : BitVec 32} {st : BitVec 32} {v R : Nat}
+    (hx : lookupName env "%78" = some (.int 32 x))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr (v + stkCountOffset)))
+    (hc : lookupName env "%cn.1.i.i" = some (.int 32 c))
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hst : lookupName env "%sticky.0714.i.i" = some (.int 32 st))
+    (hR : R ≤ 768) (hxle : x.toNat ≤ nestSteps 19 R) :
+    ∃ (env1 : Env) (s1 : State) (env2 : Env) (s2 : State),
+      denoteCode calls cleanupInstrs (stateAt env s) = some (stateAt env1 s1) ∧
+      denoteCode calls end151Instrs (stateAt env1 s1) = some (stateAt env2 s2) ∧
+      fbStkCounts s2.mem v := by
+  have hxcap : x.toNat ≤ 96 := by
+    have hcap : fbStkCapacity = 96 := rfl
+    have := ingest_limbs_le_capacity hR
+    omega
+  have hv' : lookupName (cleanupEnv env c) "%v.i.i" = some (.ptr v) := by
+    simp only [cleanupEnv]
+    rw [lookupName_cons_ne _ _ (by decide)]
+    exact hv
+  have hst' : lookupName (cleanupEnv env c) "%sticky.0714.i.i" = some (.int 32 st) := by
+    simp only [cleanupEnv]
+    rw [lookupName_cons_ne _ _ (by decide)]
+    exact hst
+  let s1 : State := { s with mem := writeBytes s.mem (v + stkCountOffset) (natToBytes x.toNat 4) }
+  have hclean : denoteCode calls cleanupInstrs (stateAt env s)
+      = some (stateAt (cleanupEnv env c) s1) := cleanup_denote hx hn hc
+  have hend : denoteCode calls end151Instrs (stateAt (cleanupEnv env c) s1)
+      = some (stateAt (end151Env (cleanupEnv env c) v st)
+          { s1 with mem := end151Mem s1.mem v }) := end151_denote_mem hv' hst'
+  exact ⟨cleanupEnv env c, s1, end151Env (cleanupEnv env c) v st,
+    { s1 with mem := end151Mem s1.mem v }, hclean, hend,
+    fbStkCounts_of_count_stores s.mem v x.toNat hxcap⟩
+
 /-! ### Axiom footprints
 
-The add-carry store and the run's step invariant, pinned so the build checks
-them. -/
+The add-carry store, the run's step invariant, and the ties read off the stores'
+own blocks, pinned so the build checks them. -/
 
 /-- info: 'LeanLLVM.Refinement.NumFastProducerCount.stkMulAddAnswer_count' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -970,6 +1209,26 @@ them. -/
 /-- info: 'LeanLLVM.Refinement.NumFastProducerCount.stkMulAddRun_exact' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms stkMulAddRun_exact
+
+/-- info: 'LeanLLVM.Refinement.NumFastProducerCount.powOneCountTie_of_end151' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms powOneCountTie_of_end151
+
+/-- info: 'LeanLLVM.Refinement.NumFastProducerCount.ingestCountTie_of_cleanup' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms ingestCountTie_of_cleanup
+
+/-- info: 'LeanLLVM.Refinement.NumFastProducerCount.fbStkCounts_of_cleanup_end151' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms fbStkCounts_of_cleanup_end151
+
+/-- info: 'LeanLLVM.Refinement.NumFastProducerCount.powCountTie_of_end176' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms powCountTie_of_end176
 
 end NumFastProducerCount
 

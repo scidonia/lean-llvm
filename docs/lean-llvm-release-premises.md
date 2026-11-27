@@ -79,6 +79,21 @@ emitted nests *are* those runs — `mem = (stkMulAddRun base a ws calls).1` with
 it into the epilogue's premise. What *is* proved is the rest of the chain: the
 count word bounds the length, and the length bounds the bytes the copy is given.
 
+The tie's other side is now read off the store's own block rather than off the
+run: `stkCount_writeCount_bytes` (four bytes at `base + 768` read back as the
+count) composed with the block that writes the cell — `cleanup_denote` /
+`sinkSplit_denote` for the ingest, `end151_denote` for the power's `1`,
+`end176_denote` / `whileEnd_denote` for its counts — *is* the tie, so what is
+left at each of them is one `Nat` inequality on the word the block stored, with
+no memory shape carried (`fbStkCounts_of_cleanup_end151` takes `fbStkCounts`
+across the ingest's spill and the staging's two stores from `%78 ≤ nestSteps 19
+R`, and `powOneCountTie_of_end151` needs no bound at all). The remaining
+inequality is the nest's trip count, and the lemmas that would carry it — the
+blocks that append the last limb and bump the count in one step,
+`while.body.us.i520.i.i`, `while.body.us.i.i557.i.i`, `while.body.us.i624.i.i`,
+and the fold's spill `while.end190.i.i` — are the blocks
+`JsonStage2NumFastToDouble`'s header records as not stated yet.
+
 ## Outside the proof: two items
 
 **The artifact transfer.** The fixture and the linked object are not the same
