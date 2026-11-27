@@ -45,11 +45,20 @@ The big multiply's layer is begun (`for.body132.i.i`'s staging edge and the
 chunk loop's back edge, `stk_mul_u64.exit.i.i`'s three sites, `while.end.i.i`)
 and its far end is here: `while.end176.i.i` spills the group count and tests the
 residual, and `end176_run_ladder` carries that edge into the ladder's head as
-the continuation `if.end198.i.i`'s own step leaves.  The block groups between
-the two ends (`for.cond.cleanup.i.i`, `if.then140.i.i` and the four unrolled
-digit-ingest nests), the outer loops after the first rung (`while.body187.i.i`,
-`while.end190.i.i`, `if.end195.i.i`), and the epilogue's blocks
-(`for.cond255.i.i`, `for.end359.i.i`) are not stated here yet.  The peel loop
+the continuation `if.end198.i.i`'s own step leaves.  The spine between the two
+ends is stated below: the loop's residue `for.cond.cleanup.i.i` and
+`if.then148.i.i`, the staging `if.end151.i.i` with its two arms, the three
+exponent routes (`if.then153.i.i`; `if.else164.i.i`, `if.then167.i.i`; and
+`while.cond184.preheader.i.i`) with their rungs' tests and exits
+(`while.body173.i.i` and `stk_mul_u64.exit583.i.i`, `while.body187.i.i` and
+`stk_mul_u64.exit605.i.i`, `while.end190.i.i`, `if.end195.i.i`,
+`while.end176.thread.i.i`), and the four nests' heads, residue joins, unroll
+bounds and peeled exits.  The nests' unrolled bodies (`for.body.i527.i.i`,
+`for.body.i.i544.i.i`, `for.body.i.i566.i.i`, `for.body.i.i588.i.i`,
+`for.body.i.i611.i.i`), the `if.then140.i.i`/`for.body.lr.ph.i.i.i` ingest pair
+with `for.body.lr.ph.i.i525.i.i`, `for.body.lr.ph.i.i542.i.i`,
+`while.body.us.i.i520.i.i`, and the epilogue's blocks (`for.cond255.i.i`,
+`for.end359.i.i`) are not stated here yet.  The peel loop
 (`for.body.i.i`, entered from the peel and re-entered from its latch) is an
 induction here (`peelRunAux`, `peelRun`); the main parse
 loop's traversal (`for.body.outer.i.i` with its latch and dot back edges) and
@@ -6449,6 +6458,3638 @@ theorem end176_run_ladder {calls : Calls} {env : Env} {s : State}
   rw [runFuel_jump_prefix h1]
   rw [runFuel_jump_prefix h2]
 
+/-! ### The chunk multiply's spine between the rungs
+
+The region `while.end176.i.i` is the exit of: the chunk loop
+`for.body132.i.i`/`for.inc143.i.i` and its `cn < 19` ingest nest, then the
+residual test `for.cond.cleanup.i.i`/`if.then148.i.i`, and the staging
+`if.end151.i.i` that sets `%pow.i.i = 1` and `%n.i539.i.i = 1`.  From there the
+multiply is three routes that all meet at `if.end198.i.i`:
+
+* the sticky route `if.then153.i.i` into the peel `while.body.i.i`, whose merge
+  `while.end.i.i` opens the `%92`-count rung `for.body.lr.ph.i.i542.i.i`;
+* the negative-exponent route `if.else164.i.i`/`if.then167.i.i` into
+  `while.body173.i.i`, its nest and `stk_mul_u64.exit583.i.i`, whose `while.end176.i.i`
+  the template already states;
+* the non-negative route `while.cond184.preheader.i.i` into `while.body187.i.i`,
+  its nest and `stk_mul_u64.exit605.i.i`, whose merge `while.end190.i.i` either
+  opens the `%116`-count rung `for.body.lr.ph.i.i608.i.i` or branches to
+  `if.end195.i.i`'s zero store.
+
+Each block below carries its instructions at its own captured pin, the
+environment its chain leaves, and a step for each edge its successor relation
+names.  The four nests' bodies are not restated: the digit-ingest chain's
+arithmetic shapes are `JsonStage2NumFastTier3`'s (`t3_epil_denote` and the
+width-generic `mul`/`add`/`lshr` steps), and this section states the nest heads
+and exits that connect them to the spine.
+
+The `sext` the rung heads need (the `%pow.i.i` index from a 32-bit counter),
+and the literal-valued stores the staging and the zeroing write, were not
+among the file's generic shapes; they are added once, below.
+-/
+
+/-- `%d = sext iN %v to iM`. -/
+theorem step_sext (calls : Calls) (env : Env) (s : State) (d v : String)
+    (wIn wOut : Nat) {x : BitVec wIn}
+    (hv : lookupName env v = some (.int wIn x)) :
+    evalInstr calls (stateAt env s) (.sext d wIn wOut (.reg v)) =
+      some (stateAt ((d, .int wOut (BitVec.ofNat wOut
+        (BitVec.signExtend wOut (BitVec.ofNat wIn x.toNat)).toNat)) :: env) s) := by
+  simp [evalInstr, evalOperand, stateAt, hv, State.bind]
+
+theorem denoteCode_sext (calls : Calls) (env : Env) (s : State) (d v : String)
+    (wIn wOut : Nat) {x : BitVec wIn}
+    (hv : lookupName env v = some (.int wIn x)) (is : List Instr) :
+    denoteCode calls (.sext d wIn wOut (.reg v) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .int wOut (BitVec.ofNat wOut
+        (BitVec.signExtend wOut (BitVec.ofNat wIn x.toNat)).toNat)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _ (step_sext calls env s d v wIn wOut hv)]
+
+/-- A store of a 32-bit immediate. -/
+theorem denoteCode_store32_imm (calls : Calls) (env : Env) (s : State)
+    (x : BitVec 32) (p : String) {a : Nat}
+    (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store (.int 32) (.imm (.int 32 x)) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is
+        (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
+  have hs : storeValue (stateAt env s) (.int 32) (.int 32 x) a
+      = some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
+    simp [storeValue, stateAt, show (32 + 7) / 8 = 4 from rfl]
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [JsonS1MasksIR.evalInstr_store (s := stateAt env s)
+      (vv := .int 32 x) (a := a)
+      (s' := stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) })
+      (hv := evalOperand_lit_of (stateAt env s) 32 x)
+      (hp := evalOperand_reg_of env s p (.ptr a) hp) (hs := hs)])]
+
+/-- A store of a 64-bit immediate. -/
+theorem denoteCode_store64_imm (calls : Calls) (env : Env) (s : State)
+    (x : BitVec 64) (p : String) {a : Nat}
+    (hp : lookupName env p = some (.ptr a)) (is : List Instr) :
+    denoteCode calls (.store (.int 64) (.imm (.int 64 x)) (.reg p) :: is) (stateAt env s) =
+      denoteCode calls is
+        (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) }) := by
+  have hs : storeValue (stateAt env s) (.int 64) (.int 64 x) a
+      = some (stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) }) := by
+    simp [storeValue, stateAt, show (64 + 7) / 8 = 8 from rfl]
+  rw [denoteCode_cons_of _ _ _ _ _ (by
+    rw [JsonS1MasksIR.evalInstr_store (s := stateAt env s)
+      (vv := .int 64 x) (a := a)
+      (s' := stateAt env { s with mem := writeBytes s.mem a (natToBytes x.toNat 8) })
+      (hv := evalOperand_lit_of (stateAt env s) 64 x)
+      (hp := evalOperand_reg_of env s p (.ptr a) hp) (hs := hs)])]
+
+/-- `%d = getelementptr i8, ptr @sym, i64 %off`: the global base's form of the
+table read, at an index below `2 ^ 63`. -/
+theorem step_gep8_global_reg (calls : Calls) (env : Env) (s : State)
+    (d sym off : String) {a : Nat} {idx : BitVec 64}
+    (hb : lookupName env sym = some (.ptr a))
+    (ho : lookupName env off = some (.int 64 idx))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63) :
+    evalInstr calls (stateAt env s) (.gep d (.int 8) (.global sym) (.reg off)) =
+      some (stateAt ((d, .ptr (a + (idx.signExtend 64).toNat)) :: env) s) := by
+  have hb' : evalOperand (stateAt env s) (.global sym) = some (.ptr a) := by
+    simp only [evalOperand, stateAt, hb]
+  have h := evalInstr_gep (calls := calls) (s := stateAt env s) (d := d)
+    (elemTy := .int 8) (base := (.global sym)) (off := (.reg off)) (a := a)
+    (w := 64) (n := idx) hb'
+    (evalOperand_reg_of env s off (.int 64 idx) ho) hpos
+  simpa only [show (Ty.int 8).sizeBytes = 1 from by decide, Nat.mul_one, stateAt,
+    State.bind] using h
+
+theorem denoteCode_gep8_global_reg (calls : Calls) (env : Env) (s : State)
+    (d sym off : String) {a : Nat} {idx : BitVec 64}
+    (hb : lookupName env sym = some (.ptr a))
+    (ho : lookupName env off = some (.int 64 idx))
+    (hpos : (idx.signExtend 64).toNat < 2 ^ 63) (is : List Instr) :
+    denoteCode calls (.gep d (.int 8) (.global sym) (.reg off) :: is) (stateAt env s) =
+      denoteCode calls is (stateAt ((d, .ptr (a + (idx.signExtend 64).toNat)) :: env) s) := by
+  rw [denoteCode_cons_of _ _ _ _ _
+    (step_gep8_global_reg calls env s d sym off hb ho hpos)]
+
+/-! #### The chunk loop's exit: `for.cond.cleanup.i.i` and `if.then148.i.i` -/
+
+/-- The count's spill at `%n.i.i.i` and the empty-count test. -/
+def cleanupInstrs : List Instr :=
+  [Instr.store (Ty.int 32) (Operand.reg "%78") (Operand.reg "%n.i.i.i"),
+   Instr.icmp "%tobool147.not.i.i" (IPred.eq) 32 (Operand.reg "%cn.1.i.i")
+     (Operand.imm (Const.int 32 0x00000000#32))]
+
+theorem cleanup_find :
+    numFastBody.findBlock "for.cond.cleanup.i.i" =
+      some ⟨"for.cond.cleanup.i.i", cleanupInstrs,
+        Term.condbr (Operand.reg "%tobool147.not.i.i") "if.end151.i.i"
+          "if.then148.i.i"⟩ := by
+  simpa only [cleanupInstrs] using numFast_findBlock_for_cond_cleanup_i_i
+
+/-- The environment the block leaves: the empty-count test in front of the
+incoming cells. -/
+def cleanupEnv (env : Env) (c : BitVec 32) : Env :=
+  ("%tobool147.not.i.i", .int 1 (evalICmp .eq c 0x00000000#32)) :: env
+
+theorem cleanup_denote {calls : Calls} {env : Env} {s : State}
+    {x : BitVec 32} {a : Nat} {c : BitVec 32}
+    (hx : lookupName env "%78" = some (.int 32 x))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr a))
+    (hc : lookupName env "%cn.1.i.i" = some (.int 32 c)) :
+    denoteCode calls cleanupInstrs (stateAt env s) =
+      some (stateAt (cleanupEnv env c)
+        { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }) := by
+  unfold cleanupInstrs
+  rw [denoteCode_store32 calls env s "%78" "%n.i.i.i" hx hn]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls env
+    { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) }
+    "%tobool147.not.i.i" "%cn.1.i.i" .eq hc]
+  simp only [denoteCode_nil, cleanupEnv, stateAt]
+
+/-- **The cleanup's step: no digits.** -/
+theorem cleanup_step_end {calls : Calls} {env : Env} {s : State}
+    {x : BitVec 32} {a : Nat} {c : BitVec 32}
+    (hpc : s.pc = "for.cond.cleanup.i.i")
+    (hx : lookupName env "%78" = some (.int 32 x))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr a))
+    (hc : lookupName env "%cn.1.i.i" = some (.int 32 c))
+    (hbit : evalICmp .eq c 0x00000000#32 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (cleanupEnv env c)
+        { s with mem := writeBytes s.mem a (natToBytes x.toNat 4),
+                 pc := "if.end151.i.i", pre := some "for.cond.cleanup.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (cleanupEnv env c)
+      { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) })
+    (b := ⟨"for.cond.cleanup.i.i", cleanupInstrs,
+      Term.condbr (Operand.reg "%tobool147.not.i.i") "if.end151.i.i"
+        "if.then148.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using cleanup_find
+  · simpa only [stateAt] using cleanup_denote hx hn hc
+  · rw [numFast_execTerm_condbr_one (s := stateAt (cleanupEnv env c)
+        { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) })
+      "%tobool147.not.i.i" "if.end151.i.i" "if.then148.i.i"
+      (by simp [cleanupEnv, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- **The cleanup's step: a residual count.** -/
+theorem cleanup_step_residue {calls : Calls} {env : Env} {s : State}
+    {x : BitVec 32} {a : Nat} {c : BitVec 32}
+    (hpc : s.pc = "for.cond.cleanup.i.i")
+    (hx : lookupName env "%78" = some (.int 32 x))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr a))
+    (hc : lookupName env "%cn.1.i.i" = some (.int 32 c))
+    (hbit : evalICmp .eq c 0x00000000#32 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (cleanupEnv env c)
+        { s with mem := writeBytes s.mem a (natToBytes x.toNat 4),
+                 pc := "if.then148.i.i", pre := some "for.cond.cleanup.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (cleanupEnv env c)
+      { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) })
+    (b := ⟨"for.cond.cleanup.i.i", cleanupInstrs,
+      Term.condbr (Operand.reg "%tobool147.not.i.i") "if.end151.i.i"
+        "if.then148.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using cleanup_find
+  · simpa only [stateAt] using cleanup_denote hx hn hc
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (cleanupEnv env c)
+        { s with mem := writeBytes s.mem a (natToBytes x.toNat 4) })
+      "%tobool147.not.i.i" "if.end151.i.i" "if.then148.i.i"
+      (by simp [cleanupEnv, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The residual count's chunk widen and its nonzero test. -/
+def then148Instrs : List Instr :=
+  [Instr.zext "%conv.i514.i.i" 64 128 (Operand.reg "%chunk.1.i.i"),
+   Instr.icmp "%cmp28.i516.i.i" (IPred.sgt) 32 (Operand.reg "%78")
+     (Operand.imm (Const.int 32 0x00000000#32))]
+
+theorem then148_find :
+    numFastBody.findBlock "if.then148.i.i" =
+      some ⟨"if.then148.i.i", then148Instrs,
+        Term.condbr (Operand.reg "%cmp28.i516.i.i") "for.body.lr.ph.i525.i.i"
+          "while.cond.preheader.i517.i.i"⟩ := by
+  simpa only [then148Instrs] using numFast_findBlock_if_then148_i_i
+
+/-- The environment the block leaves: the widen and the count's test. -/
+def then148Env (env : Env) (c : BitVec 32) (chunk : BitVec 64) : Env :=
+  ("%cmp28.i516.i.i", .int 1 (evalICmp .sgt c 0x00000000#32)) ::
+  ("%conv.i514.i.i", .int 128 (BitVec.ofNat 128 chunk.toNat)) :: env
+
+theorem then148_denote {calls : Calls} {env : Env} {s : State}
+    {c : BitVec 32} {chunk : BitVec 64}
+    (hc : lookupName env "%78" = some (.int 32 c))
+    (hchunk : lookupName env "%chunk.1.i.i" = some (.int 64 chunk)) :
+    denoteCode calls then148Instrs (stateAt env s) =
+      some (stateAt (then148Env env c chunk) s) := by
+  unfold then148Instrs
+  rw [denoteCode_zext calls env s "%conv.i514.i.i" "%chunk.1.i.i" 64 128 hchunk]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%conv.i514.i.i", .int 128 (BitVec.ofNat 128 chunk.toNat)) :: env) s
+    "%cmp28.i516.i.i" "%78" .sgt
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact hc)]
+  simp only [denoteCode_nil, then148Env, stateAt]
+
+/-- **The residue's step into the `%cn`-count rung.** -/
+theorem then148_step_nest {calls : Calls} {env : Env} {s : State}
+    {c : BitVec 32} {chunk : BitVec 64}
+    (hpc : s.pc = "if.then148.i.i")
+    (hc : lookupName env "%78" = some (.int 32 c))
+    (hchunk : lookupName env "%chunk.1.i.i" = some (.int 64 chunk))
+    (hbit : evalICmp .sgt c 0x00000000#32 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (then148Env env c chunk)
+        { s with pc := "for.body.lr.ph.i525.i.i", pre := some "if.then148.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (then148Env env c chunk) s)
+    (b := ⟨"if.then148.i.i", then148Instrs,
+      Term.condbr (Operand.reg "%cmp28.i516.i.i") "for.body.lr.ph.i525.i.i"
+        "while.cond.preheader.i517.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using then148_find
+  · simpa only [stateAt] using then148_denote hc hchunk
+  · rw [numFast_execTerm_condbr_one (s := stateAt (then148Env env c chunk) s)
+      "%cmp28.i516.i.i" "for.body.lr.ph.i525.i.i" "while.cond.preheader.i517.i.i"
+      (by simp [then148Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- **The residue's step past the rung: the chunk is zero.** -/
+theorem then148_step_carry {calls : Calls} {env : Env} {s : State}
+    {c : BitVec 32} {chunk : BitVec 64}
+    (hpc : s.pc = "if.then148.i.i")
+    (hc : lookupName env "%78" = some (.int 32 c))
+    (hchunk : lookupName env "%chunk.1.i.i" = some (.int 64 chunk))
+    (hbit : evalICmp .sgt c 0x00000000#32 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (then148Env env c chunk)
+        { s with pc := "while.cond.preheader.i517.i.i", pre := some "if.then148.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (then148Env env c chunk) s)
+    (b := ⟨"if.then148.i.i", then148Instrs,
+      Term.condbr (Operand.reg "%cmp28.i516.i.i") "for.body.lr.ph.i525.i.i"
+        "while.cond.preheader.i517.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using then148_find
+  · simpa only [stateAt] using then148_denote hc hchunk
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (then148Env env c chunk) s)
+      "%cmp28.i516.i.i" "for.body.lr.ph.i525.i.i" "while.cond.preheader.i517.i.i"
+      (by simp [then148Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-! #### The staging: `if.end151.i.i.sink.split` and `if.end151.i.i` -/
+
+/-- The rung's counter spill: the `phi` and `store i32`. -/
+def sinkSplitSpecs : List PhiSpec :=
+  [{ dst := "%inc12.us.i522.i.i.sink", ty := Ty.int 32,
+     incoming := [("while.body.us.i520.i.i", (Operand.reg "%inc12.us.i522.i.i")),
+                  ("if.end126.i.i", (Operand.imm (Const.int 32 0x00000000#32)))] }]
+
+def sinkSplitInstrs : List Instr :=
+  [Instr.store (Ty.int 32) (Operand.reg "%inc12.us.i522.i.i.sink")
+     (Operand.reg "%n.i.i.i")]
+
+def sinkSplitBlock : List Instr := sinkSplitSpecs.map PhiSpec.instr ++ sinkSplitInstrs
+
+theorem sinkSplit_find :
+    numFastBody.findBlock "if.end151.i.i.sink.split" =
+      some ⟨"if.end151.i.i.sink.split", sinkSplitBlock, Term.br "if.end151.i.i"⟩ := by
+  simp only [sinkSplitBlock, sinkSplitInstrs, sinkSplitSpecs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_if_end151_i_i_sink_split
+
+theorem sinkSplit_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op : Operand} {k : BitVec 32} {a : Nat}
+    (hpre : s.pre = some pre)
+    (hop : phiIncoming pre
+      [("while.body.us.i520.i.i", (Operand.reg "%inc12.us.i522.i.i")),
+       ("if.end126.i.i", (Operand.imm (Const.int 32 0x00000000#32)))] = some op)
+    (hov : evalOperand (stateAt env s) op = some (.int 32 k))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr a)) :
+    denoteCode calls sinkSplitBlock (stateAt env s) =
+      some (stateAt (("%inc12.us.i522.i.i.sink", .int 32 k) :: env)
+        { s with mem := writeBytes s.mem a (natToBytes k.toNat 4) }) := by
+  have hsel : PhiSelects (stateAt env s) pre sinkSplitSpecs
+      [("%inc12.us.i522.i.i.sink", .int 32 k)] := by
+    simp only [sinkSplitSpecs]
+    constructor
+    · exact hop
+    · exact hov
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := sinkSplitSpecs) (vs := [("%inc12.us.i522.i.i.sink", .int 32 k)])
+    (rest := sinkSplitInstrs) hpre hsel (by decide)
+  unfold sinkSplitBlock
+  rw [h]
+  simp only [runCells]
+  unfold sinkSplitInstrs
+  rw [denoteCode_store32 calls (("%inc12.us.i522.i.i.sink", .int 32 k) :: env) s
+    "%inc12.us.i522.i.i.sink" "%n.i.i.i" (lookupName_cons_self ..) hn]
+  simp only [denoteCode_nil, stateAt]
+
+/-- **The spill's step into the staging.** -/
+theorem sinkSplit_step {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op : Operand} {k : BitVec 32} {a : Nat}
+    (hpc : s.pc = "if.end151.i.i.sink.split") (hpre : s.pre = some pre)
+    (hop : phiIncoming pre
+      [("while.body.us.i520.i.i", (Operand.reg "%inc12.us.i522.i.i")),
+       ("if.end126.i.i", (Operand.imm (Const.int 32 0x00000000#32)))] = some op)
+    (hov : evalOperand (stateAt env s) op = some (.int 32 k))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr a)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (("%inc12.us.i522.i.i.sink", .int 32 k) :: env)
+        { s with mem := writeBytes s.mem a (natToBytes k.toNat 4),
+                 pc := "if.end151.i.i", pre := some "if.end151.i.i.sink.split" }) := by
+  refine numFast_step_at (s' := stateAt (("%inc12.us.i522.i.i.sink", .int 32 k) :: env)
+      { s with mem := writeBytes s.mem a (natToBytes k.toNat 4) })
+    (b := ⟨"if.end151.i.i.sink.split", sinkSplitBlock, Term.br "if.end151.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using sinkSplit_find
+  · simpa only [stateAt] using sinkSplit_denote hpre hop hov hn
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The two staging stores and the sticky test. -/
+def end151Instrs : List Instr :=
+  [Instr.gep "%pow.i.i" (Ty.int 8) (Operand.reg "%v.i.i")
+     (Operand.imm (Const.int 64 0x0000000000000308#64)),
+   Instr.store (Ty.int 64) (Operand.imm (Const.int 64 0x0000000000000001#64))
+     (Operand.reg "%pow.i.i"),
+   Instr.gep "%n.i539.i.i" (Ty.int 8) (Operand.reg "%v.i.i")
+     (Operand.imm (Const.int 64 0x0000000000000608#64)),
+   Instr.store (Ty.int 32) (Operand.imm (Const.int 32 0x00000001#32))
+     (Operand.reg "%n.i539.i.i"),
+   Instr.icmp "%tobool152.not.i.i" (IPred.eq) 32 (Operand.reg "%sticky.0714.i.i")
+     (Operand.imm (Const.int 32 0x00000000#32))]
+
+theorem end151_find :
+    numFastBody.findBlock "if.end151.i.i" =
+      some ⟨"if.end151.i.i", end151Instrs,
+        Term.condbr (Operand.reg "%tobool152.not.i.i") "if.else164.i.i"
+          "if.then153.i.i"⟩ := by
+  simpa only [end151Instrs] using numFast_findBlock_if_end151_i_i
+
+/-- The staging's environment: the power and count pointers, and the sticky
+test. -/
+def end151Env (env : Env) (v : Nat) (st : BitVec 32) : Env :=
+  ("%tobool152.not.i.i", .int 1 (evalICmp .eq st 0x00000000#32)) ::
+  ("%n.i539.i.i", .ptr (v + ((0x0000000000000608#64).signExtend 64).toNat)) ::
+  ("%pow.i.i", .ptr (v + ((0x0000000000000308#64).signExtend 64).toNat)) :: env
+
+theorem end151_denote {calls : Calls} {env : Env} {s : State}
+    {v : Nat} {st : BitVec 32}
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hst : lookupName env "%sticky.0714.i.i" = some (.int 32 st)) :
+    denoteCode calls end151Instrs (stateAt env s) =
+      some (stateAt (end151Env env v st)
+        { s with
+            mem := writeBytes (writeBytes s.mem
+              (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8))
+              (v + ((0x0000000000000608#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#32).toNat 4) }) := by
+  unfold end151Instrs
+  rw [JsonScanLane.denoteCode_gep8_lit_w calls env s "%pow.i.i" "%v.i.i" hv (by decide)]
+  rw [denoteCode_store64_imm calls
+    (("%pow.i.i", .ptr (v + ((0x0000000000000308#64).signExtend 64).toNat)) :: env) s
+    0x0000000000000001#64 "%pow.i.i" (lookupName_cons_self ..)]
+  rw [JsonScanLane.denoteCode_gep8_lit_w calls (("%pow.i.i",
+      .ptr (v + ((0x0000000000000308#64).signExtend 64).toNat)) :: env)
+    { s with
+        mem := writeBytes s.mem
+          (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8) }
+    "%n.i539.i.i" "%v.i.i" (by rw [lookupName_cons_ne _ _ (by decide)]; exact hv)
+    (by decide)]
+  rw [denoteCode_store32_imm calls (("%n.i539.i.i",
+      .ptr (v + ((0x0000000000000608#64).signExtend 64).toNat)) ::
+      ("%pow.i.i", .ptr (v + ((0x0000000000000308#64).signExtend 64).toNat)) :: env)
+    { s with
+        mem := writeBytes s.mem
+          (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8) }
+    0x00000001#32 "%n.i539.i.i" (lookupName_cons_self ..)]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%n.i539.i.i", .ptr (v + ((0x0000000000000608#64).signExtend 64).toNat)) ::
+      ("%pow.i.i", .ptr (v + ((0x0000000000000308#64).signExtend 64).toNat)) :: env)
+    { s with
+        mem := writeBytes (writeBytes s.mem
+          (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8))
+          (v + ((0x0000000000000608#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#32).toNat 4) }
+    "%tobool152.not.i.i" "%sticky.0714.i.i" .eq
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hst)]
+  simp only [denoteCode_nil, end151Env, stateAt]
+
+/-- **The staging's step into the negative-exponent branch.** -/
+theorem end151_step_else {calls : Calls} {env : Env} {s : State}
+    {v : Nat} {st : BitVec 32}
+    (hpc : s.pc = "if.end151.i.i")
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hst : lookupName env "%sticky.0714.i.i" = some (.int 32 st))
+    (hbit : evalICmp .eq st 0x00000000#32 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (end151Env env v st)
+        { s with pc := "if.else164.i.i", pre := some "if.end151.i.i",
+                 mem := writeBytes (writeBytes s.mem
+                   (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8))
+                   (v + ((0x0000000000000608#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#32).toNat 4) }) := by
+  refine numFast_step_at (s' := stateAt (end151Env env v st)
+      { s with
+          mem := writeBytes (writeBytes s.mem
+            (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8))
+            (v + ((0x0000000000000608#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#32).toNat 4) })
+    (b := ⟨"if.end151.i.i", end151Instrs,
+      Term.condbr (Operand.reg "%tobool152.not.i.i") "if.else164.i.i"
+        "if.then153.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end151_find
+  · simpa only [stateAt] using end151_denote hv hst
+  · rw [numFast_execTerm_condbr_one (s := stateAt (end151Env env v st)
+        { s with
+            mem := writeBytes (writeBytes s.mem
+              (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8))
+              (v + ((0x0000000000000608#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#32).toNat 4) })
+      "%tobool152.not.i.i" "if.else164.i.i" "if.then153.i.i"
+      (by simp only [end151Env, stateAt]; exact lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-- **The staging's step into the sticky branch.** -/
+theorem end151_step_then {calls : Calls} {env : Env} {s : State}
+    {v : Nat} {st : BitVec 32}
+    (hpc : s.pc = "if.end151.i.i")
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hst : lookupName env "%sticky.0714.i.i" = some (.int 32 st))
+    (hbit : evalICmp .eq st 0x00000000#32 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (end151Env env v st)
+        { s with pc := "if.then153.i.i", pre := some "if.end151.i.i",
+                 mem := writeBytes (writeBytes s.mem
+                   (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8))
+                   (v + ((0x0000000000000608#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#32).toNat 4) }) := by
+  refine numFast_step_at (s' := stateAt (end151Env env v st)
+      { s with
+          mem := writeBytes (writeBytes s.mem
+            (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8))
+            (v + ((0x0000000000000608#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#32).toNat 4) })
+    (b := ⟨"if.end151.i.i", end151Instrs,
+      Term.condbr (Operand.reg "%tobool152.not.i.i") "if.else164.i.i"
+        "if.then153.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end151_find
+  · simpa only [stateAt] using end151_denote hv hst
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (end151Env env v st)
+        { s with
+            mem := writeBytes (writeBytes s.mem
+              (v + ((0x0000000000000308#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#64).toNat 8))
+              (v + ((0x0000000000000608#64).signExtend 64).toNat) (natToBytes (0x0000000000000001#32).toNat 4) })
+      "%tobool152.not.i.i" "if.else164.i.i" "if.then153.i.i"
+      (by simp only [end151Env, stateAt]; exact lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-! #### The three routes: `if.then153.i.i`, `if.else164.i.i`, `if.then167.i.i` -/
+
+/-- The sticky route's negated exponent and its `> 26` test. -/
+def then153Instrs : List Instr :=
+  [Instr.binop "%sub154.i.i" (BinOp.sub) 64
+     (Operand.imm (Const.int 64 0x0000000000000000#64)) (Operand.reg "%add108.i.i"),
+   Instr.icmp "%cmp155746.i.i" (IPred.sgt) 64 (Operand.reg "%sub154.i.i")
+     (Operand.imm (Const.int 64 0x000000000000001a#64))]
+
+theorem then153_find :
+    numFastBody.findBlock "if.then153.i.i" =
+      some ⟨"if.then153.i.i", then153Instrs,
+        Term.condbr (Operand.reg "%cmp155746.i.i") "while.body.i.i"
+          "while.end.thread.i.i"⟩ := by
+  simpa only [then153Instrs] using numFast_findBlock_if_then153_i_i
+
+def then153Env (env : Env) (a : BitVec 64) : Env :=
+  ("%cmp155746.i.i", .int 1 (evalICmp .sgt (0x0000000000000000#64 - a)
+    0x000000000000001a#64)) ::
+  ("%sub154.i.i", .int 64 (0x0000000000000000#64 - a)) :: env
+
+theorem then153_denote {calls : Calls} {env : Env} {s : State}
+    {a : BitVec 64} (ha : lookupName env "%add108.i.i" = some (.int 64 a)) :
+    denoteCode calls then153Instrs (stateAt env s) =
+      some (stateAt (then153Env env a) s) := by
+  unfold then153Instrs
+  rw [denoteCode_sub_lit calls env s "%sub154.i.i" "%add108.i.i" ha]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%sub154.i.i", .int 64 (0x0000000000000000#64 - a)) :: env) s
+    "%cmp155746.i.i" "%sub154.i.i" .sgt (lookupName_cons_self ..)]
+  simp only [denoteCode_nil, then153Env, stateAt]
+
+theorem then153_step_peel {calls : Calls} {env : Env} {s : State}
+    {a : BitVec 64} (hpc : s.pc = "if.then153.i.i")
+    (ha : lookupName env "%add108.i.i" = some (.int 64 a))
+    (hbit : evalICmp .sgt (0x0000000000000000#64 - a) 0x000000000000001a#64
+      = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (then153Env env a)
+        { s with pc := "while.body.i.i", pre := some "if.then153.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (then153Env env a) s)
+    (b := ⟨"if.then153.i.i", then153Instrs,
+      Term.condbr (Operand.reg "%cmp155746.i.i") "while.body.i.i"
+        "while.end.thread.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using then153_find
+  · simpa only [stateAt] using then153_denote ha
+  · rw [numFast_execTerm_condbr_one (s := stateAt (then153Env env a) s)
+      "%cmp155746.i.i" "while.body.i.i" "while.end.thread.i.i"
+      (by simp [then153Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem then153_step_thread {calls : Calls} {env : Env} {s : State}
+    {a : BitVec 64} (hpc : s.pc = "if.then153.i.i")
+    (ha : lookupName env "%add108.i.i" = some (.int 64 a))
+    (hbit : evalICmp .sgt (0x0000000000000000#64 - a) 0x000000000000001a#64
+      = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (then153Env env a)
+        { s with pc := "while.end.thread.i.i", pre := some "if.then153.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (then153Env env a) s)
+    (b := ⟨"if.then153.i.i", then153Instrs,
+      Term.condbr (Operand.reg "%cmp155746.i.i") "while.body.i.i"
+        "while.end.thread.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using then153_find
+  · simpa only [stateAt] using then153_denote ha
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (then153Env env a) s)
+      "%cmp155746.i.i" "while.body.i.i" "while.end.thread.i.i"
+      (by simp [then153Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The staging's else branch: the exponent's sign test. -/
+def else164Instrs : List Instr :=
+  [Instr.icmp "%cmp165.i.i" (IPred.slt) 64 (Operand.reg "%add108.i.i")
+     (Operand.imm (Const.int 64 0x0000000000000000#64))]
+
+theorem else164_find :
+    numFastBody.findBlock "if.else164.i.i" =
+      some ⟨"if.else164.i.i", else164Instrs,
+        Term.condbr (Operand.reg "%cmp165.i.i") "if.then167.i.i"
+          "while.cond184.preheader.i.i"⟩ := by
+  simpa only [else164Instrs] using numFast_findBlock_if_else164_i_i
+
+def else164Env (env : Env) (a : BitVec 64) : Env :=
+  ("%cmp165.i.i", .int 1 (evalICmp .slt a 0x0000000000000000#64)) :: env
+
+theorem else164_denote {calls : Calls} {env : Env} {s : State}
+    {a : BitVec 64} (ha : lookupName env "%add108.i.i" = some (.int 64 a)) :
+    denoteCode calls else164Instrs (stateAt env s) =
+      some (stateAt (else164Env env a) s) := by
+  unfold else164Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls env s "%cmp165.i.i" "%add108.i.i" .slt ha]
+  simp only [denoteCode_nil, else164Env, stateAt]
+
+theorem else164_step_negative {calls : Calls} {env : Env} {s : State}
+    {a : BitVec 64} (hpc : s.pc = "if.else164.i.i")
+    (ha : lookupName env "%add108.i.i" = some (.int 64 a))
+    (hbit : evalICmp .slt a 0x0000000000000000#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (else164Env env a)
+        { s with pc := "if.then167.i.i", pre := some "if.else164.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (else164Env env a) s)
+    (b := ⟨"if.else164.i.i", else164Instrs,
+      Term.condbr (Operand.reg "%cmp165.i.i") "if.then167.i.i"
+        "while.cond184.preheader.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using else164_find
+  · simpa only [stateAt] using else164_denote ha
+  · rw [numFast_execTerm_condbr_one (s := stateAt (else164Env env a) s)
+      "%cmp165.i.i" "if.then167.i.i" "while.cond184.preheader.i.i"
+      (by simp [else164Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem else164_step_positive {calls : Calls} {env : Env} {s : State}
+    {a : BitVec 64} (hpc : s.pc = "if.else164.i.i")
+    (ha : lookupName env "%add108.i.i" = some (.int 64 a))
+    (hbit : evalICmp .slt a 0x0000000000000000#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (else164Env env a)
+        { s with pc := "while.cond184.preheader.i.i", pre := some "if.else164.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (else164Env env a) s)
+    (b := ⟨"if.else164.i.i", else164Instrs,
+      Term.condbr (Operand.reg "%cmp165.i.i") "if.then167.i.i"
+        "while.cond184.preheader.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using else164_find
+  · simpa only [stateAt] using else164_denote ha
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (else164Env env a) s)
+      "%cmp165.i.i" "if.then167.i.i" "while.cond184.preheader.i.i"
+      (by simp [else164Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The negative route's negated exponent and its `> 18` test. -/
+def then167Instrs : List Instr :=
+  [Instr.binop "%sub169.i.i" (BinOp.sub) 64
+     (Operand.imm (Const.int 64 0x0000000000000000#64)) (Operand.reg "%add108.i.i"),
+   Instr.icmp "%cmp171760.i.i" (IPred.sgt) 64 (Operand.reg "%sub169.i.i")
+     (Operand.imm (Const.int 64 0x0000000000000012#64))]
+
+theorem then167_find :
+    numFastBody.findBlock "if.then167.i.i" =
+      some ⟨"if.then167.i.i", then167Instrs,
+        Term.condbr (Operand.reg "%cmp171760.i.i") "while.body173.i.i"
+          "while.end176.thread.i.i"⟩ := by
+  simpa only [then167Instrs] using numFast_findBlock_if_then167_i_i
+
+def then167Env (env : Env) (a : BitVec 64) : Env :=
+  ("%cmp171760.i.i", .int 1 (evalICmp .sgt (0x0000000000000000#64 - a)
+    0x0000000000000012#64)) ::
+  ("%sub169.i.i", .int 64 (0x0000000000000000#64 - a)) :: env
+
+theorem then167_denote {calls : Calls} {env : Env} {s : State}
+    {a : BitVec 64} (ha : lookupName env "%add108.i.i" = some (.int 64 a)) :
+    denoteCode calls then167Instrs (stateAt env s) =
+      some (stateAt (then167Env env a) s) := by
+  unfold then167Instrs
+  rw [denoteCode_sub_lit calls env s "%sub169.i.i" "%add108.i.i" ha]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%sub169.i.i", .int 64 (0x0000000000000000#64 - a)) :: env) s
+    "%cmp171760.i.i" "%sub169.i.i" .sgt (lookupName_cons_self ..)]
+  simp only [denoteCode_nil, then167Env, stateAt]
+
+theorem then167_step_body {calls : Calls} {env : Env} {s : State}
+    {a : BitVec 64} (hpc : s.pc = "if.then167.i.i")
+    (ha : lookupName env "%add108.i.i" = some (.int 64 a))
+    (hbit : evalICmp .sgt (0x0000000000000000#64 - a) 0x0000000000000012#64
+      = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (then167Env env a)
+        { s with pc := "while.body173.i.i", pre := some "if.then167.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (then167Env env a) s)
+    (b := ⟨"if.then167.i.i", then167Instrs,
+      Term.condbr (Operand.reg "%cmp171760.i.i") "while.body173.i.i"
+        "while.end176.thread.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using then167_find
+  · simpa only [stateAt] using then167_denote ha
+  · rw [numFast_execTerm_condbr_one (s := stateAt (then167Env env a) s)
+      "%cmp171760.i.i" "while.body173.i.i" "while.end176.thread.i.i"
+      (by simp [then167Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem then167_step_thread {calls : Calls} {env : Env} {s : State}
+    {a : BitVec 64} (hpc : s.pc = "if.then167.i.i")
+    (ha : lookupName env "%add108.i.i" = some (.int 64 a))
+    (hbit : evalICmp .sgt (0x0000000000000000#64 - a) 0x0000000000000012#64
+      = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (then167Env env a)
+        { s with pc := "while.end176.thread.i.i", pre := some "if.then167.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (then167Env env a) s)
+    (b := ⟨"if.then167.i.i", then167Instrs,
+      Term.condbr (Operand.reg "%cmp171760.i.i") "while.body173.i.i"
+        "while.end176.thread.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using then167_find
+  · simpa only [stateAt] using then167_denote ha
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (then167Env env a) s)
+      "%cmp171760.i.i" "while.body173.i.i" "while.end176.thread.i.i"
+      (by simp [then167Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The negative route's fallback: the count's `1` store, then `if.then178.i.i`. -/
+def end176ThreadInstrs : List Instr :=
+  [Instr.store (Ty.int 32) (Operand.imm (Const.int 32 0x00000001#32))
+     (Operand.reg "%n.i539.i.i")]
+
+theorem end176Thread_find :
+    numFastBody.findBlock "while.end176.thread.i.i" =
+      some ⟨"while.end176.thread.i.i", end176ThreadInstrs,
+        Term.br "if.then178.i.i"⟩ := by
+  simpa only [end176ThreadInstrs] using numFast_findBlock_while_end176_thread_i_i
+
+theorem end176Thread_denote {calls : Calls} {env : Env} {s : State} {n : Nat}
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr n)) :
+    denoteCode calls end176ThreadInstrs (stateAt env s) =
+      some (stateAt env
+        { s with mem := writeBytes s.mem n (natToBytes (0x00000001#32).toNat 4) }) := by
+  unfold end176ThreadInstrs
+  rw [denoteCode_store32_imm calls env s 0x00000001#32 "%n.i539.i.i" hn]
+  simp only [denoteCode_nil, stateAt]
+
+theorem end176Thread_step {calls : Calls} {env : Env} {s : State} {n : Nat}
+    (hpc : s.pc = "while.end176.thread.i.i")
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr n)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt env
+        { s with mem := writeBytes s.mem n (natToBytes (0x00000001#32).toNat 4),
+                 pc := "if.then178.i.i", pre := some "while.end176.thread.i.i" }) := by
+  refine numFast_step_at (s' := stateAt env
+      { s with mem := writeBytes s.mem n (natToBytes (0x00000001#32).toNat 4) })
+    (b := ⟨"while.end176.thread.i.i", end176ThreadInstrs, Term.br "if.then178.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end176Thread_find
+  · simpa only [stateAt] using end176Thread_denote hn
+  · simp only [execTerm, stateAt, hpc]
+
+/-! #### The negative route's loop: `while.body173.i.i` and its exit
+
+The block is the rung's test: the two `phi`s carry the residual index and the
+group count from `if.then167.i.i` and from the rung's own exit
+`stk_mul_u64.exit583.i.i`, and the `> 0` test decides between the digit-ingest
+nest and that exit. (`stk_mul_u64.exit583.i.i` is `JsonStage2NumFastTier3PeelTie`'s
+`t3TieExit`, whose two steps this block's two edges meet.)
+-/
+
+def body173Specs : List PhiSpec :=
+  [{ dst := "%k168.0762.i.i", ty := Ty.int 64,
+     incoming := [("stk_mul_u64.exit583.i.i", (Operand.reg "%sub175.i.i")),
+                  ("if.then167.i.i", (Operand.reg "%sub169.i.i"))] },
+   { dst := "%inc12.us.i.i581759761.i.i", ty := Ty.int 32,
+     incoming := [("stk_mul_u64.exit583.i.i", (Operand.reg "%inc12.us.i.i581758.i.i")),
+                  ("if.then167.i.i", (Operand.imm (Const.int 32 0x00000001#32)))] }]
+
+def body173Instrs : List Instr :=
+  [Instr.icmp "%cmp28.i.i563.i.i" (IPred.sgt) 32
+     (Operand.reg "%inc12.us.i.i581759761.i.i") (Operand.imm (Const.int 32 0x00000000#32))]
+
+def body173Block : List Instr := body173Specs.map PhiSpec.instr ++ body173Instrs
+
+theorem body173_find :
+    numFastBody.findBlock "while.body173.i.i" =
+      some ⟨"while.body173.i.i", body173Block,
+        Term.condbr (Operand.reg "%cmp28.i.i563.i.i") "for.body.lr.ph.i.i564.i.i"
+          "stk_mul_u64.exit583.i.i"⟩ := by
+  simp only [body173Block, body173Instrs, body173Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_body173_i_i
+
+def body173Env (env : Env) (kk : BitVec 64) (c : BitVec 32) : Env :=
+  ("%cmp28.i.i563.i.i", .int 1 (evalICmp .sgt c 0x00000000#32)) ::
+  ("%inc12.us.i.i581759761.i.i", .int 32 c) ::
+  ("%k168.0762.i.i", .int 64 kk) :: env
+
+theorem body173_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {kk : BitVec 64} {c : BitVec 32}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("stk_mul_u64.exit583.i.i", (Operand.reg "%sub175.i.i")),
+       ("if.then167.i.i", (Operand.reg "%sub169.i.i"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 64 kk))
+    (hop2 : phiIncoming pre
+      [("stk_mul_u64.exit583.i.i", (Operand.reg "%inc12.us.i.i581758.i.i")),
+       ("if.then167.i.i", (Operand.imm (Const.int 32 0x00000001#32)))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 32 c)) :
+    denoteCode calls body173Block (stateAt env s) =
+      some (stateAt (body173Env env kk c) s) := by
+  have hsel : PhiSelects (stateAt env s) pre body173Specs
+      [("%k168.0762.i.i", .int 64 kk),
+       ("%inc12.us.i.i581759761.i.i", .int 32 c)] := by
+    simp only [body173Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := body173Specs)
+    (vs := [("%k168.0762.i.i", .int 64 kk),
+      ("%inc12.us.i.i581759761.i.i", .int 32 c)])
+    (rest := body173Instrs) hpre hsel (by decide)
+  unfold body173Block
+  rw [h]
+  simp only [runCells]
+  unfold body173Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%inc12.us.i.i581759761.i.i", .int 32 c) ::
+      ("%k168.0762.i.i", .int 64 kk) :: env) s
+    "%cmp28.i.i563.i.i" "%inc12.us.i.i581759761.i.i" .sgt (lookupName_cons_self ..)]
+  simp only [denoteCode_nil, body173Env, stateAt]
+
+theorem body173_step_nest {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {kk : BitVec 64} {c : BitVec 32}
+    (hpc : s.pc = "while.body173.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("stk_mul_u64.exit583.i.i", (Operand.reg "%sub175.i.i")),
+       ("if.then167.i.i", (Operand.reg "%sub169.i.i"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 64 kk))
+    (hop2 : phiIncoming pre
+      [("stk_mul_u64.exit583.i.i", (Operand.reg "%inc12.us.i.i581758.i.i")),
+       ("if.then167.i.i", (Operand.imm (Const.int 32 0x00000001#32)))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 32 c))
+    (hbit : evalICmp .sgt c 0x00000000#32 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (body173Env env kk c)
+        { s with pc := "for.body.lr.ph.i.i564.i.i", pre := some "while.body173.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (body173Env env kk c) s)
+    (b := ⟨"while.body173.i.i", body173Block,
+      Term.condbr (Operand.reg "%cmp28.i.i563.i.i") "for.body.lr.ph.i.i564.i.i"
+        "stk_mul_u64.exit583.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using body173_find
+  · simpa only [stateAt] using body173_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_one (s := stateAt (body173Env env kk c) s)
+      "%cmp28.i.i563.i.i" "for.body.lr.ph.i.i564.i.i" "stk_mul_u64.exit583.i.i"
+      (by simp [body173Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem body173_step_exit {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {kk : BitVec 64} {c : BitVec 32}
+    (hpc : s.pc = "while.body173.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("stk_mul_u64.exit583.i.i", (Operand.reg "%sub175.i.i")),
+       ("if.then167.i.i", (Operand.reg "%sub169.i.i"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 64 kk))
+    (hop2 : phiIncoming pre
+      [("stk_mul_u64.exit583.i.i", (Operand.reg "%inc12.us.i.i581758.i.i")),
+       ("if.then167.i.i", (Operand.imm (Const.int 32 0x00000001#32)))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 32 c))
+    (hbit : evalICmp .sgt c 0x00000000#32 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (body173Env env kk c)
+        { s with pc := "stk_mul_u64.exit583.i.i", pre := some "while.body173.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (body173Env env kk c) s)
+    (b := ⟨"while.body173.i.i", body173Block,
+      Term.condbr (Operand.reg "%cmp28.i.i563.i.i") "for.body.lr.ph.i.i564.i.i"
+        "stk_mul_u64.exit583.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using body173_find
+  · simpa only [stateAt] using body173_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (body173Env env kk c) s)
+      "%cmp28.i.i563.i.i" "for.body.lr.ph.i.i564.i.i" "stk_mul_u64.exit583.i.i"
+      (by simp [body173Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-! #### The non-negative route's head: `while.cond184.preheader.i.i` -/
+
+def cond184Instrs : List Instr :=
+  [Instr.load "%n.i.promoted751.i.i" (Ty.int 32) (Operand.reg "%n.i.i.i"),
+   Instr.icmp "%cmp185753.i.i" (IPred.ugt) 64 (Operand.reg "%add108.i.i")
+     (Operand.imm (Const.int 64 0x0000000000000012#64))]
+
+theorem cond184_find :
+    numFastBody.findBlock "while.cond184.preheader.i.i" =
+      some ⟨"while.cond184.preheader.i.i", cond184Instrs,
+        Term.condbr (Operand.reg "%cmp185753.i.i") "while.body187.i.i"
+          "while.end190.i.i"⟩ := by
+  simpa only [cond184Instrs] using numFast_findBlock_while_cond184_preheader_i_i
+
+def cond184Env (env : Env) (w : BitVec 32) (a : BitVec 64) : Env :=
+  ("%cmp185753.i.i", .int 1 (evalICmp .ugt a 0x0000000000000012#64)) ::
+  ("%n.i.promoted751.i.i", .int 32 w) :: env
+
+theorem cond184_denote {calls : Calls} {env : Env} {s : State}
+    {w : BitVec 32} {a : BitVec 64} {n : Nat}
+    (hn : lookupName env "%n.i.i.i" = some (.ptr n))
+    (hw : readBytes s.mem n 4 = some (natToBytes w.toNat 4))
+    (ha : lookupName env "%add108.i.i" = some (.int 64 a)) :
+    denoteCode calls cond184Instrs (stateAt env s) =
+      some (stateAt (cond184Env env w a) s) := by
+  unfold cond184Instrs
+  rw [JsonScanLane.denoteCode_load_i32 calls env s "%n.i.promoted751.i.i" "%n.i.i.i" hn hw]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%n.i.promoted751.i.i", .int 32 w) :: env) s
+    "%cmp185753.i.i" "%add108.i.i" .ugt
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact ha)]
+  simp only [denoteCode_nil, cond184Env, stateAt]
+
+theorem cond184_step_body {calls : Calls} {env : Env} {s : State}
+    {w : BitVec 32} {a : BitVec 64} {n : Nat}
+    (hpc : s.pc = "while.cond184.preheader.i.i")
+    (hn : lookupName env "%n.i.i.i" = some (.ptr n))
+    (hw : readBytes s.mem n 4 = some (natToBytes w.toNat 4))
+    (ha : lookupName env "%add108.i.i" = some (.int 64 a))
+    (hbit : evalICmp .ugt a 0x0000000000000012#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (cond184Env env w a)
+        { s with pc := "while.body187.i.i",
+                 pre := some "while.cond184.preheader.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (cond184Env env w a) s)
+    (b := ⟨"while.cond184.preheader.i.i", cond184Instrs,
+      Term.condbr (Operand.reg "%cmp185753.i.i") "while.body187.i.i"
+        "while.end190.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using cond184_find
+  · simpa only [stateAt] using cond184_denote hn hw ha
+  · rw [numFast_execTerm_condbr_one (s := stateAt (cond184Env env w a) s)
+      "%cmp185753.i.i" "while.body187.i.i" "while.end190.i.i"
+      (by simp [cond184Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem cond184_step_end {calls : Calls} {env : Env} {s : State}
+    {w : BitVec 32} {a : BitVec 64} {n : Nat}
+    (hpc : s.pc = "while.cond184.preheader.i.i")
+    (hn : lookupName env "%n.i.i.i" = some (.ptr n))
+    (hw : readBytes s.mem n 4 = some (natToBytes w.toNat 4))
+    (ha : lookupName env "%add108.i.i" = some (.int 64 a))
+    (hbit : evalICmp .ugt a 0x0000000000000012#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (cond184Env env w a)
+        { s with pc := "while.end190.i.i",
+                 pre := some "while.cond184.preheader.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (cond184Env env w a) s)
+    (b := ⟨"while.cond184.preheader.i.i", cond184Instrs,
+      Term.condbr (Operand.reg "%cmp185753.i.i") "while.body187.i.i"
+        "while.end190.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using cond184_find
+  · simpa only [stateAt] using cond184_denote hn hw ha
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (cond184Env env w a) s)
+      "%cmp185753.i.i" "while.body187.i.i" "while.end190.i.i"
+      (by simp [cond184Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-! #### The non-negative route's rung: `while.body187.i.i` and its exit -/
+
+def body187Specs : List PhiSpec :=
+  [{ dst := "%k183.0754.i.i", ty := Ty.int 64,
+     incoming := [("stk_mul_u64.exit605.i.i", (Operand.reg "%sub189.i.i")),
+                  ("while.cond184.preheader.i.i", (Operand.reg "%add108.i.i"))] },
+   { dst := "%108", ty := Ty.int 32,
+     incoming := [("stk_mul_u64.exit605.i.i", (Operand.reg "%115")),
+                  ("while.cond184.preheader.i.i", (Operand.reg "%n.i.promoted751.i.i"))] }]
+
+def body187Instrs : List Instr :=
+  [Instr.icmp "%cmp28.i.i585.i.i" (IPred.sgt) 32 (Operand.reg "%108")
+     (Operand.imm (Const.int 32 0x00000000#32))]
+
+def body187Block : List Instr := body187Specs.map PhiSpec.instr ++ body187Instrs
+
+theorem body187_find :
+    numFastBody.findBlock "while.body187.i.i" =
+      some ⟨"while.body187.i.i", body187Block,
+        Term.condbr (Operand.reg "%cmp28.i.i585.i.i") "for.body.lr.ph.i.i586.i.i"
+          "stk_mul_u64.exit605.i.i"⟩ := by
+  simp only [body187Block, body187Instrs, body187Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_body187_i_i
+
+def body187Env (env : Env) (kk : BitVec 64) (c : BitVec 32) : Env :=
+  ("%cmp28.i.i585.i.i", .int 1 (evalICmp .sgt c 0x00000000#32)) ::
+  ("%108", .int 32 c) :: ("%k183.0754.i.i", .int 64 kk) :: env
+
+theorem body187_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {kk : BitVec 64} {c : BitVec 32}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("stk_mul_u64.exit605.i.i", (Operand.reg "%sub189.i.i")),
+       ("while.cond184.preheader.i.i", (Operand.reg "%add108.i.i"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 64 kk))
+    (hop2 : phiIncoming pre
+      [("stk_mul_u64.exit605.i.i", (Operand.reg "%115")),
+       ("while.cond184.preheader.i.i", (Operand.reg "%n.i.promoted751.i.i"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 32 c)) :
+    denoteCode calls body187Block (stateAt env s) =
+      some (stateAt (body187Env env kk c) s) := by
+  have hsel : PhiSelects (stateAt env s) pre body187Specs
+      [("%k183.0754.i.i", .int 64 kk), ("%108", .int 32 c)] := by
+    simp only [body187Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := body187Specs)
+    (vs := [("%k183.0754.i.i", .int 64 kk), ("%108", .int 32 c)])
+    (rest := body187Instrs) hpre hsel (by decide)
+  unfold body187Block
+  rw [h]
+  simp only [runCells]
+  unfold body187Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%108", .int 32 c) :: ("%k183.0754.i.i", .int 64 kk) :: env) s
+    "%cmp28.i.i585.i.i" "%108" .sgt (lookupName_cons_self ..)]
+  simp only [denoteCode_nil, body187Env, stateAt]
+
+theorem body187_step_nest {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {kk : BitVec 64} {c : BitVec 32}
+    (hpc : s.pc = "while.body187.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("stk_mul_u64.exit605.i.i", (Operand.reg "%sub189.i.i")),
+       ("while.cond184.preheader.i.i", (Operand.reg "%add108.i.i"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 64 kk))
+    (hop2 : phiIncoming pre
+      [("stk_mul_u64.exit605.i.i", (Operand.reg "%115")),
+       ("while.cond184.preheader.i.i", (Operand.reg "%n.i.promoted751.i.i"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 32 c))
+    (hbit : evalICmp .sgt c 0x00000000#32 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (body187Env env kk c)
+        { s with pc := "for.body.lr.ph.i.i586.i.i", pre := some "while.body187.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (body187Env env kk c) s)
+    (b := ⟨"while.body187.i.i", body187Block,
+      Term.condbr (Operand.reg "%cmp28.i.i585.i.i") "for.body.lr.ph.i.i586.i.i"
+        "stk_mul_u64.exit605.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using body187_find
+  · simpa only [stateAt] using body187_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_one (s := stateAt (body187Env env kk c) s)
+      "%cmp28.i.i585.i.i" "for.body.lr.ph.i.i586.i.i" "stk_mul_u64.exit605.i.i"
+      (by simp [body187Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem body187_step_exit {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {kk : BitVec 64} {c : BitVec 32}
+    (hpc : s.pc = "while.body187.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("stk_mul_u64.exit605.i.i", (Operand.reg "%sub189.i.i")),
+       ("while.cond184.preheader.i.i", (Operand.reg "%add108.i.i"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 64 kk))
+    (hop2 : phiIncoming pre
+      [("stk_mul_u64.exit605.i.i", (Operand.reg "%115")),
+       ("while.cond184.preheader.i.i", (Operand.reg "%n.i.promoted751.i.i"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 32 c))
+    (hbit : evalICmp .sgt c 0x00000000#32 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (body187Env env kk c)
+        { s with pc := "stk_mul_u64.exit605.i.i", pre := some "while.body187.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (body187Env env kk c) s)
+    (b := ⟨"while.body187.i.i", body187Block,
+      Term.condbr (Operand.reg "%cmp28.i.i585.i.i") "for.body.lr.ph.i.i586.i.i"
+        "stk_mul_u64.exit605.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using body187_find
+  · simpa only [stateAt] using body187_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (body187Env env kk c) s)
+      "%cmp28.i.i585.i.i" "for.body.lr.ph.i.i586.i.i" "stk_mul_u64.exit605.i.i"
+      (by simp [body187Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The rung's exit: the counter's `phi`, the residual and the `> 37` test. -/
+def exit605Specs : List PhiSpec :=
+  [{ dst := "%115", ty := Ty.int 32,
+     incoming := [("while.body187.i.i", (Operand.reg "%108")),
+                  ("while.cond.preheader.i.i599.i.i", (Operand.reg "%108")),
+                  ("while.body.us.i.i601.i.i", (Operand.reg "%inc12.us.i.i603.i.i"))] }]
+
+def exit605Instrs : List Instr :=
+  [Instr.binop "%sub189.i.i" (BinOp.add) 64 (Operand.reg "%k183.0754.i.i")
+     (Operand.imm (Const.int 64 0xffffffffffffffed#64)),
+   Instr.icmp "%cmp185.i.i" (IPred.sgt) 64 (Operand.reg "%k183.0754.i.i")
+     (Operand.imm (Const.int 64 0x0000000000000025#64))]
+
+def exit605Block : List Instr := exit605Specs.map PhiSpec.instr ++ exit605Instrs
+
+theorem exit605_find :
+    numFastBody.findBlock "stk_mul_u64.exit605.i.i" =
+      some ⟨"stk_mul_u64.exit605.i.i", exit605Block,
+        Term.condbr (Operand.reg "%cmp185.i.i") "while.body187.i.i"
+          "while.end190.i.i"⟩ := by
+  simp only [exit605Block, exit605Instrs, exit605Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_stk_mul_u64_exit605_i_i
+
+def exit605Env (env : Env) (k : BitVec 32) (kk : BitVec 64) : Env :=
+  ("%cmp185.i.i", .int 1 (evalICmp .sgt kk 0x0000000000000025#64)) ::
+  ("%sub189.i.i", .int 64 (kk + 0xffffffffffffffed#64)) ::
+  ("%115", .int 32 k) :: env
+
+theorem exit605_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op : Operand} {k : BitVec 32} {kk : BitVec 64}
+    (hpre : s.pre = some pre)
+    (hop : phiIncoming pre
+      [("while.body187.i.i", (Operand.reg "%108")),
+       ("while.cond.preheader.i.i599.i.i", (Operand.reg "%108")),
+       ("while.body.us.i.i601.i.i", (Operand.reg "%inc12.us.i.i603.i.i"))] = some op)
+    (hov : evalOperand (stateAt env s) op = some (.int 32 k))
+    (hk : lookupName env "%k183.0754.i.i" = some (.int 64 kk)) :
+    denoteCode calls exit605Block (stateAt env s) =
+      some (stateAt (exit605Env env k kk) s) := by
+  have hsel : PhiSelects (stateAt env s) pre exit605Specs [("%115", .int 32 k)] := by
+    simp only [exit605Specs]
+    constructor
+    · exact hop
+    · exact hov
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := exit605Specs) (vs := [("%115", .int 32 k)])
+    (rest := exit605Instrs) hpre hsel (by decide)
+  unfold exit605Block
+  rw [h]
+  simp only [runCells]
+  unfold exit605Instrs
+  rw [JsonScanLane.denoteCode_add_imm_w calls (("%115", .int 32 k) :: env) s
+    "%sub189.i.i" "%k183.0754.i.i" 64
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact hk)]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%sub189.i.i", .int 64 (kk + 0xffffffffffffffed#64)) ::
+      ("%115", .int 32 k) :: env) s
+    "%cmp185.i.i" "%k183.0754.i.i" .sgt
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hk)]
+  simp only [denoteCode_nil, exit605Env, stateAt]
+
+theorem exit605_step_body {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op : Operand} {k : BitVec 32} {kk : BitVec 64}
+    (hpc : s.pc = "stk_mul_u64.exit605.i.i") (hpre : s.pre = some pre)
+    (hop : phiIncoming pre
+      [("while.body187.i.i", (Operand.reg "%108")),
+       ("while.cond.preheader.i.i599.i.i", (Operand.reg "%108")),
+       ("while.body.us.i.i601.i.i", (Operand.reg "%inc12.us.i.i603.i.i"))] = some op)
+    (hov : evalOperand (stateAt env s) op = some (.int 32 k))
+    (hk : lookupName env "%k183.0754.i.i" = some (.int 64 kk))
+    (hbit : evalICmp .sgt kk 0x0000000000000025#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (exit605Env env k kk)
+        { s with pc := "while.body187.i.i",
+                 pre := some "stk_mul_u64.exit605.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (exit605Env env k kk) s)
+    (b := ⟨"stk_mul_u64.exit605.i.i", exit605Block,
+      Term.condbr (Operand.reg "%cmp185.i.i") "while.body187.i.i"
+        "while.end190.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using exit605_find
+  · simpa only [stateAt] using exit605_denote hpre hop hov hk
+  · rw [numFast_execTerm_condbr_one (s := stateAt (exit605Env env k kk) s)
+      "%cmp185.i.i" "while.body187.i.i" "while.end190.i.i"
+      (by simp [exit605Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem exit605_step_end {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op : Operand} {k : BitVec 32} {kk : BitVec 64}
+    (hpc : s.pc = "stk_mul_u64.exit605.i.i") (hpre : s.pre = some pre)
+    (hop : phiIncoming pre
+      [("while.body187.i.i", (Operand.reg "%108")),
+       ("while.cond.preheader.i.i599.i.i", (Operand.reg "%108")),
+       ("while.body.us.i.i601.i.i", (Operand.reg "%inc12.us.i.i603.i.i"))] = some op)
+    (hov : evalOperand (stateAt env s) op = some (.int 32 k))
+    (hk : lookupName env "%k183.0754.i.i" = some (.int 64 kk))
+    (hbit : evalICmp .sgt kk 0x0000000000000025#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (exit605Env env k kk)
+        { s with pc := "while.end190.i.i",
+                 pre := some "stk_mul_u64.exit605.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (exit605Env env k kk) s)
+    (b := ⟨"stk_mul_u64.exit605.i.i", exit605Block,
+      Term.condbr (Operand.reg "%cmp185.i.i") "while.body187.i.i"
+        "while.end190.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using exit605_find
+  · simpa only [stateAt] using exit605_denote hpre hop hov hk
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (exit605Env env k kk) s)
+      "%cmp185.i.i" "while.body187.i.i" "while.end190.i.i"
+      (by simp [exit605Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-! #### The rung's merge: `while.end190.i.i` and `if.end195.i.i` -/
+
+def end190Specs : List PhiSpec :=
+  [{ dst := "%116", ty := Ty.int 32,
+     incoming := [("while.cond184.preheader.i.i", (Operand.reg "%n.i.promoted751.i.i")),
+                  ("stk_mul_u64.exit605.i.i", (Operand.reg "%115"))] },
+   { dst := "%k183.0.lcssa.i.i", ty := Ty.int 64,
+     incoming := [("while.cond184.preheader.i.i", (Operand.reg "%add108.i.i")),
+                  ("stk_mul_u64.exit605.i.i", (Operand.reg "%sub189.i.i"))] }]
+
+def end190Instrs : List Instr :=
+  [Instr.store (Ty.int 32) (Operand.reg "%116") (Operand.reg "%n.i.i.i"),
+   Instr.icmp "%tobool191.not.i.i" (IPred.ne) 64 (Operand.reg "%k183.0.lcssa.i.i")
+     (Operand.imm (Const.int 64 0x0000000000000000#64)),
+   Instr.icmp "%cmp28.i.i607.i.i" (IPred.sgt) 32 (Operand.reg "%116")
+     (Operand.imm (Const.int 32 0x00000000#32)),
+   Instr.select "%or.cond865.i.i" (Ty.int 1) (Operand.reg "%tobool191.not.i.i")
+     (Operand.reg "%cmp28.i.i607.i.i") (Operand.imm (Const.int 1 0x0#1))]
+
+def end190Block : List Instr := end190Specs.map PhiSpec.instr ++ end190Instrs
+
+theorem end190_find :
+    numFastBody.findBlock "while.end190.i.i" =
+      some ⟨"while.end190.i.i", end190Block,
+        Term.condbr (Operand.reg "%or.cond865.i.i") "for.body.lr.ph.i.i608.i.i"
+          "if.end195.i.i"⟩ := by
+  simp only [end190Block, end190Instrs, end190Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_end190_i_i
+
+def end190Env (env : Env) (c : BitVec 32) (kk : BitVec 64) : Env :=
+  ("%or.cond865.i.i", .int 1
+    (if evalICmp .ne kk 0x0000000000000000#64 = 1
+      then evalICmp .sgt c 0x00000000#32 else 0x0#1)) ::
+  ("%cmp28.i.i607.i.i", .int 1 (evalICmp .sgt c 0x00000000#32)) ::
+  ("%tobool191.not.i.i", .int 1 (evalICmp .ne kk 0x0000000000000000#64)) ::
+  ("%k183.0.lcssa.i.i", .int 64 kk) :: ("%116", .int 32 c) :: env
+
+def end190State (env : Env) (c : BitVec 32) (kk : BitVec 64) (a : Nat)
+    (s : State) : State :=
+  { stateAt (end190Env env c kk) s with
+      mem := writeBytes s.mem a (natToBytes c.toNat 4) }
+
+theorem end190_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {c : BitVec 32} {kk : BitVec 64} {a : Nat}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond184.preheader.i.i", (Operand.reg "%n.i.promoted751.i.i")),
+       ("stk_mul_u64.exit605.i.i", (Operand.reg "%115"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 32 c))
+    (hop2 : phiIncoming pre
+      [("while.cond184.preheader.i.i", (Operand.reg "%add108.i.i")),
+       ("stk_mul_u64.exit605.i.i", (Operand.reg "%sub189.i.i"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 kk))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr a)) :
+    denoteCode calls end190Block (stateAt env s) = some (end190State env c kk a s) := by
+  have hsel : PhiSelects (stateAt env s) pre end190Specs
+      [("%116", .int 32 c), ("%k183.0.lcssa.i.i", .int 64 kk)] := by
+    simp only [end190Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := end190Specs)
+    (vs := [("%116", .int 32 c), ("%k183.0.lcssa.i.i", .int 64 kk)])
+    (rest := end190Instrs) hpre hsel (by decide)
+  unfold end190Block
+  rw [h]
+  simp only [runCells]
+  unfold end190Instrs
+  rw [denoteCode_store32 calls
+    (("%k183.0.lcssa.i.i", .int 64 kk) :: ("%116", .int 32 c) :: env) s
+    "%116" "%n.i.i.i"
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact lookupName_cons_self ..) hn]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%k183.0.lcssa.i.i", .int 64 kk) :: ("%116", .int 32 c) :: env)
+    { s with mem := writeBytes s.mem a (natToBytes c.toNat 4) }
+    "%tobool191.not.i.i" "%k183.0.lcssa.i.i" .ne
+    (lookupName_cons_self ..)]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%tobool191.not.i.i", .int 1 (evalICmp .ne kk 0x0000000000000000#64)) ::
+      ("%k183.0.lcssa.i.i", .int 64 kk) :: ("%116", .int 32 c) :: env)
+    { s with mem := writeBytes s.mem a (natToBytes c.toNat 4) }
+    "%cmp28.i.i607.i.i" "%116" .sgt
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact lookupName_cons_self ..)]
+  rw [JsonScanLane.denoteCode_select_bit_reg_imm_w calls
+    (("%cmp28.i.i607.i.i", .int 1 (evalICmp .sgt c 0x00000000#32)) ::
+      ("%tobool191.not.i.i", .int 1 (evalICmp .ne kk 0x0000000000000000#64)) ::
+      ("%k183.0.lcssa.i.i", .int 64 kk) :: ("%116", .int 32 c) :: env)
+    { s with mem := writeBytes s.mem a (natToBytes c.toNat 4) }
+    "%or.cond865.i.i" "%tobool191.not.i.i" "%cmp28.i.i607.i.i" 1
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact lookupName_cons_self ..)
+    (lookupName_cons_self ..)]
+  simp only [denoteCode_nil, end190Env, end190State, stateAt]
+
+theorem end190_step_rung {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {c : BitVec 32} {kk : BitVec 64} {a : Nat}
+    (hpc : s.pc = "while.end190.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond184.preheader.i.i", (Operand.reg "%n.i.promoted751.i.i")),
+       ("stk_mul_u64.exit605.i.i", (Operand.reg "%115"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 32 c))
+    (hop2 : phiIncoming pre
+      [("while.cond184.preheader.i.i", (Operand.reg "%add108.i.i")),
+       ("stk_mul_u64.exit605.i.i", (Operand.reg "%sub189.i.i"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 kk))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr a))
+    (hbit : (if evalICmp .ne kk 0x0000000000000000#64 = 1
+      then evalICmp .sgt c 0x00000000#32 else 0x0#1) = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump { end190State env c kk a s with
+        pc := "for.body.lr.ph.i.i608.i.i", pre := some "while.end190.i.i" } := by
+  refine numFast_step_at (s' := end190State env c kk a s)
+    (b := ⟨"while.end190.i.i", end190Block,
+      Term.condbr (Operand.reg "%or.cond865.i.i") "for.body.lr.ph.i.i608.i.i"
+        "if.end195.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end190_find
+  · simpa only [stateAt] using end190_denote hpre hop1 hov1 hop2 hov2 hn
+  · rw [numFast_execTerm_condbr_one (s := end190State env c kk a s)
+      "%or.cond865.i.i" "for.body.lr.ph.i.i608.i.i" "if.end195.i.i" ?_ hbit]
+    · simp only [end190State, end190Env, stateAt, hpc]
+    · simp only [end190State, end190Env, stateAt]
+      exact lookupName_cons_self ..
+
+theorem end190_step_end {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {c : BitVec 32} {kk : BitVec 64} {a : Nat}
+    (hpc : s.pc = "while.end190.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond184.preheader.i.i", (Operand.reg "%n.i.promoted751.i.i")),
+       ("stk_mul_u64.exit605.i.i", (Operand.reg "%115"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 32 c))
+    (hop2 : phiIncoming pre
+      [("while.cond184.preheader.i.i", (Operand.reg "%add108.i.i")),
+       ("stk_mul_u64.exit605.i.i", (Operand.reg "%sub189.i.i"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 kk))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr a))
+    (hbit : (if evalICmp .ne kk 0x0000000000000000#64 = 1
+      then evalICmp .sgt c 0x00000000#32 else 0x0#1) = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump { end190State env c kk a s with
+        pc := "if.end195.i.i", pre := some "while.end190.i.i" } := by
+  refine numFast_step_at (s' := end190State env c kk a s)
+    (b := ⟨"while.end190.i.i", end190Block,
+      Term.condbr (Operand.reg "%or.cond865.i.i") "for.body.lr.ph.i.i608.i.i"
+        "if.end195.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end190_find
+  · simpa only [stateAt] using end190_denote hpre hop1 hov1 hop2 hov2 hn
+  · rw [numFast_execTerm_condbr_zero (s := end190State env c kk a s)
+      "%or.cond865.i.i" "for.body.lr.ph.i.i608.i.i" "if.end195.i.i" ?_ hbit]
+    · simp only [end190State, end190Env, stateAt, hpc]
+    · simp only [end190State, end190Env, stateAt]
+      exact lookupName_cons_self ..
+
+/-- The scratch count's zeroing. -/
+def end195Instrs : List Instr :=
+  [Instr.store (Ty.int 64) (Operand.imm (Const.int 64 0x0000000000000000#64))
+     (Operand.reg "%S128.i.i")]
+
+theorem end195_find :
+    numFastBody.findBlock "if.end195.i.i" =
+      some ⟨"if.end195.i.i", end195Instrs, Term.br "if.end198.i.i"⟩ := by
+  simpa only [end195Instrs] using numFast_findBlock_if_end195_i_i
+
+theorem end195_denote {calls : Calls} {env : Env} {s : State} {a : Nat}
+    (hS : lookupName env "%S128.i.i" = some (.ptr a)) :
+    denoteCode calls end195Instrs (stateAt env s) =
+      some (stateAt env
+        { s with mem := writeBytes s.mem a (natToBytes (0x0000000000000000#64).toNat 8) }) := by
+  unfold end195Instrs
+  rw [denoteCode_store64_imm calls env s 0x0000000000000000#64 "%S128.i.i" hS]
+  simp only [denoteCode_nil, stateAt]
+
+theorem end195_step {calls : Calls} {env : Env} {s : State} {a : Nat}
+    (hpc : s.pc = "if.end195.i.i")
+    (hS : lookupName env "%S128.i.i" = some (.ptr a)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt env
+        { s with mem := writeBytes s.mem a (natToBytes (0x0000000000000000#64).toNat 8),
+                 pc := "if.end198.i.i", pre := some "if.end195.i.i" }) := by
+  refine numFast_step_at (s' := stateAt env
+      { s with mem := writeBytes s.mem a (natToBytes (0x0000000000000000#64).toNat 8) })
+    (b := ⟨"if.end195.i.i", end195Instrs, Term.br "if.end198.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using end195_find
+  · simpa only [stateAt] using end195_denote hS
+  · simp only [execTerm, stateAt, hpc]
+
+/-! #### The nests' exits and unroll bounds
+
+Each digit-ingest nest peels its trip count's residue and truncates the last
+visit's `i128` sum to the word its store writes.  The `…loopexit.unr-lcssa`
+block takes the unrolled body's last shifted sum, the `…epilog-lcssa` block the
+peeled loop's, and the `.new` block's `and` forms the unrolled trip count.  The
+nest bodies are `JsonStage2NumFastTier3`'s epilogue chain (its `t3_epil_denote`)
+and the width-generic `mul`/`add`/`lshr` steps stated there.
+-/
+
+/-- A one-`trunc` block's chain: the low word of an `i128` value. -/
+theorem denoteCode_trunc_one (calls : Calls) (env : Env) (s : State)
+    (d v : String) {carry : BitVec 128}
+    (hv : lookupName env v = some (.int 128 carry)) :
+    denoteCode calls [Instr.trunc d 128 64 (.reg v)] (stateAt env s) =
+      some (stateAt ((d, .int 64 (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) :: env) s) := by
+  rw [denoteCode_trunc calls env s d v 128 64 hv]
+  simp only [denoteCode_nil]
+
+/-- A one-`and` block's chain: the unrolled trip count. -/
+theorem denoteCode_and_one (calls : Calls) (env : Env) (s : State)
+    (d a : String) {x : BitVec 64} {c : BitVec 64}
+    (ha : lookupName env a = some (.int 64 x)) :
+    denoteCode calls [Instr.binop d .and 64 (.reg a) (.imm (.int 64 c))] (stateAt env s) =
+      some (stateAt ((d, .int 64 (x &&& c)) :: env) s) := by
+  rw [denoteCode_and_imm calls env s d a ha]
+  simp only [denoteCode_nil]
+
+/-- The `%92`-count rung's unrolled-body exit. -/
+def loopexit555Instrs : List Instr :=
+  [Instr.trunc "%extract.t1093" 128 64 (Operand.reg "%shr.i.i552.i.i.3")]
+
+theorem loopexit555_find :
+    numFastBody.findBlock "while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit" =
+      some ⟨"while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", loopexit555Instrs,
+        Term.br "while.cond.preheader.i.i555.i.i.unr-lcssa"⟩ := by
+  simpa only [loopexit555Instrs]
+    using numFast_findBlock_while_cond_preheader_i_i555_i_i_unr_lcssa_loopexit
+
+def loopexit555Env (env : Env) (o : BitVec 64) : Env :=
+  ("%extract.t1093", .int 64 o) :: env
+
+theorem loopexit555_denote {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hc : lookupName env "%shr.i.i552.i.i.3" = some (.int 128 carry)) :
+    denoteCode calls loopexit555Instrs (stateAt env s) =
+      some (stateAt (loopexit555Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s) := by
+  unfold loopexit555Instrs loopexit555Env
+  exact denoteCode_trunc_one calls env s "%extract.t1093" "%shr.i.i552.i.i.3" hc
+
+theorem loopexit555_step {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hpc : s.pc = "while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit")
+    (hc : lookupName env "%shr.i.i552.i.i.3" = some (.int 128 carry)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (loopexit555Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64)))
+        { s with pc := "while.cond.preheader.i.i555.i.i.unr-lcssa",
+                 pre := some "while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit" }) := by
+  refine numFast_step_at (s' := stateAt (loopexit555Env env
+      (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s)
+    (b := ⟨"while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", loopexit555Instrs,
+      Term.br "while.cond.preheader.i.i555.i.i.unr-lcssa"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using loopexit555_find
+  · simpa only [stateAt] using loopexit555_denote hc
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The `%92`-count rung's peeled-loop exit. -/
+def epilog555Instrs : List Instr :=
+  [Instr.trunc "%extract.t1092" 128 64 (Operand.reg "%shr.i.i552.i.i.epil")]
+
+theorem epilog555_find :
+    numFastBody.findBlock "while.cond.preheader.i.i555.i.i.epilog-lcssa" =
+      some ⟨"while.cond.preheader.i.i555.i.i.epilog-lcssa", epilog555Instrs,
+        Term.br "while.cond.preheader.i.i555.i.i"⟩ := by
+  simpa only [epilog555Instrs]
+    using numFast_findBlock_while_cond_preheader_i_i555_i_i_epilog_lcssa
+
+def epilog555Env (env : Env) (o : BitVec 64) : Env :=
+  ("%extract.t1092", .int 64 o) :: env
+
+theorem epilog555_denote {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hc : lookupName env "%shr.i.i552.i.i.epil" = some (.int 128 carry)) :
+    denoteCode calls epilog555Instrs (stateAt env s) =
+      some (stateAt (epilog555Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s) := by
+  unfold epilog555Instrs epilog555Env
+  exact denoteCode_trunc_one calls env s "%extract.t1092" "%shr.i.i552.i.i.epil" hc
+
+theorem epilog555_step {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hpc : s.pc = "while.cond.preheader.i.i555.i.i.epilog-lcssa")
+    (hc : lookupName env "%shr.i.i552.i.i.epil" = some (.int 128 carry)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (epilog555Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64)))
+        { s with pc := "while.cond.preheader.i.i555.i.i",
+                 pre := some "while.cond.preheader.i.i555.i.i.epilog-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (epilog555Env env
+      (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s)
+    (b := ⟨"while.cond.preheader.i.i555.i.i.epilog-lcssa", epilog555Instrs,
+      Term.br "while.cond.preheader.i.i555.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using epilog555_find
+  · simpa only [stateAt] using epilog555_denote hc
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The `%inc12`-count rung's unrolled-body exit. -/
+def loopexit577Instrs : List Instr :=
+  [Instr.trunc "%extract.t1099" 128 64 (Operand.reg "%shr.i.i574.i.i.3")]
+
+theorem loopexit577_find :
+    numFastBody.findBlock "while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit" =
+      some ⟨"while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", loopexit577Instrs,
+        Term.br "while.cond.preheader.i.i577.i.i.unr-lcssa"⟩ := by
+  simpa only [loopexit577Instrs]
+    using numFast_findBlock_while_cond_preheader_i_i577_i_i_unr_lcssa_loopexit
+
+def loopexit577Env (env : Env) (o : BitVec 64) : Env :=
+  ("%extract.t1099", .int 64 o) :: env
+
+theorem loopexit577_denote {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hc : lookupName env "%shr.i.i574.i.i.3" = some (.int 128 carry)) :
+    denoteCode calls loopexit577Instrs (stateAt env s) =
+      some (stateAt (loopexit577Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s) := by
+  unfold loopexit577Instrs loopexit577Env
+  exact denoteCode_trunc_one calls env s "%extract.t1099" "%shr.i.i574.i.i.3" hc
+
+theorem loopexit577_step {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hpc : s.pc = "while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit")
+    (hc : lookupName env "%shr.i.i574.i.i.3" = some (.int 128 carry)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (loopexit577Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64)))
+        { s with pc := "while.cond.preheader.i.i577.i.i.unr-lcssa",
+                 pre := some "while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit" }) := by
+  refine numFast_step_at (s' := stateAt (loopexit577Env env
+      (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s)
+    (b := ⟨"while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", loopexit577Instrs,
+      Term.br "while.cond.preheader.i.i577.i.i.unr-lcssa"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using loopexit577_find
+  · simpa only [stateAt] using loopexit577_denote hc
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The `%108`-count rung's unrolled-body exit. -/
+def loopexit599Instrs : List Instr :=
+  [Instr.trunc "%extract.t1095" 128 64 (Operand.reg "%shr.i.i596.i.i.3")]
+
+theorem loopexit599_find :
+    numFastBody.findBlock "while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit" =
+      some ⟨"while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", loopexit599Instrs,
+        Term.br "while.cond.preheader.i.i599.i.i.unr-lcssa"⟩ := by
+  simpa only [loopexit599Instrs]
+    using numFast_findBlock_while_cond_preheader_i_i599_i_i_unr_lcssa_loopexit
+
+def loopexit599Env (env : Env) (o : BitVec 64) : Env :=
+  ("%extract.t1095", .int 64 o) :: env
+
+theorem loopexit599_denote {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hc : lookupName env "%shr.i.i596.i.i.3" = some (.int 128 carry)) :
+    denoteCode calls loopexit599Instrs (stateAt env s) =
+      some (stateAt (loopexit599Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s) := by
+  unfold loopexit599Instrs loopexit599Env
+  exact denoteCode_trunc_one calls env s "%extract.t1095" "%shr.i.i596.i.i.3" hc
+
+theorem loopexit599_step {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hpc : s.pc = "while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit")
+    (hc : lookupName env "%shr.i.i596.i.i.3" = some (.int 128 carry)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (loopexit599Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64)))
+        { s with pc := "while.cond.preheader.i.i599.i.i.unr-lcssa",
+                 pre := some "while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit" }) := by
+  refine numFast_step_at (s' := stateAt (loopexit599Env env
+      (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s)
+    (b := ⟨"while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", loopexit599Instrs,
+      Term.br "while.cond.preheader.i.i599.i.i.unr-lcssa"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using loopexit599_find
+  · simpa only [stateAt] using loopexit599_denote hc
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The `%108`-count rung's peeled-loop exit. -/
+def epilog599Instrs : List Instr :=
+  [Instr.trunc "%extract.t1094" 128 64 (Operand.reg "%shr.i.i596.i.i.epil")]
+
+theorem epilog599_find :
+    numFastBody.findBlock "while.cond.preheader.i.i599.i.i.epilog-lcssa" =
+      some ⟨"while.cond.preheader.i.i599.i.i.epilog-lcssa", epilog599Instrs,
+        Term.br "while.cond.preheader.i.i599.i.i"⟩ := by
+  simpa only [epilog599Instrs]
+    using numFast_findBlock_while_cond_preheader_i_i599_i_i_epilog_lcssa
+
+def epilog599Env (env : Env) (o : BitVec 64) : Env :=
+  ("%extract.t1094", .int 64 o) :: env
+
+theorem epilog599_denote {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hc : lookupName env "%shr.i.i596.i.i.epil" = some (.int 128 carry)) :
+    denoteCode calls epilog599Instrs (stateAt env s) =
+      some (stateAt (epilog599Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s) := by
+  unfold epilog599Instrs epilog599Env
+  exact denoteCode_trunc_one calls env s "%extract.t1094" "%shr.i.i596.i.i.epil" hc
+
+theorem epilog599_step {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hpc : s.pc = "while.cond.preheader.i.i599.i.i.epilog-lcssa")
+    (hc : lookupName env "%shr.i.i596.i.i.epil" = some (.int 128 carry)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (epilog599Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64)))
+        { s with pc := "while.cond.preheader.i.i599.i.i",
+                 pre := some "while.cond.preheader.i.i599.i.i.epilog-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (epilog599Env env
+      (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s)
+    (b := ⟨"while.cond.preheader.i.i599.i.i.epilog-lcssa", epilog599Instrs,
+      Term.br "while.cond.preheader.i.i599.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using epilog599_find
+  · simpa only [stateAt] using epilog599_denote hc
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The `if.end195`-reaching rung's unrolled-body exit. -/
+def loopexit622Instrs : List Instr :=
+  [Instr.trunc "%extract.t1097" 128 64 (Operand.reg "%shr.i.i619.i.i.3")]
+
+theorem loopexit622_find :
+    numFastBody.findBlock "while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit" =
+      some ⟨"while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", loopexit622Instrs,
+        Term.br "while.cond.preheader.i.i622.i.i.unr-lcssa"⟩ := by
+  simpa only [loopexit622Instrs]
+    using numFast_findBlock_while_cond_preheader_i_i622_i_i_unr_lcssa_loopexit
+
+def loopexit622Env (env : Env) (o : BitVec 64) : Env :=
+  ("%extract.t1097", .int 64 o) :: env
+
+theorem loopexit622_denote {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hc : lookupName env "%shr.i.i619.i.i.3" = some (.int 128 carry)) :
+    denoteCode calls loopexit622Instrs (stateAt env s) =
+      some (stateAt (loopexit622Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s) := by
+  unfold loopexit622Instrs loopexit622Env
+  exact denoteCode_trunc_one calls env s "%extract.t1097" "%shr.i.i619.i.i.3" hc
+
+theorem loopexit622_step {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hpc : s.pc = "while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit")
+    (hc : lookupName env "%shr.i.i619.i.i.3" = some (.int 128 carry)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (loopexit622Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64)))
+        { s with pc := "while.cond.preheader.i.i622.i.i.unr-lcssa",
+                 pre := some "while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit" }) := by
+  refine numFast_step_at (s' := stateAt (loopexit622Env env
+      (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s)
+    (b := ⟨"while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", loopexit622Instrs,
+      Term.br "while.cond.preheader.i.i622.i.i.unr-lcssa"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using loopexit622_find
+  · simpa only [stateAt] using loopexit622_denote hc
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The `%108`-count rung's peeled-loop exit at `if.end195`. -/
+def epilog622Instrs : List Instr :=
+  [Instr.trunc "%extract.t1096" 128 64 (Operand.reg "%shr.i.i619.i.i.epil")]
+
+theorem epilog622_find :
+    numFastBody.findBlock "while.cond.preheader.i.i622.i.i.epilog-lcssa" =
+      some ⟨"while.cond.preheader.i.i622.i.i.epilog-lcssa", epilog622Instrs,
+        Term.br "while.cond.preheader.i.i622.i.i"⟩ := by
+  simpa only [epilog622Instrs]
+    using numFast_findBlock_while_cond_preheader_i_i622_i_i_epilog_lcssa
+
+def epilog622Env (env : Env) (o : BitVec 64) : Env :=
+  ("%extract.t1096", .int 64 o) :: env
+
+theorem epilog622_denote {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hc : lookupName env "%shr.i.i619.i.i.epil" = some (.int 128 carry)) :
+    denoteCode calls epilog622Instrs (stateAt env s) =
+      some (stateAt (epilog622Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s) := by
+  unfold epilog622Instrs epilog622Env
+  exact denoteCode_trunc_one calls env s "%extract.t1096" "%shr.i.i619.i.i.epil" hc
+
+theorem epilog622_step {calls : Calls} {env : Env} {s : State} {carry : BitVec 128}
+    (hpc : s.pc = "while.cond.preheader.i.i622.i.i.epilog-lcssa")
+    (hc : lookupName env "%shr.i.i619.i.i.epil" = some (.int 128 carry)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (epilog622Env env (BitVec.ofNat 64 (carry.toNat % 2 ^ 64)))
+        { s with pc := "while.cond.preheader.i.i622.i.i",
+                 pre := some "while.cond.preheader.i.i622.i.i.epilog-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (epilog622Env env
+      (BitVec.ofNat 64 (carry.toNat % 2 ^ 64))) s)
+    (b := ⟨"while.cond.preheader.i.i622.i.i.epilog-lcssa", epilog622Instrs,
+      Term.br "while.cond.preheader.i.i622.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using epilog622_find
+  · simpa only [stateAt] using epilog622_denote hc
+  · simp only [execTerm, stateAt, hpc]
+
+/-! ##### The unroll bounds -/
+
+def new525Instrs : List Instr :=
+  [Instr.binop "%unroll_iter1053" (BinOp.and) 64
+     (Operand.reg "%wide.trip.count.i526.i.i") (Operand.imm (Const.int 64 0x000000007ffffffc#64))]
+
+theorem new525_find :
+    numFastBody.findBlock "for.body.lr.ph.i525.i.i.new" =
+      some ⟨"for.body.lr.ph.i525.i.i.new", new525Instrs,
+        Term.br "for.body.i527.i.i"⟩ := by
+  simpa only [new525Instrs] using numFast_findBlock_for_body_lr_ph_i525_i_i_new
+
+def new525Env (env : Env) (w : BitVec 64) : Env :=
+  ("%unroll_iter1053", .int 64 (w &&& 0x000000007ffffffc#64)) :: env
+
+theorem new525_denote {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hw : lookupName env "%wide.trip.count.i526.i.i" = some (.int 64 w)) :
+    denoteCode calls new525Instrs (stateAt env s) =
+      some (stateAt (new525Env env w) s) := by
+  unfold new525Instrs new525Env
+  exact denoteCode_and_one calls env s "%unroll_iter1053" "%wide.trip.count.i526.i.i" hw
+
+theorem new525_step {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hpc : s.pc = "for.body.lr.ph.i525.i.i.new")
+    (hw : lookupName env "%wide.trip.count.i526.i.i" = some (.int 64 w)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (new525Env env w)
+        { s with pc := "for.body.i527.i.i", pre := some "for.body.lr.ph.i525.i.i.new" }) := by
+  refine numFast_step_at (s' := stateAt (new525Env env w) s)
+    (b := ⟨"for.body.lr.ph.i525.i.i.new", new525Instrs,
+      Term.br "for.body.i527.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using new525_find
+  · simpa only [stateAt] using new525_denote hw
+  · simp only [execTerm, stateAt, hpc]
+
+def new542Instrs : List Instr :=
+  [Instr.binop "%unroll_iter1067" (BinOp.and) 64
+     (Operand.reg "%wide.trip.count.i.i543.i.i") (Operand.imm (Const.int 64 0x000000007ffffffc#64))]
+
+theorem new542_find :
+    numFastBody.findBlock "for.body.lr.ph.i.i542.i.i.new" =
+      some ⟨"for.body.lr.ph.i.i542.i.i.new", new542Instrs,
+        Term.br "for.body.i.i544.i.i"⟩ := by
+  simpa only [new542Instrs] using numFast_findBlock_for_body_lr_ph_i_i542_i_i_new
+
+def new542Env (env : Env) (w : BitVec 64) : Env :=
+  ("%unroll_iter1067", .int 64 (w &&& 0x000000007ffffffc#64)) :: env
+
+theorem new542_denote {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hw : lookupName env "%wide.trip.count.i.i543.i.i" = some (.int 64 w)) :
+    denoteCode calls new542Instrs (stateAt env s) =
+      some (stateAt (new542Env env w) s) := by
+  unfold new542Instrs new542Env
+  exact denoteCode_and_one calls env s "%unroll_iter1067" "%wide.trip.count.i.i543.i.i" hw
+
+theorem new542_step {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hpc : s.pc = "for.body.lr.ph.i.i542.i.i.new")
+    (hw : lookupName env "%wide.trip.count.i.i543.i.i" = some (.int 64 w)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (new542Env env w)
+        { s with pc := "for.body.i.i544.i.i", pre := some "for.body.lr.ph.i.i542.i.i.new" }) := by
+  refine numFast_step_at (s' := stateAt (new542Env env w) s)
+    (b := ⟨"for.body.lr.ph.i.i542.i.i.new", new542Instrs,
+      Term.br "for.body.i.i544.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using new542_find
+  · simpa only [stateAt] using new542_denote hw
+  · simp only [execTerm, stateAt, hpc]
+
+def new564Instrs : List Instr :=
+  [Instr.binop "%unroll_iter1088" (BinOp.and) 64
+     (Operand.reg "%wide.trip.count.i.i565.i.i") (Operand.imm (Const.int 64 0x000000007ffffffc#64))]
+
+theorem new564_find :
+    numFastBody.findBlock "for.body.lr.ph.i.i564.i.i.new" =
+      some ⟨"for.body.lr.ph.i.i564.i.i.new", new564Instrs,
+        Term.br "for.body.i.i566.i.i"⟩ := by
+  simpa only [new564Instrs] using numFast_findBlock_for_body_lr_ph_i_i564_i_i_new
+
+def new564Env (env : Env) (w : BitVec 64) : Env :=
+  ("%unroll_iter1088", .int 64 (w &&& 0x000000007ffffffc#64)) :: env
+
+theorem new564_denote {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hw : lookupName env "%wide.trip.count.i.i565.i.i" = some (.int 64 w)) :
+    denoteCode calls new564Instrs (stateAt env s) =
+      some (stateAt (new564Env env w) s) := by
+  unfold new564Instrs new564Env
+  exact denoteCode_and_one calls env s "%unroll_iter1088" "%wide.trip.count.i.i565.i.i" hw
+
+theorem new564_step {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hpc : s.pc = "for.body.lr.ph.i.i564.i.i.new")
+    (hw : lookupName env "%wide.trip.count.i.i565.i.i" = some (.int 64 w)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (new564Env env w)
+        { s with pc := "for.body.i.i566.i.i", pre := some "for.body.lr.ph.i.i564.i.i.new" }) := by
+  refine numFast_step_at (s' := stateAt (new564Env env w) s)
+    (b := ⟨"for.body.lr.ph.i.i564.i.i.new", new564Instrs,
+      Term.br "for.body.i.i566.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using new564_find
+  · simpa only [stateAt] using new564_denote hw
+  · simp only [execTerm, stateAt, hpc]
+
+def new586Instrs : List Instr :=
+  [Instr.binop "%unroll_iter1074" (BinOp.and) 64
+     (Operand.reg "%wide.trip.count.i.i587.i.i") (Operand.imm (Const.int 64 0x000000007ffffffc#64))]
+
+theorem new586_find :
+    numFastBody.findBlock "for.body.lr.ph.i.i586.i.i.new" =
+      some ⟨"for.body.lr.ph.i.i586.i.i.new", new586Instrs,
+        Term.br "for.body.i.i588.i.i"⟩ := by
+  simpa only [new586Instrs] using numFast_findBlock_for_body_lr_ph_i_i586_i_i_new
+
+def new586Env (env : Env) (w : BitVec 64) : Env :=
+  ("%unroll_iter1074", .int 64 (w &&& 0x000000007ffffffc#64)) :: env
+
+theorem new586_denote {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hw : lookupName env "%wide.trip.count.i.i587.i.i" = some (.int 64 w)) :
+    denoteCode calls new586Instrs (stateAt env s) =
+      some (stateAt (new586Env env w) s) := by
+  unfold new586Instrs new586Env
+  exact denoteCode_and_one calls env s "%unroll_iter1074" "%wide.trip.count.i.i587.i.i" hw
+
+theorem new586_step {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hpc : s.pc = "for.body.lr.ph.i.i586.i.i.new")
+    (hw : lookupName env "%wide.trip.count.i.i587.i.i" = some (.int 64 w)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (new586Env env w)
+        { s with pc := "for.body.i.i588.i.i", pre := some "for.body.lr.ph.i.i586.i.i.new" }) := by
+  refine numFast_step_at (s' := stateAt (new586Env env w) s)
+    (b := ⟨"for.body.lr.ph.i.i586.i.i.new", new586Instrs,
+      Term.br "for.body.i.i588.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using new586_find
+  · simpa only [stateAt] using new586_denote hw
+  · simp only [execTerm, stateAt, hpc]
+
+def new608Instrs : List Instr :=
+  [Instr.binop "%unroll_iter1081" (BinOp.and) 64
+     (Operand.reg "%wide.trip.count.i.i610.i.i") (Operand.imm (Const.int 64 0x000000007ffffffc#64))]
+
+theorem new608_find :
+    numFastBody.findBlock "for.body.lr.ph.i.i608.i.i.new" =
+      some ⟨"for.body.lr.ph.i.i608.i.i.new", new608Instrs,
+        Term.br "for.body.i.i611.i.i"⟩ := by
+  simpa only [new608Instrs] using numFast_findBlock_for_body_lr_ph_i_i608_i_i_new
+
+def new608Env (env : Env) (w : BitVec 64) : Env :=
+  ("%unroll_iter1081", .int 64 (w &&& 0x000000007ffffffc#64)) :: env
+
+theorem new608_denote {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hw : lookupName env "%wide.trip.count.i.i610.i.i" = some (.int 64 w)) :
+    denoteCode calls new608Instrs (stateAt env s) =
+      some (stateAt (new608Env env w) s) := by
+  unfold new608Instrs new608Env
+  exact denoteCode_and_one calls env s "%unroll_iter1081" "%wide.trip.count.i.i610.i.i" hw
+
+theorem new608_step {calls : Calls} {env : Env} {s : State} {w : BitVec 64}
+    (hpc : s.pc = "for.body.lr.ph.i.i608.i.i.new")
+    (hw : lookupName env "%wide.trip.count.i.i610.i.i" = some (.int 64 w)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (new608Env env w)
+        { s with pc := "for.body.i.i611.i.i", pre := some "for.body.lr.ph.i.i608.i.i.new" }) := by
+  refine numFast_step_at (s' := stateAt (new608Env env w) s)
+    (b := ⟨"for.body.lr.ph.i.i608.i.i.new", new608Instrs,
+      Term.br "for.body.i.i611.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using new608_find
+  · simpa only [stateAt] using new608_denote hw
+  · simp only [execTerm, stateAt, hpc]
+
+/-! ##### The `%cn`-count rung's test and the nest heads
+
+`for.body.lr.ph.i564.i.i` and its sibling `i586` widen the group count, take the
+unroll residue's bound and test it against four; `while.body.us.i.i557.i.i` and
+`i601` store the `i128` carry's high word past the retained groups.  The 517
+rung's test `while.cond.preheader.i517.i.i` is the carry's `== 0`.
+-/
+
+def pre517Specs : List PhiSpec :=
+  [{ dst := "%carry.0.lcssa.i518.i.i", ty := Ty.int 128,
+     incoming := [("if.then148.i.i", (Operand.reg "%conv.i514.i.i")),
+                  ("while.cond.preheader.i517.i.i.loopexit.unr-lcssa", (Operand.reg "%shr.i535.i.i.lcssa.ph")),
+                  ("for.body.i527.i.i.epil", (Operand.reg "%shr.i535.i.i.epil"))] }]
+
+def pre517Instrs : List Instr :=
+  [Instr.icmp "%tobool.not31.i519.i.i" (IPred.eq) 128
+     (Operand.reg "%carry.0.lcssa.i518.i.i")
+     (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))]
+
+def pre517Block : List Instr := pre517Specs.map PhiSpec.instr ++ pre517Instrs
+
+theorem pre517_find :
+    numFastBody.findBlock "while.cond.preheader.i517.i.i" =
+      some ⟨"while.cond.preheader.i517.i.i", pre517Block,
+        Term.condbr (Operand.reg "%tobool.not31.i519.i.i") "if.end151.i.i"
+          "while.body.us.i520.i.i"⟩ := by
+  simp only [pre517Block, pre517Instrs, pre517Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_cond_preheader_i517_i_i
+
+def pre517Env (env : Env) (a : BitVec 128) : Env :=
+  ("%tobool.not31.i519.i.i", .int 1 (evalICmp .eq a
+    0x00000000000000000000000000000000#128)) ::
+  ("%carry.0.lcssa.i518.i.i", .int 128 a) :: env
+
+theorem pre517_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op : Operand} {a : BitVec 128}
+    (hpre : s.pre = some pre)
+    (hop : phiIncoming pre
+      [("if.then148.i.i", (Operand.reg "%conv.i514.i.i")),
+       ("while.cond.preheader.i517.i.i.loopexit.unr-lcssa", (Operand.reg "%shr.i535.i.i.lcssa.ph")),
+       ("for.body.i527.i.i.epil", (Operand.reg "%shr.i535.i.i.epil"))] = some op)
+    (hov : evalOperand (stateAt env s) op = some (.int 128 a)) :
+    denoteCode calls pre517Block (stateAt env s) =
+      some (stateAt (pre517Env env a) s) := by
+  have hsel : PhiSelects (stateAt env s) pre pre517Specs
+      [("%carry.0.lcssa.i518.i.i", .int 128 a)] := by
+    simp only [pre517Specs]
+    constructor
+    · exact hop
+    · exact hov
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := pre517Specs)
+    (vs := [("%carry.0.lcssa.i518.i.i", .int 128 a)])
+    (rest := pre517Instrs) hpre hsel (by decide)
+  unfold pre517Block
+  rw [h]
+  simp only [runCells]
+  unfold pre517Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%carry.0.lcssa.i518.i.i", .int 128 a) :: env) s
+    "%tobool.not31.i519.i.i" "%carry.0.lcssa.i518.i.i" .eq (lookupName_cons_self ..)]
+  simp only [denoteCode_nil, pre517Env, stateAt]
+
+theorem pre517_step_ladder {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op : Operand} {a : BitVec 128}
+    (hpc : s.pc = "while.cond.preheader.i517.i.i") (hpre : s.pre = some pre)
+    (hop : phiIncoming pre
+      [("if.then148.i.i", (Operand.reg "%conv.i514.i.i")),
+       ("while.cond.preheader.i517.i.i.loopexit.unr-lcssa", (Operand.reg "%shr.i535.i.i.lcssa.ph")),
+       ("for.body.i527.i.i.epil", (Operand.reg "%shr.i535.i.i.epil"))] = some op)
+    (hov : evalOperand (stateAt env s) op = some (.int 128 a))
+    (hbit : evalICmp .eq a 0x00000000000000000000000000000000#128 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre517Env env a)
+        { s with pc := "if.end151.i.i", pre := some "while.cond.preheader.i517.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (pre517Env env a) s)
+    (b := ⟨"while.cond.preheader.i517.i.i", pre517Block,
+      Term.condbr (Operand.reg "%tobool.not31.i519.i.i") "if.end151.i.i"
+        "while.body.us.i520.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre517_find
+  · simpa only [stateAt] using pre517_denote hpre hop hov
+  · rw [numFast_execTerm_condbr_one (s := stateAt (pre517Env env a) s)
+      "%tobool.not31.i519.i.i" "if.end151.i.i" "while.body.us.i520.i.i"
+      (by simp [pre517Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem pre517_step_store {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op : Operand} {a : BitVec 128}
+    (hpc : s.pc = "while.cond.preheader.i517.i.i") (hpre : s.pre = some pre)
+    (hop : phiIncoming pre
+      [("if.then148.i.i", (Operand.reg "%conv.i514.i.i")),
+       ("while.cond.preheader.i517.i.i.loopexit.unr-lcssa", (Operand.reg "%shr.i535.i.i.lcssa.ph")),
+       ("for.body.i527.i.i.epil", (Operand.reg "%shr.i535.i.i.epil"))] = some op)
+    (hov : evalOperand (stateAt env s) op = some (.int 128 a))
+    (hbit : evalICmp .eq a 0x00000000000000000000000000000000#128 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre517Env env a)
+        { s with pc := "while.body.us.i520.i.i",
+                 pre := some "while.cond.preheader.i517.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (pre517Env env a) s)
+    (b := ⟨"while.cond.preheader.i517.i.i", pre517Block,
+      Term.condbr (Operand.reg "%tobool.not31.i519.i.i") "if.end151.i.i"
+        "while.body.us.i520.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre517_find
+  · simpa only [stateAt] using pre517_denote hpre hop hov
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (pre517Env env a) s)
+      "%tobool.not31.i519.i.i" "if.end151.i.i" "while.body.us.i520.i.i"
+      (by simp [pre517Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The `%inc12` rung's head: the count's widen, the unroll bound and the
+`< 4` test. -/
+def lrph564Instrs : List Instr :=
+  [Instr.zext "%wide.trip.count.i.i565.i.i" 32 64
+     (Operand.reg "%inc12.us.i.i581759761.i.i"),
+   Instr.binop "%xtraiter1083" (BinOp.and) 64
+     (Operand.reg "%wide.trip.count.i.i565.i.i") (Operand.imm (Const.int 64 0x0000000000000003#64)),
+   Instr.icmp "%101" (IPred.ult) 32 (Operand.reg "%inc12.us.i.i581759761.i.i")
+     (Operand.imm (Const.int 32 0x0000000000000004#32))]
+
+theorem lrph564_find :
+    numFastBody.findBlock "for.body.lr.ph.i.i564.i.i" =
+      some ⟨"for.body.lr.ph.i.i564.i.i", lrph564Instrs,
+        Term.condbr (Operand.reg "%101") "while.cond.preheader.i.i577.i.i.unr-lcssa"
+          "for.body.lr.ph.i.i564.i.i.new"⟩ := by
+  simpa only [lrph564Instrs] using numFast_findBlock_for_body_lr_ph_i_i564_i_i
+
+def lrph564Env (env : Env) (c : BitVec 32) : Env :=
+  ("%101", .int 1 (evalICmp .ult c 0x0000000000000004#32)) ::
+  ("%xtraiter1083", .int 64 (BitVec.ofNat 64 c.toNat &&& 0x0000000000000003#64)) ::
+  ("%wide.trip.count.i.i565.i.i", .int 64 (BitVec.ofNat 64 c.toNat)) :: env
+
+theorem lrph564_denote {calls : Calls} {env : Env} {s : State} {c : BitVec 32}
+    (hc : lookupName env "%inc12.us.i.i581759761.i.i" = some (.int 32 c)) :
+    denoteCode calls lrph564Instrs (stateAt env s) =
+      some (stateAt (lrph564Env env c) s) := by
+  unfold lrph564Instrs
+  rw [denoteCode_zext calls env s "%wide.trip.count.i.i565.i.i"
+    "%inc12.us.i.i581759761.i.i" 32 64 hc]
+  rw [denoteCode_and_imm calls
+    (("%wide.trip.count.i.i565.i.i", .int 64 (BitVec.ofNat 64 c.toNat)) :: env) s
+    "%xtraiter1083" "%wide.trip.count.i.i565.i.i" (lookupName_cons_self ..)]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%xtraiter1083", .int 64 (BitVec.ofNat 64 c.toNat &&& 0x0000000000000003#64)) ::
+      ("%wide.trip.count.i.i565.i.i", .int 64 (BitVec.ofNat 64 c.toNat)) :: env) s
+    "%101" "%inc12.us.i.i581759761.i.i" .ult
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hc)]
+  simp only [denoteCode_nil, lrph564Env, stateAt]
+
+theorem lrph564_step_join {calls : Calls} {env : Env} {s : State} {c : BitVec 32}
+    (hpc : s.pc = "for.body.lr.ph.i.i564.i.i")
+    (hc : lookupName env "%inc12.us.i.i581759761.i.i" = some (.int 32 c))
+    (hbit : evalICmp .ult c 0x0000000000000004#32 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (lrph564Env env c)
+        { s with pc := "while.cond.preheader.i.i577.i.i.unr-lcssa",
+                 pre := some "for.body.lr.ph.i.i564.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (lrph564Env env c) s)
+    (b := ⟨"for.body.lr.ph.i.i564.i.i", lrph564Instrs,
+      Term.condbr (Operand.reg "%101") "while.cond.preheader.i.i577.i.i.unr-lcssa"
+        "for.body.lr.ph.i.i564.i.i.new"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using lrph564_find
+  · simpa only [stateAt] using lrph564_denote hc
+  · rw [numFast_execTerm_condbr_one (s := stateAt (lrph564Env env c) s)
+      "%101" "while.cond.preheader.i.i577.i.i.unr-lcssa"
+      "for.body.lr.ph.i.i564.i.i.new" (by simp [lrph564Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem lrph564_step_unroll {calls : Calls} {env : Env} {s : State} {c : BitVec 32}
+    (hpc : s.pc = "for.body.lr.ph.i.i564.i.i")
+    (hc : lookupName env "%inc12.us.i.i581759761.i.i" = some (.int 32 c))
+    (hbit : evalICmp .ult c 0x0000000000000004#32 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (lrph564Env env c)
+        { s with pc := "for.body.lr.ph.i.i564.i.i.new",
+                 pre := some "for.body.lr.ph.i.i564.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (lrph564Env env c) s)
+    (b := ⟨"for.body.lr.ph.i.i564.i.i", lrph564Instrs,
+      Term.condbr (Operand.reg "%101") "while.cond.preheader.i.i577.i.i.unr-lcssa"
+        "for.body.lr.ph.i.i564.i.i.new"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using lrph564_find
+  · simpa only [stateAt] using lrph564_denote hc
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (lrph564Env env c) s)
+      "%101" "while.cond.preheader.i.i577.i.i.unr-lcssa"
+      "for.body.lr.ph.i.i564.i.i.new" (by simp [lrph564Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The `%108` rung's head. -/
+def lrph586Instrs : List Instr :=
+  [Instr.zext "%wide.trip.count.i.i587.i.i" 32 64 (Operand.reg "%108"),
+   Instr.binop "%xtraiter1069" (BinOp.and) 64
+     (Operand.reg "%wide.trip.count.i.i587.i.i") (Operand.imm (Const.int 64 0x0000000000000003#64)),
+   Instr.icmp "%109" (IPred.ult) 32 (Operand.reg "%108")
+     (Operand.imm (Const.int 32 0x0000000000000004#32))]
+
+theorem lrph586_find :
+    numFastBody.findBlock "for.body.lr.ph.i.i586.i.i" =
+      some ⟨"for.body.lr.ph.i.i586.i.i", lrph586Instrs,
+        Term.condbr (Operand.reg "%109") "while.cond.preheader.i.i599.i.i.unr-lcssa"
+          "for.body.lr.ph.i.i586.i.i.new"⟩ := by
+  simpa only [lrph586Instrs] using numFast_findBlock_for_body_lr_ph_i_i586_i_i
+
+def lrph586Env (env : Env) (c : BitVec 32) : Env :=
+  ("%109", .int 1 (evalICmp .ult c 0x0000000000000004#32)) ::
+  ("%xtraiter1069", .int 64 (BitVec.ofNat 64 c.toNat &&& 0x0000000000000003#64)) ::
+  ("%wide.trip.count.i.i587.i.i", .int 64 (BitVec.ofNat 64 c.toNat)) :: env
+
+theorem lrph586_denote {calls : Calls} {env : Env} {s : State} {c : BitVec 32}
+    (hc : lookupName env "%108" = some (.int 32 c)) :
+    denoteCode calls lrph586Instrs (stateAt env s) =
+      some (stateAt (lrph586Env env c) s) := by
+  unfold lrph586Instrs
+  rw [denoteCode_zext calls env s "%wide.trip.count.i.i587.i.i" "%108" 32 64 hc]
+  rw [denoteCode_and_imm calls
+    (("%wide.trip.count.i.i587.i.i", .int 64 (BitVec.ofNat 64 c.toNat)) :: env) s
+    "%xtraiter1069" "%wide.trip.count.i.i587.i.i" (lookupName_cons_self ..)]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%xtraiter1069", .int 64 (BitVec.ofNat 64 c.toNat &&& 0x0000000000000003#64)) ::
+      ("%wide.trip.count.i.i587.i.i", .int 64 (BitVec.ofNat 64 c.toNat)) :: env) s
+    "%109" "%108" .ult
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hc)]
+  simp only [denoteCode_nil, lrph586Env, stateAt]
+
+theorem lrph586_step_join {calls : Calls} {env : Env} {s : State} {c : BitVec 32}
+    (hpc : s.pc = "for.body.lr.ph.i.i586.i.i")
+    (hc : lookupName env "%108" = some (.int 32 c))
+    (hbit : evalICmp .ult c 0x0000000000000004#32 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (lrph586Env env c)
+        { s with pc := "while.cond.preheader.i.i599.i.i.unr-lcssa",
+                 pre := some "for.body.lr.ph.i.i586.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (lrph586Env env c) s)
+    (b := ⟨"for.body.lr.ph.i.i586.i.i", lrph586Instrs,
+      Term.condbr (Operand.reg "%109") "while.cond.preheader.i.i599.i.i.unr-lcssa"
+        "for.body.lr.ph.i.i586.i.i.new"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using lrph586_find
+  · simpa only [stateAt] using lrph586_denote hc
+  · rw [numFast_execTerm_condbr_one (s := stateAt (lrph586Env env c) s)
+      "%109" "while.cond.preheader.i.i599.i.i.unr-lcssa"
+      "for.body.lr.ph.i.i586.i.i.new" (by simp [lrph586Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem lrph586_step_unroll {calls : Calls} {env : Env} {s : State} {c : BitVec 32}
+    (hpc : s.pc = "for.body.lr.ph.i.i586.i.i")
+    (hc : lookupName env "%108" = some (.int 32 c))
+    (hbit : evalICmp .ult c 0x0000000000000004#32 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (lrph586Env env c)
+        { s with pc := "for.body.lr.ph.i.i586.i.i.new",
+                 pre := some "for.body.lr.ph.i.i586.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (lrph586Env env c) s)
+    (b := ⟨"for.body.lr.ph.i.i586.i.i", lrph586Instrs,
+      Term.condbr (Operand.reg "%109") "while.cond.preheader.i.i599.i.i.unr-lcssa"
+        "for.body.lr.ph.i.i586.i.i.new"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using lrph586_find
+  · simpa only [stateAt] using lrph586_denote hc
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (lrph586Env env c) s)
+      "%109" "while.cond.preheader.i.i599.i.i.unr-lcssa"
+      "for.body.lr.ph.i.i586.i.i.new" (by simp [lrph586Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The `%92` rung's carry store: the counter, the table row and the high word. -/
+def bus557Instrs : List Instr :=
+  [Instr.binop "%inc12.us.i.i559.i.i" (BinOp.add) 32 (Operand.reg "%92")
+     (Operand.imm (Const.int 32 0x0000000000000001#32)),
+   Instr.gep "%arrayidx14.us.i.i560.i.i" (Ty.int 64) (Operand.reg "%pow.i.i")
+     (Operand.reg "%wide.trip.count.i.i543.i.i"),
+   Instr.store (Ty.int 64) (Operand.reg "%shr.i.i552.i.i.lcssa.off0")
+     (Operand.reg "%arrayidx14.us.i.i560.i.i"),
+   Instr.store (Ty.int 32) (Operand.reg "%inc12.us.i.i559.i.i")
+     (Operand.reg "%n.i539.i.i")]
+
+theorem bus557_find :
+    numFastBody.findBlock "while.body.us.i.i557.i.i" =
+      some ⟨"while.body.us.i.i557.i.i", bus557Instrs, Term.br "if.end198.i.i"⟩ := by
+  simpa only [bus557Instrs] using numFast_findBlock_while_body_us_i_i557_i_i
+
+def bus557Env (env : Env) (pow : Nat) (w : Nat) (c : BitVec 32) : Env :=
+  ("%arrayidx14.us.i.i560.i.i", .ptr (pow + w * 8)) ::
+  ("%inc12.us.i.i559.i.i", .int 32 (c + 0x00000001#32)) :: env
+
+theorem bus557_denote {calls : Calls} {env : Env} {s : State}
+    {c : BitVec 32} {pow w : Nat} {wv off : BitVec 64} {n : Nat}
+    (h92 : lookupName env "%92" = some (.int 32 c))
+    (hpow : lookupName env "%pow.i.i" = some (.ptr pow))
+    (hw : lookupName env "%wide.trip.count.i.i543.i.i" = some (.int 64 wv))
+    (hwv : (wv.signExtend 64).toNat = w) (hpos : w < 2 ^ 63)
+    (hoff : lookupName env "%shr.i.i552.i.i.lcssa.off0" = some (.int 64 off))
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr n)) :
+    denoteCode calls bus557Instrs (stateAt env s) =
+      some (stateAt (bus557Env env pow w c)
+        { s with mem := writeBytes (writeBytes s.mem (pow + w * 8)
+            (natToBytes off.toNat 8)) n (natToBytes (c + 0x00000001#32).toNat 4) }) := by
+  unfold bus557Instrs
+  rw [JsonScanLane.denoteCode_add_imm_w calls env s "%inc12.us.i.i559.i.i" "%92" 32 h92]
+  rw [NumFastTier1.denoteCode_gep64_reg calls
+    (("%inc12.us.i.i559.i.i", .int 32 (c + 0x00000001#32)) :: env) s
+    "%arrayidx14.us.i.i560.i.i" "%pow.i.i" "%wide.trip.count.i.i543.i.i"
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact hpow)
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact hw) (by rw [hwv]; exact hpos)]
+  rw [hwv]
+  rw [denoteCode_store64 calls
+    (("%arrayidx14.us.i.i560.i.i", .ptr (pow + w * 8)) ::
+      ("%inc12.us.i.i559.i.i", .int 32 (c + 0x00000001#32)) :: env) s
+    "%shr.i.i552.i.i.lcssa.off0" "%arrayidx14.us.i.i560.i.i"
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hoff)
+    (lookupName_cons_self ..)]
+  rw [denoteCode_store32 calls
+    (("%arrayidx14.us.i.i560.i.i", .ptr (pow + w * 8)) ::
+      ("%inc12.us.i.i559.i.i", .int 32 (c + 0x00000001#32)) :: env)
+    { s with mem := writeBytes s.mem (pow + w * 8) (natToBytes off.toNat 8) }
+    "%inc12.us.i.i559.i.i" "%n.i539.i.i"
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact lookupName_cons_self ..)
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hn)]
+  simp only [denoteCode_nil, bus557Env, stateAt]
+
+theorem bus557_step {calls : Calls} {env : Env} {s : State}
+    {c : BitVec 32} {pow w : Nat} {wv off : BitVec 64} {n : Nat}
+    (hpc : s.pc = "while.body.us.i.i557.i.i")
+    (h92 : lookupName env "%92" = some (.int 32 c))
+    (hpow : lookupName env "%pow.i.i" = some (.ptr pow))
+    (hw : lookupName env "%wide.trip.count.i.i543.i.i" = some (.int 64 wv))
+    (hwv : (wv.signExtend 64).toNat = w) (hpos : w < 2 ^ 63)
+    (hoff : lookupName env "%shr.i.i552.i.i.lcssa.off0" = some (.int 64 off))
+    (hn : lookupName env "%n.i539.i.i" = some (.ptr n)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (bus557Env env pow w c)
+        { s with mem := writeBytes (writeBytes s.mem (pow + w * 8)
+            (natToBytes off.toNat 8)) n (natToBytes (c + 0x00000001#32).toNat 4),
+                 pc := "if.end198.i.i", pre := some "while.body.us.i.i557.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (bus557Env env pow w c)
+      { s with mem := writeBytes (writeBytes s.mem (pow + w * 8)
+          (natToBytes off.toNat 8)) n (natToBytes (c + 0x00000001#32).toNat 4) })
+    (b := ⟨"while.body.us.i.i557.i.i", bus557Instrs, Term.br "if.end198.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using bus557_find
+  · simpa only [stateAt] using bus557_denote h92 hpow hw hwv hpos hoff hn
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The `%108` rung's carry store. -/
+def bus601Instrs : List Instr :=
+  [Instr.binop "%inc12.us.i.i603.i.i" (BinOp.add) 32 (Operand.reg "%108")
+     (Operand.imm (Const.int 32 0x0000000000000001#32)),
+   Instr.gep "%arrayidx14.us.i.i604.i.i" (Ty.int 64) (Operand.reg "%v.i.i")
+     (Operand.reg "%wide.trip.count.i.i587.i.i"),
+   Instr.store (Ty.int 64) (Operand.reg "%shr.i.i596.i.i.lcssa.off0")
+     (Operand.reg "%arrayidx14.us.i.i604.i.i")]
+
+theorem bus601_find :
+    numFastBody.findBlock "while.body.us.i.i601.i.i" =
+      some ⟨"while.body.us.i.i601.i.i", bus601Instrs, Term.br "stk_mul_u64.exit605.i.i"⟩ := by
+  simpa only [bus601Instrs] using numFast_findBlock_while_body_us_i_i601_i_i
+
+def bus601Env (env : Env) (v : Nat) (w : Nat) (c : BitVec 32) : Env :=
+  ("%arrayidx14.us.i.i604.i.i", .ptr (v + w * 8)) ::
+  ("%inc12.us.i.i603.i.i", .int 32 (c + 0x00000001#32)) :: env
+
+theorem bus601_denote {calls : Calls} {env : Env} {s : State}
+    {c : BitVec 32} {v w : Nat} {wv off : BitVec 64}
+    (hc : lookupName env "%108" = some (.int 32 c))
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hw : lookupName env "%wide.trip.count.i.i587.i.i" = some (.int 64 wv))
+    (hwv : (wv.signExtend 64).toNat = w) (hpos : w < 2 ^ 63)
+    (hoff : lookupName env "%shr.i.i596.i.i.lcssa.off0" = some (.int 64 off)) :
+    denoteCode calls bus601Instrs (stateAt env s) =
+      some (stateAt (bus601Env env v w c)
+        { s with mem := writeBytes s.mem (v + w * 8) (natToBytes off.toNat 8) }) := by
+  unfold bus601Instrs
+  rw [JsonScanLane.denoteCode_add_imm_w calls env s "%inc12.us.i.i603.i.i" "%108" 32 hc]
+  rw [NumFastTier1.denoteCode_gep64_reg calls
+    (("%inc12.us.i.i603.i.i", .int 32 (c + 0x00000001#32)) :: env) s
+    "%arrayidx14.us.i.i604.i.i" "%v.i.i" "%wide.trip.count.i.i587.i.i"
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact hv)
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact hw) (by rw [hwv]; exact hpos)]
+  rw [hwv]
+  rw [denoteCode_store64 calls
+    (("%arrayidx14.us.i.i604.i.i", .ptr (v + w * 8)) ::
+      ("%inc12.us.i.i603.i.i", .int 32 (c + 0x00000001#32)) :: env) s
+    "%shr.i.i596.i.i.lcssa.off0" "%arrayidx14.us.i.i604.i.i"
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hoff)
+    (lookupName_cons_self ..)]
+  simp only [denoteCode_nil, bus601Env, stateAt]
+
+theorem bus601_step {calls : Calls} {env : Env} {s : State}
+    {c : BitVec 32} {v w : Nat} {wv off : BitVec 64}
+    (hpc : s.pc = "while.body.us.i.i601.i.i")
+    (hc : lookupName env "%108" = some (.int 32 c))
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hw : lookupName env "%wide.trip.count.i.i587.i.i" = some (.int 64 wv))
+    (hwv : (wv.signExtend 64).toNat = w) (hpos : w < 2 ^ 63)
+    (hoff : lookupName env "%shr.i.i596.i.i.lcssa.off0" = some (.int 64 off)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (bus601Env env v w c)
+        { s with mem := writeBytes s.mem (v + w * 8) (natToBytes off.toNat 8),
+                 pc := "stk_mul_u64.exit605.i.i",
+                 pre := some "while.body.us.i.i601.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (bus601Env env v w c)
+      { s with mem := writeBytes s.mem (v + w * 8) (natToBytes off.toNat 8) })
+    (b := ⟨"while.body.us.i.i601.i.i", bus601Instrs,
+      Term.br "stk_mul_u64.exit605.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using bus601_find
+  · simpa only [stateAt] using bus601_denote hc hv hw hwv hpos hoff
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The `%92`-count rung's residue join. -/
+def unr555Specs : List PhiSpec :=
+  [{ dst := "%add4.i.i550.i.i.lcssa.ph", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i.i542.i.i", (Operand.imm Const.poison)),
+                  ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i550.i.i.3"))] },
+   { dst := "%shr.i.i552.i.i.lcssa.ph.off0", ty := Ty.int 64,
+     incoming := [("for.body.lr.ph.i.i542.i.i", (Operand.imm Const.poison)),
+                  ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1093"))] },
+   { dst := "%indvars.iv.i.i545.i.i.unr", ty := Ty.int 64,
+     incoming := [("for.body.lr.ph.i.i542.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i553.i.i.3"))] },
+   { dst := "%carry.029.i.i546.i.i.unr", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i.i542.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+                  ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i552.i.i.3"))] }]
+
+def unr555Instrs : List Instr :=
+  [Instr.icmp "%lcmp.mod1064.not" (IPred.eq) 64 (Operand.reg "%xtraiter1062")
+     (Operand.imm (Const.int 64 0x0000000000000000#64))]
+
+def unr555Block : List Instr := unr555Specs.map PhiSpec.instr ++ unr555Instrs
+
+theorem unr555_find :
+    numFastBody.findBlock "while.cond.preheader.i.i555.i.i.unr-lcssa" =
+      some ⟨"while.cond.preheader.i.i555.i.i.unr-lcssa", unr555Block,
+        Term.condbr (Operand.reg "%lcmp.mod1064.not")
+          "while.cond.preheader.i.i555.i.i" "for.body.i.i544.i.i.epil"⟩ := by
+  simp only [unr555Block, unr555Instrs, unr555Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_cond_preheader_i_i555_i_i_unr_lcssa
+
+def unr555Env (env : Env) (a4 : BitVec 128) (off : BitVec 64) (iv : BitVec 64)
+    (cy : BitVec 128) (xt : BitVec 64) : Env :=
+  ("%lcmp.mod1064.not", .int 1 (evalICmp .eq xt 0x0000000000000000#64)) ::
+  ("%carry.029.i.i546.i.i.unr", .int 128 cy) ::
+  ("%indvars.iv.i.i545.i.i.unr", .int 64 iv) ::
+  ("%shr.i.i552.i.i.lcssa.ph.off0", .int 64 off) ::
+  ("%add4.i.i550.i.i.lcssa.ph", .int 128 a4) :: env
+
+theorem unr555_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i550.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1093"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i553.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i552.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1062" = some (.int 64 xt)) :
+    denoteCode calls unr555Block (stateAt env s) =
+      some (stateAt (unr555Env env a4 off iv cy xt) s) := by
+  have hsel : PhiSelects (stateAt env s) pre unr555Specs
+      [("%add4.i.i550.i.i.lcssa.ph", .int 128 a4),
+       ("%shr.i.i552.i.i.lcssa.ph.off0", .int 64 off),
+       ("%indvars.iv.i.i545.i.i.unr", .int 64 iv),
+       ("%carry.029.i.i546.i.i.unr", .int 128 cy)] := by
+    simp only [unr555Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    constructor
+    · exact hop3
+    · exact hov3
+    constructor
+    · exact hop4
+    · exact hov4
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := unr555Specs)
+    (vs := [("%add4.i.i550.i.i.lcssa.ph", .int 128 a4),
+      ("%shr.i.i552.i.i.lcssa.ph.off0", .int 64 off),
+      ("%indvars.iv.i.i545.i.i.unr", .int 64 iv),
+      ("%carry.029.i.i546.i.i.unr", .int 128 cy)])
+    (rest := unr555Instrs) hpre hsel (by decide)
+  unfold unr555Block
+  rw [h]
+  simp only [runCells]
+  unfold unr555Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%carry.029.i.i546.i.i.unr", .int 128 cy) ::
+      ("%indvars.iv.i.i545.i.i.unr", .int 64 iv) ::
+      ("%shr.i.i552.i.i.lcssa.ph.off0", .int 64 off) ::
+      ("%add4.i.i550.i.i.lcssa.ph", .int 128 a4) :: env) s
+    "%lcmp.mod1064.not" "%xtraiter1062" .eq
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]; exact hxt)]
+  simp only [denoteCode_nil, unr555Env, stateAt]
+
+theorem unr555_step_join {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i555.i.i.unr-lcssa") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i550.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1093"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i553.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i552.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1062" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr555Env env a4 off iv cy xt)
+        { s with pc := "while.cond.preheader.i.i555.i.i",
+                 pre := some "while.cond.preheader.i.i555.i.i.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr555Env env a4 off iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i.i555.i.i.unr-lcssa", unr555Block,
+      Term.condbr (Operand.reg "%lcmp.mod1064.not")
+        "while.cond.preheader.i.i555.i.i" "for.body.i.i544.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr555_find
+  · simpa only [stateAt] using unr555_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hop4 hov4 hxt
+  · rw [numFast_execTerm_condbr_one (s := stateAt (unr555Env env a4 off iv cy xt) s)
+      "%lcmp.mod1064.not" "while.cond.preheader.i.i555.i.i" "for.body.i.i544.i.i.epil"
+      (by simp [unr555Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem unr555_step_peel {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i555.i.i.unr-lcssa") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i550.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1093"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i553.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i542.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i555.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i552.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1062" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr555Env env a4 off iv cy xt)
+        { s with pc := "for.body.i.i544.i.i.epil",
+                 pre := some "while.cond.preheader.i.i555.i.i.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr555Env env a4 off iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i.i555.i.i.unr-lcssa", unr555Block,
+      Term.condbr (Operand.reg "%lcmp.mod1064.not")
+        "while.cond.preheader.i.i555.i.i" "for.body.i.i544.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr555_find
+  · simpa only [stateAt] using unr555_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hop4 hov4 hxt
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (unr555Env env a4 off iv cy xt) s)
+      "%lcmp.mod1064.not" "while.cond.preheader.i.i555.i.i" "for.body.i.i544.i.i.epil"
+      (by simp [unr555Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-! ##### The residue joins of the other two nests -/
+
+/-- The `%inc12`-count rung's residue join. -/
+def unr577Specs : List PhiSpec :=
+  [{ dst := "%add4.i.i572.i.i.lcssa.ph", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i.i564.i.i", (Operand.imm Const.poison)),
+                  ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i572.i.i.3"))] },
+   { dst := "%shr.i.i574.i.i.lcssa.ph.off0", ty := Ty.int 64,
+     incoming := [("for.body.lr.ph.i.i564.i.i", (Operand.imm Const.poison)),
+                  ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1099"))] },
+   { dst := "%indvars.iv.i.i567.i.i.unr", ty := Ty.int 64,
+     incoming := [("for.body.lr.ph.i.i564.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i575.i.i.3"))] },
+   { dst := "%carry.029.i.i568.i.i.unr", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i.i564.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+                  ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i574.i.i.3"))] }]
+
+def unr577Instrs : List Instr :=
+  [Instr.icmp "%lcmp.mod1085.not" (IPred.eq) 64 (Operand.reg "%xtraiter1083")
+     (Operand.imm (Const.int 64 0x0000000000000000#64))]
+
+def unr577Block : List Instr := unr577Specs.map PhiSpec.instr ++ unr577Instrs
+
+theorem unr577_find :
+    numFastBody.findBlock "while.cond.preheader.i.i577.i.i.unr-lcssa" =
+      some ⟨"while.cond.preheader.i.i577.i.i.unr-lcssa", unr577Block,
+        Term.condbr (Operand.reg "%lcmp.mod1085.not")
+          "while.cond.preheader.i.i577.i.i" "for.body.i.i566.i.i.epil"⟩ := by
+  simp only [unr577Block, unr577Instrs, unr577Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_cond_preheader_i_i577_i_i_unr_lcssa
+
+def unr577Env (env : Env) (a4 : BitVec 128) (off : BitVec 64) (iv : BitVec 64)
+    (cy : BitVec 128) (xt : BitVec 64) : Env :=
+  ("%lcmp.mod1085.not", .int 1 (evalICmp .eq xt 0x0000000000000000#64)) ::
+  ("%carry.029.i.i568.i.i.unr", .int 128 cy) ::
+  ("%indvars.iv.i.i567.i.i.unr", .int 64 iv) ::
+  ("%shr.i.i574.i.i.lcssa.ph.off0", .int 64 off) ::
+  ("%add4.i.i572.i.i.lcssa.ph", .int 128 a4) :: env
+
+theorem unr577_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i572.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1099"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i575.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i574.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1083" = some (.int 64 xt)) :
+    denoteCode calls unr577Block (stateAt env s) =
+      some (stateAt (unr577Env env a4 off iv cy xt) s) := by
+  have hsel : PhiSelects (stateAt env s) pre unr577Specs
+      [("%add4.i.i572.i.i.lcssa.ph", .int 128 a4),
+       ("%shr.i.i574.i.i.lcssa.ph.off0", .int 64 off),
+       ("%indvars.iv.i.i567.i.i.unr", .int 64 iv),
+       ("%carry.029.i.i568.i.i.unr", .int 128 cy)] := by
+    simp only [unr577Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    constructor
+    · exact hop3
+    · exact hov3
+    constructor
+    · exact hop4
+    · exact hov4
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := unr577Specs)
+    (vs := [("%add4.i.i572.i.i.lcssa.ph", .int 128 a4),
+      ("%shr.i.i574.i.i.lcssa.ph.off0", .int 64 off),
+      ("%indvars.iv.i.i567.i.i.unr", .int 64 iv),
+      ("%carry.029.i.i568.i.i.unr", .int 128 cy)])
+    (rest := unr577Instrs) hpre hsel (by decide)
+  unfold unr577Block
+  rw [h]
+  simp only [runCells]
+  unfold unr577Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%carry.029.i.i568.i.i.unr", .int 128 cy) ::
+      ("%indvars.iv.i.i567.i.i.unr", .int 64 iv) ::
+      ("%shr.i.i574.i.i.lcssa.ph.off0", .int 64 off) ::
+      ("%add4.i.i572.i.i.lcssa.ph", .int 128 a4) :: env) s
+    "%lcmp.mod1085.not" "%xtraiter1083" .eq
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]; exact hxt)]
+  simp only [denoteCode_nil, unr577Env, stateAt]
+
+theorem unr577_step_join {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i577.i.i.unr-lcssa") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i572.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1099"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i575.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i574.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1083" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr577Env env a4 off iv cy xt)
+        { s with pc := "while.cond.preheader.i.i577.i.i",
+                 pre := some "while.cond.preheader.i.i577.i.i.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr577Env env a4 off iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i.i577.i.i.unr-lcssa", unr577Block,
+      Term.condbr (Operand.reg "%lcmp.mod1085.not")
+        "while.cond.preheader.i.i577.i.i" "for.body.i.i566.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr577_find
+  · simpa only [stateAt] using unr577_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hop4 hov4 hxt
+  · rw [numFast_execTerm_condbr_one (s := stateAt (unr577Env env a4 off iv cy xt) s)
+      "%lcmp.mod1085.not" "while.cond.preheader.i.i577.i.i" "for.body.i.i566.i.i.epil"
+      (by simp [unr577Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem unr577_step_peel {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i577.i.i.unr-lcssa") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i572.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1099"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i575.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i564.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i577.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i574.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1083" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr577Env env a4 off iv cy xt)
+        { s with pc := "for.body.i.i566.i.i.epil",
+                 pre := some "while.cond.preheader.i.i577.i.i.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr577Env env a4 off iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i.i577.i.i.unr-lcssa", unr577Block,
+      Term.condbr (Operand.reg "%lcmp.mod1085.not")
+        "while.cond.preheader.i.i577.i.i" "for.body.i.i566.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr577_find
+  · simpa only [stateAt] using unr577_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hop4 hov4 hxt
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (unr577Env env a4 off iv cy xt) s)
+      "%lcmp.mod1085.not" "while.cond.preheader.i.i577.i.i" "for.body.i.i566.i.i.epil"
+      (by simp [unr577Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The `%108`-count rung's residue join. -/
+def unr599Specs : List PhiSpec :=
+  [{ dst := "%add4.i.i594.i.i.lcssa.ph", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i.i586.i.i", (Operand.imm Const.poison)),
+                  ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i594.i.i.3"))] },
+   { dst := "%shr.i.i596.i.i.lcssa.ph.off0", ty := Ty.int 64,
+     incoming := [("for.body.lr.ph.i.i586.i.i", (Operand.imm Const.poison)),
+                  ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1095"))] },
+   { dst := "%indvars.iv.i.i589.i.i.unr", ty := Ty.int 64,
+     incoming := [("for.body.lr.ph.i.i586.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i597.i.i.3"))] },
+   { dst := "%carry.029.i.i590.i.i.unr", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i.i586.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+                  ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i596.i.i.3"))] }]
+
+def unr599Instrs : List Instr :=
+  [Instr.icmp "%lcmp.mod1071.not" (IPred.eq) 64 (Operand.reg "%xtraiter1069")
+     (Operand.imm (Const.int 64 0x0000000000000000#64))]
+
+def unr599Block : List Instr := unr599Specs.map PhiSpec.instr ++ unr599Instrs
+
+theorem unr599_find :
+    numFastBody.findBlock "while.cond.preheader.i.i599.i.i.unr-lcssa" =
+      some ⟨"while.cond.preheader.i.i599.i.i.unr-lcssa", unr599Block,
+        Term.condbr (Operand.reg "%lcmp.mod1071.not")
+          "while.cond.preheader.i.i599.i.i" "for.body.i.i588.i.i.epil"⟩ := by
+  simp only [unr599Block, unr599Instrs, unr599Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_cond_preheader_i_i599_i_i_unr_lcssa
+
+def unr599Env (env : Env) (a4 : BitVec 128) (off : BitVec 64) (iv : BitVec 64)
+    (cy : BitVec 128) (xt : BitVec 64) : Env :=
+  ("%lcmp.mod1071.not", .int 1 (evalICmp .eq xt 0x0000000000000000#64)) ::
+  ("%carry.029.i.i590.i.i.unr", .int 128 cy) ::
+  ("%indvars.iv.i.i589.i.i.unr", .int 64 iv) ::
+  ("%shr.i.i596.i.i.lcssa.ph.off0", .int 64 off) ::
+  ("%add4.i.i594.i.i.lcssa.ph", .int 128 a4) :: env
+
+theorem unr599_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i594.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1095"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i597.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i596.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1069" = some (.int 64 xt)) :
+    denoteCode calls unr599Block (stateAt env s) =
+      some (stateAt (unr599Env env a4 off iv cy xt) s) := by
+  have hsel : PhiSelects (stateAt env s) pre unr599Specs
+      [("%add4.i.i594.i.i.lcssa.ph", .int 128 a4),
+       ("%shr.i.i596.i.i.lcssa.ph.off0", .int 64 off),
+       ("%indvars.iv.i.i589.i.i.unr", .int 64 iv),
+       ("%carry.029.i.i590.i.i.unr", .int 128 cy)] := by
+    simp only [unr599Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    constructor
+    · exact hop3
+    · exact hov3
+    constructor
+    · exact hop4
+    · exact hov4
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := unr599Specs)
+    (vs := [("%add4.i.i594.i.i.lcssa.ph", .int 128 a4),
+      ("%shr.i.i596.i.i.lcssa.ph.off0", .int 64 off),
+      ("%indvars.iv.i.i589.i.i.unr", .int 64 iv),
+      ("%carry.029.i.i590.i.i.unr", .int 128 cy)])
+    (rest := unr599Instrs) hpre hsel (by decide)
+  unfold unr599Block
+  rw [h]
+  simp only [runCells]
+  unfold unr599Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%carry.029.i.i590.i.i.unr", .int 128 cy) ::
+      ("%indvars.iv.i.i589.i.i.unr", .int 64 iv) ::
+      ("%shr.i.i596.i.i.lcssa.ph.off0", .int 64 off) ::
+      ("%add4.i.i594.i.i.lcssa.ph", .int 128 a4) :: env) s
+    "%lcmp.mod1071.not" "%xtraiter1069" .eq
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]; exact hxt)]
+  simp only [denoteCode_nil, unr599Env, stateAt]
+
+theorem unr599_step_join {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i599.i.i.unr-lcssa") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i594.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1095"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i597.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i596.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1069" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr599Env env a4 off iv cy xt)
+        { s with pc := "while.cond.preheader.i.i599.i.i",
+                 pre := some "while.cond.preheader.i.i599.i.i.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr599Env env a4 off iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i.i599.i.i.unr-lcssa", unr599Block,
+      Term.condbr (Operand.reg "%lcmp.mod1071.not")
+        "while.cond.preheader.i.i599.i.i" "for.body.i.i588.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr599_find
+  · simpa only [stateAt] using unr599_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hop4 hov4 hxt
+  · rw [numFast_execTerm_condbr_one (s := stateAt (unr599Env env a4 off iv cy xt) s)
+      "%lcmp.mod1071.not" "while.cond.preheader.i.i599.i.i" "for.body.i.i588.i.i.epil"
+      (by simp [unr599Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem unr599_step_peel {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i599.i.i.unr-lcssa") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i594.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1095"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i597.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i586.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i599.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i596.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1069" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr599Env env a4 off iv cy xt)
+        { s with pc := "for.body.i.i588.i.i.epil",
+                 pre := some "while.cond.preheader.i.i599.i.i.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr599Env env a4 off iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i.i599.i.i.unr-lcssa", unr599Block,
+      Term.condbr (Operand.reg "%lcmp.mod1071.not")
+        "while.cond.preheader.i.i599.i.i" "for.body.i.i588.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr599_find
+  · simpa only [stateAt] using unr599_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hop4 hov4 hxt
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (unr599Env env a4 off iv cy xt) s)
+      "%lcmp.mod1071.not" "while.cond.preheader.i.i599.i.i" "for.body.i.i588.i.i.epil"
+      (by simp [unr599Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The `if.end195`-reaching nest's residue join. -/
+def unr622Specs : List PhiSpec :=
+  [{ dst := "%add4.i.i617.i.i.lcssa.ph", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i.i608.i.i", (Operand.imm Const.poison)),
+                  ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i617.i.i.3"))] },
+   { dst := "%shr.i.i619.i.i.lcssa.ph.off0", ty := Ty.int 64,
+     incoming := [("for.body.lr.ph.i.i608.i.i", (Operand.imm Const.poison)),
+                  ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1097"))] },
+   { dst := "%indvars.iv.i.i612.i.i.unr", ty := Ty.int 64,
+     incoming := [("for.body.lr.ph.i.i608.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i620.i.i.3"))] },
+   { dst := "%carry.029.i.i613.i.i.unr", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i.i608.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+                  ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i619.i.i.3"))] }]
+
+def unr622Instrs : List Instr :=
+  [Instr.icmp "%lcmp.mod1078.not" (IPred.eq) 64 (Operand.reg "%xtraiter1076")
+     (Operand.imm (Const.int 64 0x0000000000000000#64))]
+
+def unr622Block : List Instr := unr622Specs.map PhiSpec.instr ++ unr622Instrs
+
+theorem unr622_find :
+    numFastBody.findBlock "while.cond.preheader.i.i622.i.i.unr-lcssa" =
+      some ⟨"while.cond.preheader.i.i622.i.i.unr-lcssa", unr622Block,
+        Term.condbr (Operand.reg "%lcmp.mod1078.not")
+          "while.cond.preheader.i.i622.i.i" "for.body.i.i611.i.i.epil"⟩ := by
+  simp only [unr622Block, unr622Instrs, unr622Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_cond_preheader_i_i622_i_i_unr_lcssa
+
+def unr622Env (env : Env) (a4 : BitVec 128) (off : BitVec 64) (iv : BitVec 64)
+    (cy : BitVec 128) (xt : BitVec 64) : Env :=
+  ("%lcmp.mod1078.not", .int 1 (evalICmp .eq xt 0x0000000000000000#64)) ::
+  ("%carry.029.i.i613.i.i.unr", .int 128 cy) ::
+  ("%indvars.iv.i.i612.i.i.unr", .int 64 iv) ::
+  ("%shr.i.i619.i.i.lcssa.ph.off0", .int 64 off) ::
+  ("%add4.i.i617.i.i.lcssa.ph", .int 128 a4) :: env
+
+theorem unr622_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i617.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1097"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i620.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i619.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1076" = some (.int 64 xt)) :
+    denoteCode calls unr622Block (stateAt env s) =
+      some (stateAt (unr622Env env a4 off iv cy xt) s) := by
+  have hsel : PhiSelects (stateAt env s) pre unr622Specs
+      [("%add4.i.i617.i.i.lcssa.ph", .int 128 a4),
+       ("%shr.i.i619.i.i.lcssa.ph.off0", .int 64 off),
+       ("%indvars.iv.i.i612.i.i.unr", .int 64 iv),
+       ("%carry.029.i.i613.i.i.unr", .int 128 cy)] := by
+    simp only [unr622Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    constructor
+    · exact hop3
+    · exact hov3
+    constructor
+    · exact hop4
+    · exact hov4
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := unr622Specs)
+    (vs := [("%add4.i.i617.i.i.lcssa.ph", .int 128 a4),
+      ("%shr.i.i619.i.i.lcssa.ph.off0", .int 64 off),
+      ("%indvars.iv.i.i612.i.i.unr", .int 64 iv),
+      ("%carry.029.i.i613.i.i.unr", .int 128 cy)])
+    (rest := unr622Instrs) hpre hsel (by decide)
+  unfold unr622Block
+  rw [h]
+  simp only [runCells]
+  unfold unr622Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%carry.029.i.i613.i.i.unr", .int 128 cy) ::
+      ("%indvars.iv.i.i612.i.i.unr", .int 64 iv) ::
+      ("%shr.i.i619.i.i.lcssa.ph.off0", .int 64 off) ::
+      ("%add4.i.i617.i.i.lcssa.ph", .int 128 a4) :: env) s
+    "%lcmp.mod1078.not" "%xtraiter1076" .eq
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]; exact hxt)]
+  simp only [denoteCode_nil, unr622Env, stateAt]
+
+theorem unr622_step_join {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i622.i.i.unr-lcssa") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i617.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1097"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i620.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i619.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1076" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr622Env env a4 off iv cy xt)
+        { s with pc := "while.cond.preheader.i.i622.i.i",
+                 pre := some "while.cond.preheader.i.i622.i.i.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr622Env env a4 off iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i.i622.i.i.unr-lcssa", unr622Block,
+      Term.condbr (Operand.reg "%lcmp.mod1078.not")
+        "while.cond.preheader.i.i622.i.i" "for.body.i.i611.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr622_find
+  · simpa only [stateAt] using unr622_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hop4 hov4 hxt
+  · rw [numFast_execTerm_condbr_one (s := stateAt (unr622Env env a4 off iv cy xt) s)
+      "%lcmp.mod1078.not" "while.cond.preheader.i.i622.i.i" "for.body.i.i611.i.i.epil"
+      (by simp [unr622Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem unr622_step_peel {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 op4 : Operand}
+    {a4 : BitVec 128} {off : BitVec 64} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i622.i.i.unr-lcssa") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%add4.i.i617.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a4))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm Const.poison)),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%extract.t1097"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%indvars.iv.next.i.i620.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 64 iv))
+    (hop4 : phiIncoming pre
+      [("for.body.lr.ph.i.i608.i.i", (Operand.imm (Const.int 128 0x00000000000000000000000000000000#128))),
+       ("while.cond.preheader.i.i622.i.i.unr-lcssa.loopexit", (Operand.reg "%shr.i.i619.i.i.3"))] = some op4)
+    (hov4 : evalOperand (stateAt env s) op4 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1076" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr622Env env a4 off iv cy xt)
+        { s with pc := "for.body.i.i611.i.i.epil",
+                 pre := some "while.cond.preheader.i.i622.i.i.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr622Env env a4 off iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i.i622.i.i.unr-lcssa", unr622Block,
+      Term.condbr (Operand.reg "%lcmp.mod1078.not")
+        "while.cond.preheader.i.i622.i.i" "for.body.i.i611.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr622_find
+  · simpa only [stateAt] using unr622_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hop4 hov4 hxt
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (unr622Env env a4 off iv cy xt) s)
+      "%lcmp.mod1078.not" "while.cond.preheader.i.i622.i.i" "for.body.i.i611.i.i.epil"
+      (by simp [unr622Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The `if.end195`-reaching carry store. -/
+def bus624Instrs : List Instr :=
+  [Instr.binop "%inc12.us.i.i626.i.i" (BinOp.add) 32 (Operand.reg "%116")
+     (Operand.imm (Const.int 32 0x0000000000000001#32)),
+   Instr.gep "%arrayidx14.us.i.i627.i.i" (Ty.int 64) (Operand.reg "%v.i.i")
+     (Operand.reg "%wide.trip.count.i.i610.i.i"),
+   Instr.store (Ty.int 64) (Operand.reg "%shr.i.i619.i.i.lcssa.off0")
+     (Operand.reg "%arrayidx14.us.i.i627.i.i"),
+   Instr.store (Ty.int 32) (Operand.reg "%inc12.us.i.i626.i.i")
+     (Operand.reg "%n.i.i.i")]
+
+theorem bus624_find :
+    numFastBody.findBlock "while.body.us.i.i624.i.i" =
+      some ⟨"while.body.us.i.i624.i.i", bus624Instrs, Term.br "if.end195.i.i"⟩ := by
+  simpa only [bus624Instrs] using numFast_findBlock_while_body_us_i_i624_i_i
+
+def bus624Env (env : Env) (v : Nat) (w : Nat) (c : BitVec 32) : Env :=
+  ("%arrayidx14.us.i.i627.i.i", .ptr (v + w * 8)) ::
+  ("%inc12.us.i.i626.i.i", .int 32 (c + 0x00000001#32)) :: env
+
+theorem bus624_denote {calls : Calls} {env : Env} {s : State}
+    {c : BitVec 32} {v w : Nat} {wv off : BitVec 64} {n : Nat}
+    (hc : lookupName env "%116" = some (.int 32 c))
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hw : lookupName env "%wide.trip.count.i.i610.i.i" = some (.int 64 wv))
+    (hwv : (wv.signExtend 64).toNat = w) (hpos : w < 2 ^ 63)
+    (hoff : lookupName env "%shr.i.i619.i.i.lcssa.off0" = some (.int 64 off))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr n)) :
+    denoteCode calls bus624Instrs (stateAt env s) =
+      some (stateAt (bus624Env env v w c)
+        { s with mem := writeBytes (writeBytes s.mem (v + w * 8)
+            (natToBytes off.toNat 8)) n (natToBytes (c + 0x00000001#32).toNat 4) }) := by
+  unfold bus624Instrs
+  rw [JsonScanLane.denoteCode_add_imm_w calls env s "%inc12.us.i.i626.i.i" "%116" 32 hc]
+  rw [NumFastTier1.denoteCode_gep64_reg calls
+    (("%inc12.us.i.i626.i.i", .int 32 (c + 0x00000001#32)) :: env) s
+    "%arrayidx14.us.i.i627.i.i" "%v.i.i" "%wide.trip.count.i.i610.i.i"
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact hv)
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact hw) (by rw [hwv]; exact hpos)]
+  rw [hwv]
+  rw [denoteCode_store64 calls
+    (("%arrayidx14.us.i.i627.i.i", .ptr (v + w * 8)) ::
+      ("%inc12.us.i.i626.i.i", .int 32 (c + 0x00000001#32)) :: env) s
+    "%shr.i.i619.i.i.lcssa.off0" "%arrayidx14.us.i.i627.i.i"
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hoff)
+    (lookupName_cons_self ..)]
+  rw [denoteCode_store32 calls
+    (("%arrayidx14.us.i.i627.i.i", .ptr (v + w * 8)) ::
+      ("%inc12.us.i.i626.i.i", .int 32 (c + 0x00000001#32)) :: env)
+    { s with mem := writeBytes s.mem (v + w * 8) (natToBytes off.toNat 8) }
+    "%inc12.us.i.i626.i.i" "%n.i.i.i"
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact lookupName_cons_self ..)
+    (by rw [lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hn)]
+  simp only [denoteCode_nil, bus624Env, stateAt]
+
+theorem bus624_step {calls : Calls} {env : Env} {s : State}
+    {c : BitVec 32} {v w : Nat} {wv off : BitVec 64} {n : Nat}
+    (hpc : s.pc = "while.body.us.i.i624.i.i")
+    (hc : lookupName env "%116" = some (.int 32 c))
+    (hv : lookupName env "%v.i.i" = some (.ptr v))
+    (hw : lookupName env "%wide.trip.count.i.i610.i.i" = some (.int 64 wv))
+    (hwv : (wv.signExtend 64).toNat = w) (hpos : w < 2 ^ 63)
+    (hoff : lookupName env "%shr.i.i619.i.i.lcssa.off0" = some (.int 64 off))
+    (hn : lookupName env "%n.i.i.i" = some (.ptr n)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (bus624Env env v w c)
+        { s with mem := writeBytes (writeBytes s.mem (v + w * 8)
+            (natToBytes off.toNat 8)) n (natToBytes (c + 0x00000001#32).toNat 4),
+                 pc := "if.end195.i.i", pre := some "while.body.us.i.i624.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (bus624Env env v w c)
+      { s with mem := writeBytes (writeBytes s.mem (v + w * 8)
+          (natToBytes off.toNat 8)) n (natToBytes (c + 0x00000001#32).toNat 4) })
+    (b := ⟨"while.body.us.i.i624.i.i", bus624Instrs, Term.br "if.end195.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using bus624_find
+  · simpa only [stateAt] using bus624_denote hc hv hw hwv hpos hoff hn
+  · simp only [execTerm, stateAt, hpc]
+
+/-- The `if.end195`-reaching nest's head: the table row, its widen and the
+unroll bound. -/
+def lrph608Instrs : List Instr :=
+  [Instr.gep "%arrayidx194.i.i" (Ty.int 64) (Operand.global "@NUMF_EL1_P10")
+     (Operand.reg "%k183.0.lcssa.i.i"),
+   Instr.load "%117" (Ty.int 64) (Operand.reg "%arrayidx194.i.i"),
+   Instr.zext "%conv3.i.i609.i.i" 64 128 (Operand.reg "%117"),
+   Instr.zext "%wide.trip.count.i.i610.i.i" 32 64 (Operand.reg "%116"),
+   Instr.binop "%xtraiter1076" (BinOp.and) 64
+     (Operand.reg "%wide.trip.count.i.i610.i.i") (Operand.imm (Const.int 64 0x0000000000000003#64)),
+   Instr.icmp "%118" (IPred.ult) 32 (Operand.reg "%116")
+     (Operand.imm (Const.int 32 0x0000000000000004#32))]
+
+theorem lrph608_find :
+    numFastBody.findBlock "for.body.lr.ph.i.i608.i.i" =
+      some ⟨"for.body.lr.ph.i.i608.i.i", lrph608Instrs,
+        Term.condbr (Operand.reg "%118") "while.cond.preheader.i.i622.i.i.unr-lcssa"
+          "for.body.lr.ph.i.i608.i.i.new"⟩ := by
+  simpa only [lrph608Instrs] using numFast_findBlock_for_body_lr_ph_i_i608_i_i
+
+def lrph608Env (env : Env) (p : Nat) (kk : BitVec 64) (w : BitVec 64) (c : BitVec 32) : Env :=
+  ("%118", .int 1 (evalICmp .ult c 0x0000000000000004#32)) ::
+  ("%xtraiter1076", .int 64 (BitVec.ofNat 64 c.toNat &&& 0x0000000000000003#64)) ::
+  ("%wide.trip.count.i.i610.i.i", .int 64 (BitVec.ofNat 64 c.toNat)) ::
+  ("%conv3.i.i609.i.i", .int 128 (BitVec.ofNat 128 w.toNat)) ::
+  ("%117", .int 64 w) ::
+  ("%arrayidx194.i.i", .ptr (p + (kk.signExtend 64).toNat * 8)) :: env
+
+theorem lrph608_denote {calls : Calls} {env : Env} {s : State} {p : Nat}
+    {kk w : BitVec 64} {c : BitVec 32}
+    (hP : lookupName env "@NUMF_EL1_P10" = some (.ptr p))
+    (hkk : lookupName env "%k183.0.lcssa.i.i" = some (.int 64 kk))
+    (hpos : (kk.signExtend 64).toNat < 2 ^ 63)
+    (hw : readBytes s.mem (p + (kk.signExtend 64).toNat * 8) 8
+      = some (natToBytes w.toNat 8))
+    (hc : lookupName env "%116" = some (.int 32 c)) :
+    denoteCode calls lrph608Instrs (stateAt env s) =
+      some (stateAt (lrph608Env env p kk w c) s) := by
+  unfold lrph608Instrs
+  rw [NumFastTier1.denoteCode_gep64_global calls env s "%arrayidx194.i.i"
+    "@NUMF_EL1_P10" "%k183.0.lcssa.i.i" hP hkk hpos]
+  rw [denoteCode_load64 calls (("%arrayidx194.i.i",
+      .ptr (p + (kk.signExtend 64).toNat * 8)) :: env) s "%117" "%arrayidx194.i.i"
+    (lookupName_cons_self ..) hw]
+  rw [denoteCode_zext calls
+    (("%117", .int 64 w) :: ("%arrayidx194.i.i",
+      .ptr (p + (kk.signExtend 64).toNat * 8)) :: env) s
+    "%conv3.i.i609.i.i" "%117" 64 128 (lookupName_cons_self ..)]
+  rw [denoteCode_zext calls
+    (("%conv3.i.i609.i.i", .int 128 (BitVec.ofNat 128 w.toNat)) ::
+      ("%117", .int 64 w) :: ("%arrayidx194.i.i",
+      .ptr (p + (kk.signExtend 64).toNat * 8)) :: env) s
+    "%wide.trip.count.i.i610.i.i" "%116" 32 64
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hc)]
+  rw [denoteCode_and_imm calls
+    (("%wide.trip.count.i.i610.i.i", .int 64 (BitVec.ofNat 64 c.toNat)) ::
+      ("%conv3.i.i609.i.i", .int 128 (BitVec.ofNat 128 w.toNat)) ::
+      ("%117", .int 64 w) :: ("%arrayidx194.i.i",
+      .ptr (p + (kk.signExtend 64).toNat * 8)) :: env) s
+    "%xtraiter1076" "%wide.trip.count.i.i610.i.i" (lookupName_cons_self ..)]
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%xtraiter1076", .int 64 (BitVec.ofNat 64 c.toNat &&& 0x0000000000000003#64)) ::
+      ("%wide.trip.count.i.i610.i.i", .int 64 (BitVec.ofNat 64 c.toNat)) ::
+      ("%conv3.i.i609.i.i", .int 128 (BitVec.ofNat 128 w.toNat)) ::
+      ("%117", .int 64 w) :: ("%arrayidx194.i.i",
+      .ptr (p + (kk.signExtend 64).toNat * 8)) :: env) s
+    "%118" "%116" .ult
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hc)]
+  simp only [denoteCode_nil, lrph608Env, stateAt]
+
+theorem lrph608_step_join {calls : Calls} {env : Env} {s : State} {p : Nat}
+    {kk w : BitVec 64} {c : BitVec 32}
+    (hpc : s.pc = "for.body.lr.ph.i.i608.i.i")
+    (hP : lookupName env "@NUMF_EL1_P10" = some (.ptr p))
+    (hkk : lookupName env "%k183.0.lcssa.i.i" = some (.int 64 kk))
+    (hpos : (kk.signExtend 64).toNat < 2 ^ 63)
+    (hw : readBytes s.mem (p + (kk.signExtend 64).toNat * 8) 8
+      = some (natToBytes w.toNat 8))
+    (hc : lookupName env "%116" = some (.int 32 c))
+    (hbit : evalICmp .ult c 0x0000000000000004#32 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (lrph608Env env p kk w c)
+        { s with pc := "while.cond.preheader.i.i622.i.i.unr-lcssa",
+                 pre := some "for.body.lr.ph.i.i608.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (lrph608Env env p kk w c) s)
+    (b := ⟨"for.body.lr.ph.i.i608.i.i", lrph608Instrs,
+      Term.condbr (Operand.reg "%118") "while.cond.preheader.i.i622.i.i.unr-lcssa"
+        "for.body.lr.ph.i.i608.i.i.new"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using lrph608_find
+  · simpa only [stateAt] using lrph608_denote hP hkk hpos hw hc
+  · rw [numFast_execTerm_condbr_one (s := stateAt (lrph608Env env p kk w c) s)
+      "%118" "while.cond.preheader.i.i622.i.i.unr-lcssa"
+      "for.body.lr.ph.i.i608.i.i.new" (by simp only [lrph608Env, stateAt]; exact lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+theorem lrph608_step_unroll {calls : Calls} {env : Env} {s : State} {p : Nat}
+    {kk w : BitVec 64} {c : BitVec 32}
+    (hpc : s.pc = "for.body.lr.ph.i.i608.i.i")
+    (hP : lookupName env "@NUMF_EL1_P10" = some (.ptr p))
+    (hkk : lookupName env "%k183.0.lcssa.i.i" = some (.int 64 kk))
+    (hpos : (kk.signExtend 64).toNat < 2 ^ 63)
+    (hw : readBytes s.mem (p + (kk.signExtend 64).toNat * 8) 8
+      = some (natToBytes w.toNat 8))
+    (hc : lookupName env "%116" = some (.int 32 c))
+    (hbit : evalICmp .ult c 0x0000000000000004#32 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (lrph608Env env p kk w c)
+        { s with pc := "for.body.lr.ph.i.i608.i.i.new",
+                 pre := some "for.body.lr.ph.i.i608.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (lrph608Env env p kk w c) s)
+    (b := ⟨"for.body.lr.ph.i.i608.i.i", lrph608Instrs,
+      Term.condbr (Operand.reg "%118") "while.cond.preheader.i.i622.i.i.unr-lcssa"
+        "for.body.lr.ph.i.i608.i.i.new"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using lrph608_find
+  · simpa only [stateAt] using lrph608_denote hP hkk hpos hw hc
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (lrph608Env env p kk w c) s)
+      "%118" "while.cond.preheader.i.i622.i.i.unr-lcssa"
+      "for.body.lr.ph.i.i608.i.i.new" (by simp only [lrph608Env, stateAt]; exact lookupName_cons_self ..) hbit]
+    simp only [stateAt, hpc]
+
+/-! ##### The residue joins: `…unr-lcssa`
+
+The four `phi`s take the unrolled body's last values on the loop-exit edge and
+`poison` on the direct head edge; the test is the residue count's zero.  The
+statement keeps the selected operands and their values as hypotheses, so both
+edges are instances of it.
+-/
+
+def unr517Specs : List PhiSpec :=
+  [{ dst := "%shr.i535.i.i.lcssa.ph", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i525.i.i", (Operand.imm Const.poison)),
+                  ("for.body.i527.i.i", (Operand.reg "%shr.i535.i.i.3"))] },
+   { dst := "%indvars.iv.i528.i.i.unr", ty := Ty.int 64,
+     incoming := [("for.body.lr.ph.i525.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+                  ("for.body.i527.i.i", (Operand.reg "%indvars.iv.next.i536.i.i.3"))] },
+   { dst := "%carry.029.i529.i.i.unr", ty := Ty.int 128,
+     incoming := [("for.body.lr.ph.i525.i.i", (Operand.reg "%conv.i514.i.i")),
+                  ("for.body.i527.i.i", (Operand.reg "%shr.i535.i.i.3"))] }]
+
+def unr517Instrs : List Instr :=
+  [Instr.icmp "%lcmp.mod1051.not" (IPred.eq) 64 (Operand.reg "%xtraiter1049")
+     (Operand.imm (Const.int 64 0x0000000000000000#64))]
+
+def unr517Block : List Instr := unr517Specs.map PhiSpec.instr ++ unr517Instrs
+
+theorem unr517_find :
+    numFastBody.findBlock "while.cond.preheader.i517.i.i.loopexit.unr-lcssa" =
+      some ⟨"while.cond.preheader.i517.i.i.loopexit.unr-lcssa", unr517Block,
+        Term.condbr (Operand.reg "%lcmp.mod1051.not")
+          "while.cond.preheader.i517.i.i" "for.body.i527.i.i.epil"⟩ := by
+  simp only [unr517Block, unr517Instrs, unr517Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_cond_preheader_i517_i_i_loopexit_unr_lcssa
+
+def unr517Env (env : Env) (shr : BitVec 128) (iv : BitVec 64) (cy : BitVec 128)
+    (xt : BitVec 64) : Env :=
+  ("%lcmp.mod1051.not", .int 1 (evalICmp .eq xt 0x0000000000000000#64)) ::
+  ("%carry.029.i529.i.i.unr", .int 128 cy) ::
+  ("%indvars.iv.i528.i.i.unr", .int 64 iv) ::
+  ("%shr.i535.i.i.lcssa.ph", .int 128 shr) :: env
+
+theorem unr517_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 : Operand}
+    {shr : BitVec 128} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i525.i.i", (Operand.imm Const.poison)),
+       ("for.body.i527.i.i", (Operand.reg "%shr.i535.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 shr))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i525.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("for.body.i527.i.i", (Operand.reg "%indvars.iv.next.i536.i.i.3"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 iv))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i525.i.i", (Operand.reg "%conv.i514.i.i")),
+       ("for.body.i527.i.i", (Operand.reg "%shr.i535.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1049" = some (.int 64 xt)) :
+    denoteCode calls unr517Block (stateAt env s) =
+      some (stateAt (unr517Env env shr iv cy xt) s) := by
+  have hsel : PhiSelects (stateAt env s) pre unr517Specs
+      [("%shr.i535.i.i.lcssa.ph", .int 128 shr),
+       ("%indvars.iv.i528.i.i.unr", .int 64 iv),
+       ("%carry.029.i529.i.i.unr", .int 128 cy)] := by
+    simp only [unr517Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    constructor
+    · exact hop3
+    · exact hov3
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := unr517Specs)
+    (vs := [("%shr.i535.i.i.lcssa.ph", .int 128 shr),
+      ("%indvars.iv.i528.i.i.unr", .int 64 iv),
+      ("%carry.029.i529.i.i.unr", .int 128 cy)])
+    (rest := unr517Instrs) hpre hsel (by decide)
+  unfold unr517Block
+  rw [h]
+  simp only [runCells]
+  unfold unr517Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%carry.029.i529.i.i.unr", .int 128 cy) ::
+      ("%indvars.iv.i528.i.i.unr", .int 64 iv) ::
+      ("%shr.i535.i.i.lcssa.ph", .int 128 shr) :: env) s
+    "%lcmp.mod1051.not" "%xtraiter1049" .eq
+    (by rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+      lookupName_cons_ne _ _ (by decide)]; exact hxt)]
+  simp only [denoteCode_nil, unr517Env, stateAt]
+
+theorem unr517_step_join {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 : Operand}
+    {shr : BitVec 128} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i517.i.i.loopexit.unr-lcssa")
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i525.i.i", (Operand.imm Const.poison)),
+       ("for.body.i527.i.i", (Operand.reg "%shr.i535.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 shr))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i525.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("for.body.i527.i.i", (Operand.reg "%indvars.iv.next.i536.i.i.3"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 iv))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i525.i.i", (Operand.reg "%conv.i514.i.i")),
+       ("for.body.i527.i.i", (Operand.reg "%shr.i535.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1049" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr517Env env shr iv cy xt)
+        { s with pc := "while.cond.preheader.i517.i.i",
+                 pre := some "while.cond.preheader.i517.i.i.loopexit.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr517Env env shr iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i517.i.i.loopexit.unr-lcssa", unr517Block,
+      Term.condbr (Operand.reg "%lcmp.mod1051.not")
+        "while.cond.preheader.i517.i.i" "for.body.i527.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr517_find
+  · simpa only [stateAt] using unr517_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hxt
+  · rw [numFast_execTerm_condbr_one (s := stateAt (unr517Env env shr iv cy xt) s)
+      "%lcmp.mod1051.not" "while.cond.preheader.i517.i.i" "for.body.i527.i.i.epil"
+      (by simp [unr517Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem unr517_step_peel {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 op3 : Operand}
+    {shr : BitVec 128} {iv : BitVec 64} {cy : BitVec 128} {xt : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i517.i.i.loopexit.unr-lcssa")
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("for.body.lr.ph.i525.i.i", (Operand.imm Const.poison)),
+       ("for.body.i527.i.i", (Operand.reg "%shr.i535.i.i.3"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 shr))
+    (hop2 : phiIncoming pre
+      [("for.body.lr.ph.i525.i.i", (Operand.imm (Const.int 64 0x0000000000000000#64))),
+       ("for.body.i527.i.i", (Operand.reg "%indvars.iv.next.i536.i.i.3"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 iv))
+    (hop3 : phiIncoming pre
+      [("for.body.lr.ph.i525.i.i", (Operand.reg "%conv.i514.i.i")),
+       ("for.body.i527.i.i", (Operand.reg "%shr.i535.i.i.3"))] = some op3)
+    (hov3 : evalOperand (stateAt env s) op3 = some (.int 128 cy))
+    (hxt : lookupName env "%xtraiter1049" = some (.int 64 xt))
+    (hbit : evalICmp .eq xt 0x0000000000000000#64 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (unr517Env env shr iv cy xt)
+        { s with pc := "for.body.i527.i.i.epil",
+                 pre := some "while.cond.preheader.i517.i.i.loopexit.unr-lcssa" }) := by
+  refine numFast_step_at (s' := stateAt (unr517Env env shr iv cy xt) s)
+    (b := ⟨"while.cond.preheader.i517.i.i.loopexit.unr-lcssa", unr517Block,
+      Term.condbr (Operand.reg "%lcmp.mod1051.not")
+        "while.cond.preheader.i517.i.i" "for.body.i527.i.i.epil"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using unr517_find
+  · simpa only [stateAt] using unr517_denote hpre hop1 hov1 hop2 hov2 hop3 hov3 hxt
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (unr517Env env shr iv cy xt) s)
+      "%lcmp.mod1051.not" "while.cond.preheader.i517.i.i" "for.body.i527.i.i.epil"
+      (by simp [unr517Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-! ##### The rungs' tests
+
+The two carried `phi`s (the `i128` sum and its shifted word) meet the peeled
+loop's value, and the `2 ^ 64` comparison decides whether the carry's high word
+is stored past the retained nineteen groups.
+-/
+
+def pre555Specs : List PhiSpec :=
+  [{ dst := "%add4.i.i550.i.i.lcssa", ty := Ty.int 128,
+     incoming := [("while.cond.preheader.i.i555.i.i.unr-lcssa", (Operand.reg "%add4.i.i550.i.i.lcssa.ph")),
+                  ("while.cond.preheader.i.i555.i.i.epilog-lcssa", (Operand.reg "%add4.i.i550.i.i.epil"))] },
+   { dst := "%shr.i.i552.i.i.lcssa.off0", ty := Ty.int 64,
+     incoming := [("while.cond.preheader.i.i555.i.i.unr-lcssa", (Operand.reg "%shr.i.i552.i.i.lcssa.ph.off0")),
+                  ("while.cond.preheader.i.i555.i.i.epilog-lcssa", (Operand.reg "%extract.t1092"))] }]
+
+def pre555Instrs : List Instr :=
+  [Instr.icmp "%tobool.not31.i.i556.i.i" (IPred.ult) 128
+     (Operand.reg "%add4.i.i550.i.i.lcssa")
+     (Operand.imm (Const.int 128 0x00000000000000010000000000000000#128))]
+
+def pre555Block : List Instr := pre555Specs.map PhiSpec.instr ++ pre555Instrs
+
+theorem pre555_find :
+    numFastBody.findBlock "while.cond.preheader.i.i555.i.i" =
+      some ⟨"while.cond.preheader.i.i555.i.i", pre555Block,
+        Term.condbr (Operand.reg "%tobool.not31.i.i556.i.i") "if.end198.i.i"
+          "while.body.us.i.i557.i.i"⟩ := by
+  simp only [pre555Block, pre555Instrs, pre555Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_cond_preheader_i_i555_i_i
+
+def pre555Env (env : Env) (a : BitVec 128) (off : BitVec 64) : Env :=
+  ("%tobool.not31.i.i556.i.i", .int 1 (evalICmp .ult a
+    0x00000000000000010000000000000000#128)) ::
+  ("%shr.i.i552.i.i.lcssa.off0", .int 64 off) ::
+  ("%add4.i.i550.i.i.lcssa", .int 128 a) :: env
+
+theorem pre555_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {a : BitVec 128} {off : BitVec 64}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond.preheader.i.i555.i.i.unr-lcssa", (Operand.reg "%add4.i.i550.i.i.lcssa.ph")),
+       ("while.cond.preheader.i.i555.i.i.epilog-lcssa", (Operand.reg "%add4.i.i550.i.i.epil"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a))
+    (hop2 : phiIncoming pre
+      [("while.cond.preheader.i.i555.i.i.unr-lcssa", (Operand.reg "%shr.i.i552.i.i.lcssa.ph.off0")),
+       ("while.cond.preheader.i.i555.i.i.epilog-lcssa", (Operand.reg "%extract.t1092"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off)) :
+    denoteCode calls pre555Block (stateAt env s) =
+      some (stateAt (pre555Env env a off) s) := by
+  have hsel : PhiSelects (stateAt env s) pre pre555Specs
+      [("%add4.i.i550.i.i.lcssa", .int 128 a),
+       ("%shr.i.i552.i.i.lcssa.off0", .int 64 off)] := by
+    simp only [pre555Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := pre555Specs)
+    (vs := [("%add4.i.i550.i.i.lcssa", .int 128 a),
+      ("%shr.i.i552.i.i.lcssa.off0", .int 64 off)])
+    (rest := pre555Instrs) hpre hsel (by decide)
+  unfold pre555Block
+  rw [h]
+  simp only [runCells]
+  unfold pre555Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%shr.i.i552.i.i.lcssa.off0", .int 64 off) ::
+      ("%add4.i.i550.i.i.lcssa", .int 128 a) :: env) s
+    "%tobool.not31.i.i556.i.i" "%add4.i.i550.i.i.lcssa" .ult
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact lookupName_cons_self ..)]
+  simp only [denoteCode_nil, pre555Env, stateAt]
+
+theorem pre555_step_ladder {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {a : BitVec 128} {off : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i555.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond.preheader.i.i555.i.i.unr-lcssa", (Operand.reg "%add4.i.i550.i.i.lcssa.ph")),
+       ("while.cond.preheader.i.i555.i.i.epilog-lcssa", (Operand.reg "%add4.i.i550.i.i.epil"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a))
+    (hop2 : phiIncoming pre
+      [("while.cond.preheader.i.i555.i.i.unr-lcssa", (Operand.reg "%shr.i.i552.i.i.lcssa.ph.off0")),
+       ("while.cond.preheader.i.i555.i.i.epilog-lcssa", (Operand.reg "%extract.t1092"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hbit : evalICmp .ult a 0x00000000000000010000000000000000#128 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre555Env env a off)
+        { s with pc := "if.end198.i.i",
+                 pre := some "while.cond.preheader.i.i555.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (pre555Env env a off) s)
+    (b := ⟨"while.cond.preheader.i.i555.i.i", pre555Block,
+      Term.condbr (Operand.reg "%tobool.not31.i.i556.i.i") "if.end198.i.i"
+        "while.body.us.i.i557.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre555_find
+  · simpa only [stateAt] using pre555_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_one (s := stateAt (pre555Env env a off) s)
+      "%tobool.not31.i.i556.i.i" "if.end198.i.i" "while.body.us.i.i557.i.i"
+      (by simp [pre555Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem pre555_step_store {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {a : BitVec 128} {off : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i555.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond.preheader.i.i555.i.i.unr-lcssa", (Operand.reg "%add4.i.i550.i.i.lcssa.ph")),
+       ("while.cond.preheader.i.i555.i.i.epilog-lcssa", (Operand.reg "%add4.i.i550.i.i.epil"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a))
+    (hop2 : phiIncoming pre
+      [("while.cond.preheader.i.i555.i.i.unr-lcssa", (Operand.reg "%shr.i.i552.i.i.lcssa.ph.off0")),
+       ("while.cond.preheader.i.i555.i.i.epilog-lcssa", (Operand.reg "%extract.t1092"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hbit : evalICmp .ult a 0x00000000000000010000000000000000#128 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre555Env env a off)
+        { s with pc := "while.body.us.i.i557.i.i",
+                 pre := some "while.cond.preheader.i.i555.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (pre555Env env a off) s)
+    (b := ⟨"while.cond.preheader.i.i555.i.i", pre555Block,
+      Term.condbr (Operand.reg "%tobool.not31.i.i556.i.i") "if.end198.i.i"
+        "while.body.us.i.i557.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre555_find
+  · simpa only [stateAt] using pre555_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (pre555Env env a off) s)
+      "%tobool.not31.i.i556.i.i" "if.end198.i.i" "while.body.us.i.i557.i.i"
+      (by simp [pre555Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The `%108`-count rung's test, at `stk_mul_u64.exit605.i.i` and its store. -/
+def pre599Specs : List PhiSpec :=
+  [{ dst := "%add4.i.i594.i.i.lcssa", ty := Ty.int 128,
+     incoming := [("while.cond.preheader.i.i599.i.i.unr-lcssa", (Operand.reg "%add4.i.i594.i.i.lcssa.ph")),
+                  ("while.cond.preheader.i.i599.i.i.epilog-lcssa", (Operand.reg "%add4.i.i594.i.i.epil"))] },
+   { dst := "%shr.i.i596.i.i.lcssa.off0", ty := Ty.int 64,
+     incoming := [("while.cond.preheader.i.i599.i.i.unr-lcssa", (Operand.reg "%shr.i.i596.i.i.lcssa.ph.off0")),
+                  ("while.cond.preheader.i.i599.i.i.epilog-lcssa", (Operand.reg "%extract.t1094"))] }]
+
+def pre599Instrs : List Instr :=
+  [Instr.icmp "%tobool.not31.i.i600.i.i" (IPred.ult) 128
+     (Operand.reg "%add4.i.i594.i.i.lcssa")
+     (Operand.imm (Const.int 128 0x00000000000000010000000000000000#128))]
+
+def pre599Block : List Instr := pre599Specs.map PhiSpec.instr ++ pre599Instrs
+
+theorem pre599_find :
+    numFastBody.findBlock "while.cond.preheader.i.i599.i.i" =
+      some ⟨"while.cond.preheader.i.i599.i.i", pre599Block,
+        Term.condbr (Operand.reg "%tobool.not31.i.i600.i.i") "stk_mul_u64.exit605.i.i"
+          "while.body.us.i.i601.i.i"⟩ := by
+  simp only [pre599Block, pre599Instrs, pre599Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_cond_preheader_i_i599_i_i
+
+def pre599Env (env : Env) (a : BitVec 128) (off : BitVec 64) : Env :=
+  ("%tobool.not31.i.i600.i.i", .int 1 (evalICmp .ult a
+    0x00000000000000010000000000000000#128)) ::
+  ("%shr.i.i596.i.i.lcssa.off0", .int 64 off) ::
+  ("%add4.i.i594.i.i.lcssa", .int 128 a) :: env
+
+theorem pre599_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {a : BitVec 128} {off : BitVec 64}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond.preheader.i.i599.i.i.unr-lcssa", (Operand.reg "%add4.i.i594.i.i.lcssa.ph")),
+       ("while.cond.preheader.i.i599.i.i.epilog-lcssa", (Operand.reg "%add4.i.i594.i.i.epil"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a))
+    (hop2 : phiIncoming pre
+      [("while.cond.preheader.i.i599.i.i.unr-lcssa", (Operand.reg "%shr.i.i596.i.i.lcssa.ph.off0")),
+       ("while.cond.preheader.i.i599.i.i.epilog-lcssa", (Operand.reg "%extract.t1094"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off)) :
+    denoteCode calls pre599Block (stateAt env s) =
+      some (stateAt (pre599Env env a off) s) := by
+  have hsel : PhiSelects (stateAt env s) pre pre599Specs
+      [("%add4.i.i594.i.i.lcssa", .int 128 a),
+       ("%shr.i.i596.i.i.lcssa.off0", .int 64 off)] := by
+    simp only [pre599Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := pre599Specs)
+    (vs := [("%add4.i.i594.i.i.lcssa", .int 128 a),
+      ("%shr.i.i596.i.i.lcssa.off0", .int 64 off)])
+    (rest := pre599Instrs) hpre hsel (by decide)
+  unfold pre599Block
+  rw [h]
+  simp only [runCells]
+  unfold pre599Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%shr.i.i596.i.i.lcssa.off0", .int 64 off) ::
+      ("%add4.i.i594.i.i.lcssa", .int 128 a) :: env) s
+    "%tobool.not31.i.i600.i.i" "%add4.i.i594.i.i.lcssa" .ult
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact lookupName_cons_self ..)]
+  simp only [denoteCode_nil, pre599Env, stateAt]
+
+theorem pre599_step_exit {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {a : BitVec 128} {off : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i599.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond.preheader.i.i599.i.i.unr-lcssa", (Operand.reg "%add4.i.i594.i.i.lcssa.ph")),
+       ("while.cond.preheader.i.i599.i.i.epilog-lcssa", (Operand.reg "%add4.i.i594.i.i.epil"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a))
+    (hop2 : phiIncoming pre
+      [("while.cond.preheader.i.i599.i.i.unr-lcssa", (Operand.reg "%shr.i.i596.i.i.lcssa.ph.off0")),
+       ("while.cond.preheader.i.i599.i.i.epilog-lcssa", (Operand.reg "%extract.t1094"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hbit : evalICmp .ult a 0x00000000000000010000000000000000#128 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre599Env env a off)
+        { s with pc := "stk_mul_u64.exit605.i.i",
+                 pre := some "while.cond.preheader.i.i599.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (pre599Env env a off) s)
+    (b := ⟨"while.cond.preheader.i.i599.i.i", pre599Block,
+      Term.condbr (Operand.reg "%tobool.not31.i.i600.i.i") "stk_mul_u64.exit605.i.i"
+        "while.body.us.i.i601.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre599_find
+  · simpa only [stateAt] using pre599_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_one (s := stateAt (pre599Env env a off) s)
+      "%tobool.not31.i.i600.i.i" "stk_mul_u64.exit605.i.i" "while.body.us.i.i601.i.i"
+      (by simp [pre599Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem pre599_step_store {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {a : BitVec 128} {off : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i599.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond.preheader.i.i599.i.i.unr-lcssa", (Operand.reg "%add4.i.i594.i.i.lcssa.ph")),
+       ("while.cond.preheader.i.i599.i.i.epilog-lcssa", (Operand.reg "%add4.i.i594.i.i.epil"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a))
+    (hop2 : phiIncoming pre
+      [("while.cond.preheader.i.i599.i.i.unr-lcssa", (Operand.reg "%shr.i.i596.i.i.lcssa.ph.off0")),
+       ("while.cond.preheader.i.i599.i.i.epilog-lcssa", (Operand.reg "%extract.t1094"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hbit : evalICmp .ult a 0x00000000000000010000000000000000#128 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre599Env env a off)
+        { s with pc := "while.body.us.i.i601.i.i",
+                 pre := some "while.cond.preheader.i.i599.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (pre599Env env a off) s)
+    (b := ⟨"while.cond.preheader.i.i599.i.i", pre599Block,
+      Term.condbr (Operand.reg "%tobool.not31.i.i600.i.i") "stk_mul_u64.exit605.i.i"
+        "while.body.us.i.i601.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre599_find
+  · simpa only [stateAt] using pre599_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (pre599Env env a off) s)
+      "%tobool.not31.i.i600.i.i" "stk_mul_u64.exit605.i.i" "while.body.us.i.i601.i.i"
+      (by simp [pre599Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+/-- The `if.end195`-reaching rung's test. -/
+def pre622Specs : List PhiSpec :=
+  [{ dst := "%add4.i.i617.i.i.lcssa", ty := Ty.int 128,
+     incoming := [("while.cond.preheader.i.i622.i.i.unr-lcssa", (Operand.reg "%add4.i.i617.i.i.lcssa.ph")),
+                  ("while.cond.preheader.i.i622.i.i.epilog-lcssa", (Operand.reg "%add4.i.i617.i.i.epil"))] },
+   { dst := "%shr.i.i619.i.i.lcssa.off0", ty := Ty.int 64,
+     incoming := [("while.cond.preheader.i.i622.i.i.unr-lcssa", (Operand.reg "%shr.i.i619.i.i.lcssa.ph.off0")),
+                  ("while.cond.preheader.i.i622.i.i.epilog-lcssa", (Operand.reg "%extract.t1096"))] }]
+
+def pre622Instrs : List Instr :=
+  [Instr.icmp "%tobool.not31.i.i623.i.i" (IPred.ult) 128
+     (Operand.reg "%add4.i.i617.i.i.lcssa")
+     (Operand.imm (Const.int 128 0x00000000000000010000000000000000#128))]
+
+def pre622Block : List Instr := pre622Specs.map PhiSpec.instr ++ pre622Instrs
+
+theorem pre622_find :
+    numFastBody.findBlock "while.cond.preheader.i.i622.i.i" =
+      some ⟨"while.cond.preheader.i.i622.i.i", pre622Block,
+        Term.condbr (Operand.reg "%tobool.not31.i.i623.i.i") "if.end195.i.i"
+          "while.body.us.i.i624.i.i"⟩ := by
+  simp only [pre622Block, pre622Instrs, pre622Specs, PhiSpec.instr,
+    List.map_cons, List.map_nil, List.cons_append, List.nil_append]
+  exact numFast_findBlock_while_cond_preheader_i_i622_i_i
+
+def pre622Env (env : Env) (a : BitVec 128) (off : BitVec 64) : Env :=
+  ("%tobool.not31.i.i623.i.i", .int 1 (evalICmp .ult a
+    0x00000000000000010000000000000000#128)) ::
+  ("%shr.i.i619.i.i.lcssa.off0", .int 64 off) ::
+  ("%add4.i.i617.i.i.lcssa", .int 128 a) :: env
+
+theorem pre622_denote {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {a : BitVec 128} {off : BitVec 64}
+    (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond.preheader.i.i622.i.i.unr-lcssa", (Operand.reg "%add4.i.i617.i.i.lcssa.ph")),
+       ("while.cond.preheader.i.i622.i.i.epilog-lcssa", (Operand.reg "%add4.i.i617.i.i.epil"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a))
+    (hop2 : phiIncoming pre
+      [("while.cond.preheader.i.i622.i.i.unr-lcssa", (Operand.reg "%shr.i.i619.i.i.lcssa.ph.off0")),
+       ("while.cond.preheader.i.i622.i.i.epilog-lcssa", (Operand.reg "%extract.t1096"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off)) :
+    denoteCode calls pre622Block (stateAt env s) =
+      some (stateAt (pre622Env env a off) s) := by
+  have hsel : PhiSelects (stateAt env s) pre pre622Specs
+      [("%add4.i.i617.i.i.lcssa", .int 128 a),
+       ("%shr.i.i619.i.i.lcssa.off0", .int 64 off)] := by
+    simp only [pre622Specs]
+    constructor
+    · exact hop1
+    · exact hov1
+    constructor
+    · exact hop2
+    · exact hov2
+    exact PhiSelects.nil
+  have h := denoteCode_phiRun_at (calls := calls) (env := env) (s := s)
+    (p := pre) (specs := pre622Specs)
+    (vs := [("%add4.i.i617.i.i.lcssa", .int 128 a),
+      ("%shr.i.i619.i.i.lcssa.off0", .int 64 off)])
+    (rest := pre622Instrs) hpre hsel (by decide)
+  unfold pre622Block
+  rw [h]
+  simp only [runCells]
+  unfold pre622Instrs
+  rw [JsonScanLane.denoteCode_icmp_imm_w calls
+    (("%shr.i.i619.i.i.lcssa.off0", .int 64 off) ::
+      ("%add4.i.i617.i.i.lcssa", .int 128 a) :: env) s
+    "%tobool.not31.i.i623.i.i" "%add4.i.i617.i.i.lcssa" .ult
+    (by rw [lookupName_cons_ne _ _ (by decide)]; exact lookupName_cons_self ..)]
+  simp only [denoteCode_nil, pre622Env, stateAt]
+
+theorem pre622_step_end {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {a : BitVec 128} {off : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i622.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond.preheader.i.i622.i.i.unr-lcssa", (Operand.reg "%add4.i.i617.i.i.lcssa.ph")),
+       ("while.cond.preheader.i.i622.i.i.epilog-lcssa", (Operand.reg "%add4.i.i617.i.i.epil"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a))
+    (hop2 : phiIncoming pre
+      [("while.cond.preheader.i.i622.i.i.unr-lcssa", (Operand.reg "%shr.i.i619.i.i.lcssa.ph.off0")),
+       ("while.cond.preheader.i.i622.i.i.epilog-lcssa", (Operand.reg "%extract.t1096"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hbit : evalICmp .ult a 0x00000000000000010000000000000000#128 = (1 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre622Env env a off)
+        { s with pc := "if.end195.i.i",
+                 pre := some "while.cond.preheader.i.i622.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (pre622Env env a off) s)
+    (b := ⟨"while.cond.preheader.i.i622.i.i", pre622Block,
+      Term.condbr (Operand.reg "%tobool.not31.i.i623.i.i") "if.end195.i.i"
+        "while.body.us.i.i624.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre622_find
+  · simpa only [stateAt] using pre622_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_one (s := stateAt (pre622Env env a off) s)
+      "%tobool.not31.i.i623.i.i" "if.end195.i.i" "while.body.us.i.i624.i.i"
+      (by simp [pre622Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
+theorem pre622_step_store {calls : Calls} {env : Env} {s : State}
+    {pre : String} {op1 op2 : Operand} {a : BitVec 128} {off : BitVec 64}
+    (hpc : s.pc = "while.cond.preheader.i.i622.i.i") (hpre : s.pre = some pre)
+    (hop1 : phiIncoming pre
+      [("while.cond.preheader.i.i622.i.i.unr-lcssa", (Operand.reg "%add4.i.i617.i.i.lcssa.ph")),
+       ("while.cond.preheader.i.i622.i.i.epilog-lcssa", (Operand.reg "%add4.i.i617.i.i.epil"))] = some op1)
+    (hov1 : evalOperand (stateAt env s) op1 = some (.int 128 a))
+    (hop2 : phiIncoming pre
+      [("while.cond.preheader.i.i622.i.i.unr-lcssa", (Operand.reg "%shr.i.i619.i.i.lcssa.ph.off0")),
+       ("while.cond.preheader.i.i622.i.i.epilog-lcssa", (Operand.reg "%extract.t1096"))] = some op2)
+    (hov2 : evalOperand (stateAt env s) op2 = some (.int 64 off))
+    (hbit : evalICmp .ult a 0x00000000000000010000000000000000#128 = (0 : BitVec 1)) :
+    step calls numFastBody (stateAt env s) =
+      .jump (stateAt (pre622Env env a off)
+        { s with pc := "while.body.us.i.i624.i.i",
+                 pre := some "while.cond.preheader.i.i622.i.i" }) := by
+  refine numFast_step_at (s' := stateAt (pre622Env env a off) s)
+    (b := ⟨"while.cond.preheader.i.i622.i.i", pre622Block,
+      Term.condbr (Operand.reg "%tobool.not31.i.i623.i.i") "if.end195.i.i"
+        "while.body.us.i.i624.i.i"⟩) ?_ ?_ ?_
+  · simpa only [stateAt, hpc] using pre622_find
+  · simpa only [stateAt] using pre622_denote hpre hop1 hov1 hop2 hov2
+  · rw [numFast_execTerm_condbr_zero (s := stateAt (pre622Env env a off) s)
+      "%tobool.not31.i.i623.i.i" "if.end195.i.i" "while.body.us.i.i624.i.i"
+      (by simp [pre622Env, stateAt]) hbit]
+    simp only [stateAt, hpc]
+
 /-! ### Axiom footprints -/
 
 #print axioms NumFastToDouble.denoteCode_store32
@@ -6480,6 +10121,160 @@ theorem end176_run_ladder {calls : Calls} {env : Env} {s : State}
 #print axioms NumFastToDouble.end83Env_i2
 #print axioms NumFastToDouble.end83Env_n
 #print axioms NumFastToDouble.end83Env_p
+#print axioms NumFastToDouble.step_sext
+#print axioms NumFastToDouble.denoteCode_sext
+#print axioms NumFastToDouble.denoteCode_store32_imm
+#print axioms NumFastToDouble.denoteCode_store64_imm
+#print axioms NumFastToDouble.step_gep8_global_reg
+#print axioms NumFastToDouble.denoteCode_gep8_global_reg
+#print axioms NumFastToDouble.cleanup_find
+#print axioms NumFastToDouble.cleanup_denote
+#print axioms NumFastToDouble.cleanup_step_end
+#print axioms NumFastToDouble.cleanup_step_residue
+#print axioms NumFastToDouble.then148_find
+#print axioms NumFastToDouble.then148_denote
+#print axioms NumFastToDouble.then148_step_nest
+#print axioms NumFastToDouble.then148_step_carry
+#print axioms NumFastToDouble.sinkSplit_find
+#print axioms NumFastToDouble.sinkSplit_denote
+#print axioms NumFastToDouble.sinkSplit_step
+#print axioms NumFastToDouble.end151_find
+#print axioms NumFastToDouble.end151_denote
+#print axioms NumFastToDouble.end151_step_else
+#print axioms NumFastToDouble.end151_step_then
+#print axioms NumFastToDouble.then153_find
+#print axioms NumFastToDouble.then153_denote
+#print axioms NumFastToDouble.then153_step_peel
+#print axioms NumFastToDouble.then153_step_thread
+#print axioms NumFastToDouble.else164_find
+#print axioms NumFastToDouble.else164_denote
+#print axioms NumFastToDouble.else164_step_negative
+#print axioms NumFastToDouble.else164_step_positive
+#print axioms NumFastToDouble.then167_find
+#print axioms NumFastToDouble.then167_denote
+#print axioms NumFastToDouble.then167_step_body
+#print axioms NumFastToDouble.then167_step_thread
+#print axioms NumFastToDouble.end176Thread_find
+#print axioms NumFastToDouble.end176Thread_denote
+#print axioms NumFastToDouble.end176Thread_step
+#print axioms NumFastToDouble.body173_find
+#print axioms NumFastToDouble.body173_denote
+#print axioms NumFastToDouble.body173_step_nest
+#print axioms NumFastToDouble.body173_step_exit
+#print axioms NumFastToDouble.cond184_find
+#print axioms NumFastToDouble.cond184_denote
+#print axioms NumFastToDouble.cond184_step_body
+#print axioms NumFastToDouble.cond184_step_end
+#print axioms NumFastToDouble.body187_find
+#print axioms NumFastToDouble.body187_denote
+#print axioms NumFastToDouble.body187_step_nest
+#print axioms NumFastToDouble.body187_step_exit
+#print axioms NumFastToDouble.exit605_find
+#print axioms NumFastToDouble.exit605_denote
+#print axioms NumFastToDouble.exit605_step_body
+#print axioms NumFastToDouble.exit605_step_end
+#print axioms NumFastToDouble.end190_find
+#print axioms NumFastToDouble.end190_denote
+#print axioms NumFastToDouble.end190_step_rung
+#print axioms NumFastToDouble.end190_step_end
+#print axioms NumFastToDouble.end195_find
+#print axioms NumFastToDouble.end195_denote
+#print axioms NumFastToDouble.end195_step
+#print axioms NumFastToDouble.denoteCode_trunc_one
+#print axioms NumFastToDouble.denoteCode_and_one
+#print axioms NumFastToDouble.loopexit555_find
+#print axioms NumFastToDouble.loopexit555_denote
+#print axioms NumFastToDouble.loopexit555_step
+#print axioms NumFastToDouble.epilog555_find
+#print axioms NumFastToDouble.epilog555_denote
+#print axioms NumFastToDouble.epilog555_step
+#print axioms NumFastToDouble.loopexit577_find
+#print axioms NumFastToDouble.loopexit577_denote
+#print axioms NumFastToDouble.loopexit577_step
+#print axioms NumFastToDouble.loopexit599_find
+#print axioms NumFastToDouble.loopexit599_denote
+#print axioms NumFastToDouble.loopexit599_step
+#print axioms NumFastToDouble.epilog599_find
+#print axioms NumFastToDouble.epilog599_denote
+#print axioms NumFastToDouble.epilog599_step
+#print axioms NumFastToDouble.loopexit622_find
+#print axioms NumFastToDouble.loopexit622_denote
+#print axioms NumFastToDouble.loopexit622_step
+#print axioms NumFastToDouble.epilog622_find
+#print axioms NumFastToDouble.epilog622_denote
+#print axioms NumFastToDouble.epilog622_step
+#print axioms NumFastToDouble.new525_find
+#print axioms NumFastToDouble.new525_denote
+#print axioms NumFastToDouble.new525_step
+#print axioms NumFastToDouble.new542_find
+#print axioms NumFastToDouble.new542_denote
+#print axioms NumFastToDouble.new542_step
+#print axioms NumFastToDouble.new564_find
+#print axioms NumFastToDouble.new564_denote
+#print axioms NumFastToDouble.new564_step
+#print axioms NumFastToDouble.new586_find
+#print axioms NumFastToDouble.new586_denote
+#print axioms NumFastToDouble.new586_step
+#print axioms NumFastToDouble.new608_find
+#print axioms NumFastToDouble.new608_denote
+#print axioms NumFastToDouble.new608_step
+#print axioms NumFastToDouble.unr517_find
+#print axioms NumFastToDouble.unr517_denote
+#print axioms NumFastToDouble.unr517_step_join
+#print axioms NumFastToDouble.unr517_step_peel
+#print axioms NumFastToDouble.pre555_find
+#print axioms NumFastToDouble.pre555_denote
+#print axioms NumFastToDouble.pre555_step_ladder
+#print axioms NumFastToDouble.pre555_step_store
+#print axioms NumFastToDouble.pre599_find
+#print axioms NumFastToDouble.pre599_denote
+#print axioms NumFastToDouble.pre599_step_exit
+#print axioms NumFastToDouble.pre599_step_store
+#print axioms NumFastToDouble.pre622_find
+#print axioms NumFastToDouble.pre622_denote
+#print axioms NumFastToDouble.pre622_step_end
+#print axioms NumFastToDouble.pre622_step_store
+#print axioms NumFastToDouble.pre517_find
+#print axioms NumFastToDouble.pre517_denote
+#print axioms NumFastToDouble.pre517_step_ladder
+#print axioms NumFastToDouble.pre517_step_store
+#print axioms NumFastToDouble.lrph564_find
+#print axioms NumFastToDouble.lrph564_denote
+#print axioms NumFastToDouble.lrph564_step_join
+#print axioms NumFastToDouble.lrph564_step_unroll
+#print axioms NumFastToDouble.lrph586_find
+#print axioms NumFastToDouble.lrph586_denote
+#print axioms NumFastToDouble.lrph586_step_join
+#print axioms NumFastToDouble.lrph586_step_unroll
+#print axioms NumFastToDouble.bus557_find
+#print axioms NumFastToDouble.bus557_denote
+#print axioms NumFastToDouble.bus557_step
+#print axioms NumFastToDouble.bus601_find
+#print axioms NumFastToDouble.bus601_denote
+#print axioms NumFastToDouble.bus601_step
+#print axioms NumFastToDouble.unr555_find
+#print axioms NumFastToDouble.unr555_denote
+#print axioms NumFastToDouble.unr555_step_join
+#print axioms NumFastToDouble.unr555_step_peel
+#print axioms NumFastToDouble.unr577_find
+#print axioms NumFastToDouble.unr577_denote
+#print axioms NumFastToDouble.unr577_step_join
+#print axioms NumFastToDouble.unr577_step_peel
+#print axioms NumFastToDouble.unr599_find
+#print axioms NumFastToDouble.unr599_denote
+#print axioms NumFastToDouble.unr599_step_join
+#print axioms NumFastToDouble.unr599_step_peel
+#print axioms NumFastToDouble.unr622_find
+#print axioms NumFastToDouble.unr622_denote
+#print axioms NumFastToDouble.unr622_step_join
+#print axioms NumFastToDouble.unr622_step_peel
+#print axioms NumFastToDouble.bus624_find
+#print axioms NumFastToDouble.bus624_denote
+#print axioms NumFastToDouble.bus624_step
+#print axioms NumFastToDouble.lrph608_find
+#print axioms NumFastToDouble.lrph608_denote
+#print axioms NumFastToDouble.lrph608_step_join
+#print axioms NumFastToDouble.lrph608_step_unroll
 
 end NumFastToDouble
 
