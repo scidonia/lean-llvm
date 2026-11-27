@@ -31,13 +31,13 @@ What was missing is `C.spans = []` itself.  This module does three things:
   available without the run itself: the equation between the run's carries and
   these abbreviations is what the concrete `[1]` composition still owes.
 
-The last section closes the arena premise at the accept route's memory: from the
-merge state's `C.spans = []` and a zero-staged cursor, the returned `%ndst` word is
-`wordBytes 8 0` (`walkFinishMemAccept_ndst_zero_of_spans_nil`).  The evidence and
-emission theorems take the returned memory at the four reads that the emission
-consumes (`JsonWalkReads`) in place of the arena datum, so the remaining premise is
-the identification of the pipeline run's return with the walk's accept route — the
-stage-2 body link, not an arena fact.
+The last section closes the arena premise at the emission's `%ndst` read: from the
+merge state's `C.spans = []`, a zero-staged cursor, and the returned memory's four
+reads (`JsonWalkReads`), the word at the interface's `ndst` is `wordBytes 8 0`
+(`walk_accept_ndst_zero_of_reads`).  The emission theorem takes that read in place
+of the arena datum, so the remaining premise is the identification of the pipeline
+run's return with the walk's accept route — the stage-2 body link, not an arena
+fact.
 
 ## The search
 
@@ -274,28 +274,9 @@ theorem jsonWalkReads_of_mem {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
 /-! ### The word the accept route leaves
 
 With `C.spans = []` the merge state's logged cursor is the staged one and the
-staging's zero makes that zero.  The accept route's copy writes that word at the
-caller's `%ndst`, so the returned memory's slot reads `wordBytes 8 0` — the arena
-datum `evb_evidence_of_spec` takes. -/
-
-/-- **The accept route's `%ndst` word at a walk with no reserved span.**  The copy
-loads the log's arena word (`walkFinishMemAccept`'s first store, from the
-finalisation's `a = C.alen`), and `C.spans = []` collapses `C.alen` to `G.ndst0`
-(`WalkInv.alen_eq_ndst0_of_spans_nil`), which a zero-staged slot makes zero. -/
-theorem walkFinishMemAccept_ndst_zero_of_spans_nil {m0 : Mem} {G : WalkGeom m0}
-    {C : WalkCarry G} {s : State} (h : WalkInv G C s) (hspans : C.spans = [])
-    (hstaged : readBytes m0 G.ndst 8 = some (wordBytes 8 0)) :
-    readBytes (walkFinishMemAccept G s.mem C.alen C.evlen) G.ndst 8 =
-      some (wordBytes 8 0) := by
-  have halen : C.alen = G.ndst0 := WalkInv.alen_eq_ndst0_of_spans_nil h hspans
-  have h0 : G.ndst0 = 0 := ndst0_eq_zero_of_staged_zero G hstaged
-  have hsep := (walkFinish_sep G C).1
-  have hw := walkFinishMemAccept_ndst G (m := s.mem) (a := C.alen) (l := C.evlen) hsep
-  -- Rewrite the word alone: matching `C.alen` under `readBytes` would unfold the
-  -- memory functions and exhaust the heartbeats.
-  have hword : wordBytes 8 C.alen = wordBytes 8 0 := by rw [halen, h0]
-  rw [hword] at hw
-  exact hw
+staging's zero makes that zero.  The returned memory's `%ndst` read carries the
+logged word at `C.alen` (`JsonWalkReads.ndst`), so the interface's slot reads
+`wordBytes 8 0` — the arena datum `evb_evidence_of_spec` takes. -/
 
 /-- **The arena datum at the interface's `%ndst` read.**  The emission's `%ndst`
 word follows from the four reads, the merge state's empty span list, the zero
@@ -312,42 +293,6 @@ theorem walk_accept_ndst_zero_of_reads {m0 : Mem} {G : WalkGeom m0} {C : WalkCar
   have hword : wordBytes 8 C.alen = wordBytes 8 0 := by rw [halen, h0]
   rw [← hndstG, ← hword]
   exact h.ndst
-
-/-- **The arena datum at the run's accept memory.**  The pipeline's returned
-memory is the walk's accept route's (`hmem`), its `%ndst` slot is the route's
-(`hndstG`), and the merge state reserved nothing: the datum `evb_evidence_of_spec`
-takes holds.  This is `walk_accept_ndst_zero_of_reads` at the reads the equation
-produces (`jsonWalkReads_of_mem`); it is the equation's own form of the datum, kept
-beside the narrow one rather than on the release path. -/
-theorem walk_accept_ndst_zero {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} {m : Mem} (hndstG : G.ndst = evbLayout.ndst)
-    (hInv : WalkInv G C s) (hspans : C.spans = [])
-    (hstaged : readBytes m0 G.ndst 8 = some (wordBytes 8 0))
-    (hmem : m = walkFinishMemAccept G s.mem C.alen C.evlen) :
-    readBytes m evbLayout.ndst 8 = some (wordBytes 8 0) :=
-  walk_accept_ndst_zero_of_reads (jsonWalkReads_of_mem hInv hmem) hndstG hInv hspans
-    hstaged
-
-/-- **The evidence with no arena premise at the walk.**  `evb_evidence_of_spec`
-takes the returned cursor word; here it follows from the merge state's empty span
-list, the zero staging, and the identification of the run's memory with the accept
-route's.  This is the equation's own form of the evidence: `walk_accept_ndst_zero`
-converts `hmem` through `jsonWalkReads_of_mem`, so the statement is available beside
-the narrow route rather than on it. -/
-theorem evb_evidence_of_walk_accept {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} {m : Mem} {next ndstU nev' : Nat}
-    (hpre : routePre evbLayout evbDoc)
-    (hndstG : G.ndst = evbLayout.ndst)
-    (hInv : WalkInv G C s) (hspans : C.spans = [])
-    (hstaged : readBytes m0 G.ndst 8 = some (wordBytes 8 0))
-    (hmem : m = walkFinishMemAccept G s.mem C.alen C.evlen)
-    (hext : pipelineOutputExtents evbArgs (.ret (some (.int 64 1)) m) ndstU nev')
-    (hspec : Sigma_pipeline stage2EventRel evbLayout.base evbArgs evbMem next
-      (.ret (some (.int 64 1)) m)) :
-    Stage2OutcomeEvidence evbLayout.base evbArgs evbMem ndstU nev'
-      (.ret (some (.int 64 1)) m) :=
-  evb_evidence_of_spec hpre hext hspec
-    (walk_accept_ndst_zero hndstG hInv hspans hstaged hmem)
 
 /-- **The emission with no arena premise at the walk and no whole memory.**
 `evb_emission_of_spec` at the arena datum the returned memory's `%ndst` read gives:
@@ -416,18 +361,6 @@ theorem evb_emission_of_walk_accept {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry 
 /-- info: 'LeanLLVM.Refinement.WalkScope.walk_accept_ndst_zero_of_reads' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms walk_accept_ndst_zero_of_reads
-
-/-- info: 'LeanLLVM.Refinement.WalkScope.walkFinishMemAccept_ndst_zero_of_spans_nil' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.WalkScope.walkFinishMemAccept_ndst_zero_of_spans_nil
-
-/-- info: 'LeanLLVM.Refinement.WalkScope.walk_accept_ndst_zero' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.WalkScope.walk_accept_ndst_zero
-
-/-- info: 'LeanLLVM.Refinement.WalkScope.evb_evidence_of_walk_accept' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Refinement.WalkScope.evb_evidence_of_walk_accept
 
 /-- info: 'LeanLLVM.Refinement.WalkScope.evb_emission_of_walk_accept' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

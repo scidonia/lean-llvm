@@ -134,46 +134,10 @@ theorem reportFrame_not_walkWideAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
       ¬ UnchangedOutside m0 m (walkWideAt G C (nextEnd - G.next0)) :=
   frame_weaker_not_stronger hin hout hx
 
-/-! ### The interface at the emission
-
-`evb_emission_of_walk_accept` (`JsonStage2WalkSpansNil.lean`) is the emission at
-these four reads: it turns the interface's `ndst` field into the arena datum the
-emission reads, which `C.spans = []` and a zero-staged slot make zero.  The name
-below is the one the assumption section publishes for that conclusion; the proof is
-the accept route's, so the two cannot drift apart. -/
-
-/-- **`[1]`'s emission from the four reads.**  `evb_emission_of_spec` needs one
-read of the returned memory: its `%ndst` word, zero at this staging.  That is the
-interface's `ndst` field at `C.alen = 0`; the remaining three conjuncts are the
-run's own report (`hext`) and the specification post at `m` (`hspec`), which the
-emission theorem already takes.  No whole memory is named. -/
-theorem evb_emission_of_walk_spine {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} {m : Mem} {next ndstU nev' : Nat}
-    (h : JsonWalkReads G C m)
-    (hpre : routePre evbLayout evbDoc)
-    (hndstG : G.ndst = evbLayout.ndst)
-    (hInv : WalkInv G C s) (hspans : C.spans = [])
-    (hstaged : readBytes m0 G.ndst 8 = some (wordBytes 8 0))
-    (hext : pipelineOutputExtents evbArgs (.ret (some (.int 64 1)) m) ndstU nev')
-    (hspec : Sigma_pipeline stage2EventRel evbLayout.base evbArgs evbMem next
-      (.ret (some (.int 64 1)) m)) :
-    ∃ (arena evs : List UInt8),
-      readBytes m evbLayout.ndst 8 = some (wordBytes 8 ndstU) ∧
-      readBytes m evbLayout.nev 8 = some (wordBytes 8 nev') ∧
-      readBytes m evbLayout.dst ndstU = some arena ∧
-      readBytes m evbLayout.ev nev' = some evs ∧
-      (eventsOfBytesIndexed (ByteString.literal evbDoc)
-          (ByteString.literal evs) (ByteString.literal arena)).bind valueOfEvents =
-        scalarCanonValueOfBytes evbDoc ∧
-      Nonempty EvbCertificate :=
-  evb_emission_of_walk_accept h hpre hndstG hInv hspans hstaged hext hspec
-
 /-! ### Axiom footprints
 
 `#print axioms` under `#guard_msgs`, so the build checks each footprint rather than
-printing it.  The emission carries `Classical.choice` from `evb_emission_of_spec`'s
-route (`JsonEventEmission.lean`), whose pin carries the same carrier; nothing in
-this module introduces it. -/
+printing it. -/
 
 /-- info: 'LeanLLVM.Refinement.frame_not_identifying' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -186,9 +150,5 @@ this module introduces it. -/
 /-- info: 'LeanLLVM.Refinement.reportFrame_not_walkWideAt' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms reportFrame_not_walkWideAt
-
-/-- info: 'LeanLLVM.Refinement.evb_emission_of_walk_spine' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms evb_emission_of_walk_spine
 
 end LeanLLVM.Refinement
