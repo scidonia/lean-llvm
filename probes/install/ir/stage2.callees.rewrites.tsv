@@ -2,7 +2,7 @@
 # probes/install/ir/capture-stage2-callees.sh; do not edit.
 #
 # Every place the capture *rewrote* a token of the emission instead of
-# removing it, with the reason the rewrite is sound.  One kind:
+# removing it, with the reason the rewrite is sound.  Two kinds:
 #
 #   substituted  a token replaced by a defined one: `poison`, the class
 #                `capture-escape.sh` records for the hex reader's two
@@ -10,14 +10,29 @@
 #                carry it in lanes the body overwrites (the
 #                `insertelement`'s lane 0) or whose results the body never
 #                reads (the `pmadd` constants' upper lanes), so the defined
-#                lane 0 stands in.  The `from` column is the emitted token,
-#                the `to` column the one the fixture holds, and `line` is
-#                the line of the extracted body.
+#                lane 0 stands in.
+#   weakened     a token replaced by one that promises less: the second
+#                argument of `num_el_el1`'s one `llvm.ctlz.i64` call is
+#                written `i1 true` and held as `i1 false`.  LLVM's flag
+#                `true` makes the zero word poison and licenses the
+#                optimizer to assume a nonzero operand; the parser admits
+#                only `false`, which returns the width at zero, so the
+#                fixture states the weaker promise.  The entry's
+#                `%w == 0` return keeps the zero word off the only path to
+#                the call, so the two flags denote the same value wherever
+#                the body executes.
 #
-# A callee with no row is a body the capture did not rewrite.  `num_el_el1`
-# and `stk_mul_u64` are such bodies: the strip removes surface, and neither
-# needs a token substituted.
+# The `from` column is the emitted token, the `to` column the one the
+# fixture holds, and `line` is the line of the extracted body.  The
+# `class` column is the normalisation class where the row is one of
+# `capture-escape.sh`'s (the `poison` substitution is class 6), and
+# `n/a` where the row is this capture's own rewrite (`weakened`).
+#
+# A callee with no row is a body the capture did not rewrite.  `stk_mul_u64`
+# is such a body: the strip removes surface, and it needs no token
+# substituted or weakened.
 class	kind	from	to	line	reason
 6	substituted	i64 poison	i64 0	4	poison replaced by the defined lane 0: the lane is one the body overwrites or one whose only readers are result lanes the body never reads
 6	substituted	i8 poison	i8 0	14	poison replaced by the defined lane 0: the lane is one the body overwrites or one whose only readers are result lanes the body never reads
 6	substituted	i16 poison	i16 0	15	poison replaced by the defined lane 0: the lane is one the body overwrites or one whose only readers are result lanes the body never reads
+n/a	weakened	@llvm.ctlz.i64(i64 %w, i1 true)	@llvm.ctlz.i64(i64 %w, i1 false)	13	the flag makes the zero word poison and lets the optimizer assume a nonzero operand; the false form returns the width there, and the entry's `%w == 0` return keeps the zero word off the only path to this call, so no execution observes the difference

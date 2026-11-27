@@ -4,12 +4,15 @@ A parser for the subset of textual LLVM IR that the semantics models.
 The parser is line oriented: one instruction per line, one label per block.
 Unmodelled instructions and block structure are refused with a message naming
 the construct, rather than being approximated: aggregates other than the
-fixed-length vector, and floating point, are not accepted yet.  Of the pointer
+fixed-length vector, the fixed-length array and the named struct with a declared
+extent, and floating point, are not accepted yet.  Of the pointer
 arithmetic the modelled part is one index no wider than 64 bits over an element
 type whose allocated size is the stored size the step scales by —
 `getelementptr [inbounds] <elemTy>, ptr X, iN Y`, with `<elemTy>` one of the
-seven integer widths `Ty.gepElemAdmitted` names or a vector of integer lanes
-under that predicate's one condition — and every other `getelementptr` shape is
+seven integer widths `Ty.gepElemAdmitted` names, a vector of integer lanes
+under that predicate's one condition, or a named struct whose extent the
+declared `Layout` gives (the `[N x T]` two-index form reduces to the same step
+at `T`) — and every other `getelementptr` shape is
 refused by name: an element type outside that admission, a base that is not a
 `ptr`, a second index, a wider index, and the `inrange`/`nuw`/`nusw` modifiers.
 `inbounds` is accepted and dropped, because the instruction has no field for it;
@@ -246,13 +249,38 @@ and an ABI alignment rule), and every access inside the struct is a byte
 A struct with no entry here is refused by name. -/
 abbrev Layout := List (String × Nat)
 
+/-- Resolve a named struct type to its declared extent.  `t` is the token the
+caller already read, `%struct.<name>`; the entry is looked up in the declared
+`layout`, and a name with no entry is refused by name rather than given a
+guessed extent.  This is the one resolver: `alloca`, an array element and a
+`getelementptr` element type all take a struct's extent from it, so the three
+readers cannot disagree about what a struct is worth. -/
+def resolveStruct (layout : Layout) (t : String) : Except String Ty :=
+  let name := (t.drop 8).toString
+  match lookupName layout name with
+  | some bytes => .ok (.struct name bytes)
+  | none =>
+      .error s!"named struct '{t}' has no declared layout: the model takes a \
+          struct's byte extent from the target datalayout (a `Layout` argument) and \
+          does not recompute it from fields"
+
+/-- Read a named struct type from the token stream.  The token is consumed here
+and resolved by `resolveStruct`. -/
+def expectStructTy (layout : Layout) : P Ty := do
+  let t ← P.next
+  match resolveStruct layout t with
+  | .ok ty => pure ty
+  | .error e => P.fail e
+
 /-- Parse an array type `[N x T]`.  `N` is a positive decimal, and `T` is one
-scalar type token whose allocated size is its stored size — the same admission
-`Ty.gepElemAdmitted` makes for `getelementptr` element types, because an array's
-allocated size is its element count times the element's and a disagreement in the
-element would be a disagreement in the array.  A nested aggregate is not a
-single token and is refused by the token reader that meets it. -/
-def expectArrayTy : P Ty := do
+scalar type token — or a named struct, which `resolveStruct` reads against the
+declared `layout`.  Either way the element must pass `Ty.gepElemAdmitted`,
+because an array's allocated size is its element count times the element's
+allocated size, and a disagreement in the element would be a disagreement in the
+array.  A nested aggregate is not a single token and is refused by the token
+reader that meets it: `[` for a nested array, and anything else `parseTy` does
+not read. -/
+def expectArrayTy (layout : Layout) : P Ty := do
   P.expect "["
   let nTok ← P.next
   if nTok = "[" then P.fail "a nested array type is not modelled"
@@ -261,36 +289,33 @@ def expectArrayTy : P Ty := do
     | none => P.fail s!"invalid array element count '{nTok}'"
   P.expect "x"
   let elemTok ← P.next
-  let elem ← match parseTy elemTok with
-    | .ok ty => pure ty
-    | .error e => P.fail e
-  P.expect "]"
-  if elem.gepElemAdmitted then pure (.array n elem)
-  else
-    P.fail s!"array element type '{elemTok}' is not admitted: an array's allocated size \
-        is its element count times the element's allocated size, so its element must be a \
-        type whose allocated and stored sizes agree — the set `Ty.gepElemAdmitted` pins \
-        (the integer widths i1, i7, i8, i16, i32, i64 and i128, and whole-byte vectors \
-        whose packed size is a power of two)"
+  let elem :=
+    if elemTok.startsWith "%struct." then resolveStruct layout elemTok
+    else parseTy elemTok
+  match elem with
+  | .error e => P.fail e
+  | .ok elem =>
+      P.expect "]"
+      if elem.gepElemAdmitted then pure (.array n elem)
+      else
+        P.fail s!"array element type '{elemTok}' is not admitted: an array's allocated \
+            size is its element count times the element's allocated size, so its element \
+            must be a type whose allocated and stored sizes agree — the set \
+            `Ty.gepElemAdmitted` pins (the integer widths i1, i7, i8, i16, i32, i64 and \
+            i128, a whole-byte vector whose packed size is a power of two, and a named \
+            struct resolved from the declared layout)"
 
 /-- Parse the type an `alloca` allocates: an array, a named struct resolved from
-the declared `layout`, or any scalar type `expectTy` reads.  A named struct is
-admitted only here: no instruction in the fragment takes one as an operand type,
-a GEP element type, or a load/store type, and this reader is the only one that
-resolves the name. -/
+the declared `layout`, or any scalar type `expectTy` reads.  A named struct
+reaches an instruction's type field only as an allocation, an array element or a
+`getelementptr` element type; a load, a store, a parameter and a comparison
+operand type is still read by `expectTy`, which refuses it, and this reader and
+the `getelementptr` branch are the two that resolve the name. -/
 def expectAllocaTy (layout : Layout) : P Ty := do
   match (← P.peek) with
-  | some "[" => expectArrayTy
+  | some "[" => expectArrayTy layout
   | some t =>
-      if t.startsWith "%struct." then do
-        let _ ← P.next
-        let name := (t.drop 8).toString
-        match lookupName layout name with
-        | some bytes => pure (.struct name bytes)
-        | none =>
-            P.fail s!"named struct '{t}' has no declared layout: the model takes a \
-                struct's byte extent from the target datalayout (a `Layout` argument) and \
-                does not recompute it from fields"
+      if t.startsWith "%struct." then expectStructTy layout
       else expectTy
   | none => P.fail "unexpected end of line"
 
@@ -1689,13 +1714,18 @@ def parseValueInstr (layout : Layout) (dst : String) : P Stmt := do
       -- `getelementptr [inbounds] <elemTy>, ptr %base, iN %off`: one index and an
       -- element type whose allocated size is the stored size the step scales by.
       -- The element type is read by `expectTy`, so a vector element type
-      -- (`<n x iW>`) is read as the vector it is rather than refused as a token;
-      -- an aggregate (`[N x T]`) and a named struct (`%struct.P`) fail in the
-      -- type reader with `unsupported type`, naming the first token it read
-      -- (`[`, `%struct.P`).  `Ty.gepElemAdmitted` is the admission: the seven
-      -- integer widths, and a vector of integer lanes whose lane width is a whole
+      -- (`<n x iW>`) is read as the vector it is rather than refused as a token,
+      -- and a named struct (`%struct.P`) is resolved by `expectStructTy` from the
+      -- declared layout — its extent is both its allocated and stored size, so
+      -- the step scales by exactly that number.  An aggregate (`[N x T]`) in
+      -- this position still fails in the type reader with `unsupported type`,
+      -- naming the token it read (`[`): it is a whole array, and the aggregate
+      -- arm below is where an array element is stepped.  `Ty.gepElemAdmitted` is
+      -- the admission: the seven integer widths, a vector of integer lanes whose
+      -- lane width is a whole
       -- number of bytes and whose packed size is a power of two (`w % 8 = 0` and
-      -- `n * w / 8` a power of two, hence at least 1).  A refused
+      -- `n * w / 8` a power of two, hence at least 1), and a struct resolved
+      -- from the declared layout.  A refused
       -- integer width and a refused vector are each refused here, by name and
       -- with the reason — a step scaled by the stored size would give this model
       -- one address and LLVM another, whether the divergence is in the packing
@@ -1707,17 +1737,19 @@ def parseValueInstr (layout : Layout) (dst : String) : P Stmt := do
       -- and dropped: the instruction has no field for it, and the printer emits
       -- an ordinary `getelementptr`, so the round trip adds no promise.
       let _ ← gepModifiers
-      -- Two admitted shapes.  The scalar/vector form is the one-index step whose
-      -- scale is the element type's size.  The aggregate form is LLVM's
-      -- two-index step over `[N x T]`: with a literal 0 leading index its first
-      -- term is zero and the second scales by `T`, so the address is the
+      -- Two admitted shapes.  The scalar/vector/struct form is the one-index
+      -- step whose scale is the element type's size.  The aggregate form is
+      -- LLVM's two-index step over `[N x T]`: with a literal 0 leading index its
+      -- first term is zero and the second scales by `T`, so the address is the
       -- one-index step at `T`.  The reduction is what the model can express, and
       -- the printer emits the reduced one-index form, which re-parses to the
-      -- same AST.  The leading index is not decoration: a nonzero one has a
+      -- same AST — including a `[N x %struct.P]` step, whose reduced form is the
+      -- struct's own one-index step and which re-parses through this branch's
+      -- struct reader.  The leading index is not decoration: a nonzero one has a
       -- whole-array stride this instruction has no term for, so it is refused.
       match (← P.peek) with
       | some "[" =>
-          let arr ← expectArrayTy
+          let arr ← expectArrayTy layout
           let elemTy ← match arr with
             | .array _ elem => pure elem
             | _ => P.fail "internal parser error: an array reader returned another type"
@@ -1756,7 +1788,10 @@ def parseValueInstr (layout : Layout) (dst : String) : P Stmt := do
           | _ => pure ()
           pure (.instr (.gep dst elemTy base off))
       | _ =>
-            let elemTy ← expectTy
+            let elemTy ←
+              match (← P.peek) with
+              | some t => if t.startsWith "%struct." then expectStructTy layout else expectTy
+              | none => P.fail "unexpected end of line"
             if elemTy.gepElemAdmitted then pure ()
             else
               match elemTy with

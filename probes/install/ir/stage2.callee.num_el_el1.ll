@@ -5,7 +5,7 @@
 ;
 ; from kernel/json/stage2.c, emitted at the measured compiler line with
 ; `noinline` on every helper and on `stk_mul_u64`, then the same token strip
-; capture-stage2.sh applies.  `num_el_el1` calls `el_exact` and `el_pack` out of line and reads the `EPOW` table through a global symbol operand, so it is not a closed unit: its fixture needs those two bodies and the table staged before it denotes.  `llvm.ctlz.i64` is the modelled intrinsic.
+; capture-stage2.sh applies.  `num_el_el1` calls `el_exact` and `el_pack` out of line and reads the `EPOW` table through a global symbol operand, so it is not a closed unit: its fixture needs those two bodies and the table staged before it denotes.  Its one rewrite is the `llvm.ctlz.i64` flag: the emission writes `i1 true` and the fixture holds `i1 false`, because the parser admits only the `false` form and the entry's `%w == 0` return keeps the zero word off the path to the call, so the two flags agree wherever the body executes; `stage2.callees.rewrites.tsv` records the row.
 ;
 define i32 @num_el_el1(i64 %w, i64 %q, ptr %out) {
 entry:
@@ -19,7 +19,7 @@ if.then3:                                         ; preds = %entry
 if.end4:                                          ; preds = %entry
   %sub = add i64 %q, 45
   %arrayidx = getelementptr inbounds [91 x %struct.EPow], ptr @EPOW, i64 0, i64 %sub
-  %0 = tail call i64 @llvm.ctlz.i64(i64 %w, i1 true)
+  %0 = tail call i64 @llvm.ctlz.i64(i64 %w, i1 false)
   %cast = trunc i64 %0 to i32
   %shl = shl i64 %w, %0
   %conv = zext i64 %shl to i128

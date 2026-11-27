@@ -565,13 +565,77 @@ entry:
 #guard refusal structSample =
   some "in block 'entry': named struct '%struct.Stk' has no declared layout: the model takes a struct's byte extent from the target datalayout (a `Layout` argument) and does not recompute it from fields"
 
+/-! ### A named struct as a `getelementptr` element type
+
+`num_el_el1` indexes the `EPOW` table through `[91 x %struct.EPow]`.  The
+two-index aggregate form reduces to the struct's own one-index step, whose scale
+is the extent the declared layout gives; the pair below is the accepted surface
+(AST equality, and the printed reduced form re-parsing to that AST) and the run
+(the step's address), with the neighbouring form — the same array with no layout
+entry — refused by name. -/
+
+def structGepSample : String :=
+"define ptr @sg(ptr %p) {
+entry:
+  %a = getelementptr [91 x %struct.P], ptr %p, i64 0, i64 3
+  ret ptr %a
+}
+"
+
+-- The AST: the array and its element both come from the layout, and the reduced
+-- instruction carries the struct's extent.
+#guard
+  match parseModuleWith [("P", 24)] structGepSample with
+  | .ok ⟨_, f :: _⟩ =>
+      match f.blocks with
+      | [b] => decide (b.instrs = [.gep "%a" (.struct "P" 24) (.reg "%p") (.imm (.int 64 3))])
+      | _ => false
+  | _ => false
+
+-- The printed form is the reduced one-index step at `%struct.P`, and re-parsing
+-- it under the same layout returns the same module.
+#guard
+  match parseModuleWith [("P", 24)] structGepSample with
+  | .ok m =>
+      hasSubstr (Module.render m) "getelementptr %struct.P, ptr %p, i64 3" &&
+        (match parseModuleWith [("P", 24)] (Module.render m) with
+         | .ok m' => decide (m' = m)
+         | .error _ => false)
+  | .error _ => false
+
+-- The run, through the parser, the semantics and the memory model: the parsed
+-- body's `getelementptr` at index 3 of a 24-byte element from 100 answers 172,
+-- the same idiom `gepStrideRun` uses in `tests/getelementptr.lean`.
+def structGepRun : Option Nat :=
+  match parseModuleWith [("P", 24)] structGepSample with
+  | .ok ⟨_, f :: _⟩ =>
+      match run noCalls f [.ptr 100] with
+      | some (.ret (some (.ptr a)) _) => some a
+      | _ => none
+  | _ => none
+
+#guard structGepRun = some 172
+
+-- The neighbouring form: without a layout entry the element's extent is not in
+-- the text, and the refusal names the layout rather than the type reader.
+#guard refusal structGepSample =
+  some "in block 'entry': named struct '%struct.P' has no declared layout: the model takes a struct's byte extent from the target datalayout (a `Layout` argument) and does not recompute it from fields"
+
+-- An aggregate in the `getelementptr` element position is the two-index form's
+-- element: the aggregate arm reduces it, and a register leading index is refused
+-- there by name (the type reader's `unsupported type '['` is what a nested
+-- aggregate token gets inside an array, not this position).
+#guard refusal (wrap "  %a = getelementptr [4 x i8], ptr %p, i64 %q
+  ret i64 0") =
+  some "in block 'entry': getelementptr over '[4 x i8]' is modelled only with a literal 0 leading index: the model's step has one index and no term for a whole-array stride"
+
 -- The refusals that keep the layout honest.
 #guard refusal (wrap "  %a = alloca [0 x i8]
   ret i64 0") = some "in block 'entry': an array needs at least one element"
 
 #guard refusal (wrap "  %a = alloca [4 x i24]
   ret i64 0") =
-  some "in block 'entry': array element type 'i24' is not admitted: an array's allocated size is its element count times the element's allocated size, so its element must be a type whose allocated and stored sizes agree — the set `Ty.gepElemAdmitted` pins (the integer widths i1, i7, i8, i16, i32, i64 and i128, and whole-byte vectors whose packed size is a power of two)"
+  some "in block 'entry': array element type 'i24' is not admitted: an array's allocated size is its element count times the element's allocated size, so its element must be a type whose allocated and stored sizes agree — the set `Ty.gepElemAdmitted` pins (the integer widths i1, i7, i8, i16, i32, i64 and i128, a whole-byte vector whose packed size is a power of two, and a named struct resolved from the declared layout)"
 
 #guard refusal (wrap "  %a = alloca [[2 x i8] x 3]
   ret i64 0") = some "in block 'entry': a nested array type is not modelled"

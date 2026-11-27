@@ -3,13 +3,15 @@
 #
 # `blocks` counts label lines and `instr_lines` counts lines that begin with
 # two spaces, which includes an instruction's continuation lines; neither is
-# the parsed shape.  The parsed shapes below are what
-# `lake env lean --run probes/install/ir/parse-callees.lean` prints: 
+# the parsed shape.  The parsed shapes below are the output of
+# `lake env lean --run probes/install/ir/parse-callees.lean`, read back here,
+# so the counts and the layout literal are the parse's own:
 #   num_d8_el1  3 blocks, 16 instructions, 2 params  (pinned in
 #               JsonStage2NumFastCalleeD8, whose #guard states the counts)
+#   num_el_el1  6 blocks, 35 instructions, 3 params  (pinned in
+#               JsonStage2NumFastCalleeEl, whose #guard states the counts;
+#               parsed with the declared layout [("EPow", 24)])
 #   stk_mul_u64 11 blocks, 77 instructions, 2 params
-#   num_el_el1  refused at the array-of-struct type its EPOW index writes:
-#               "%struct.EPow is not a type the parser reads"
 #
 # symbol	lines	blocks	instr_lines	params	symbols_called	globals	assembles
 num_d8_el1	26	3	19	2	llvm.x86.sse2.pmadd.wd,llvm.x86.ssse3.pmadd.ub.sw.128	@llvm.x86.sse2.pmadd.wd,@llvm.x86.ssse3.pmadd.ub.sw.128,@num_d8_el1	yes

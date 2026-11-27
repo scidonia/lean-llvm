@@ -115,8 +115,11 @@ The chain, each link proved here or in `JsonNumberPremises`:
 It is not a proof about the C.  No semantics of C, no compiler translation and no
 link step appears here; `numD8Answer`, `numElAnswer` and `numStkMulAnswer` are
 Lean readings of the measured text, and the field says the release theorem's
-selection is that model.  It is not a refinement of the three callees: no LLVM
-body of `num_d8_el1`, `num_el_el1` or `stk_mul_u64` is modelled or proved, which
+selection is that model.  It is not a refinement of the three callees: no
+refinement of the emitted `num_d8_el1`, `num_el_el1` or `stk_mul_u64` body against
+its model is proved — the bodies are pinned as ASTs
+(`JsonStage2NumFastCalleeD8.numD8Body`, `JsonStage2NumFastCalleeEl.numElBody`),
+and what remains is the run of each against its model at the `Calls` entry, which
 is exactly the gap the discharge path names.  It is not the token-extent premise:
 `JsonNumberPremises.NumberTokenExtentAt` is the other half, and holds the span's
 bytes; these values take those bytes (`bs`) as given, and no field of either

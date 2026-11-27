@@ -33,16 +33,26 @@ index rather than on the address: with an `i128` element type an index below
 pointer index LLVM uses — a behaviour this model does not represent.
 
 A base that is not a `ptr`, a second index, an index type that is not an integer
-no wider than 64 bits, an element type that is neither an admitted integer width
-nor a vector meeting the condition below, and the `inrange`/`nuw`/`nusw`
-modifiers are each refused by a message naming what was refused.  `inbounds` is
+no wider than 64 bits, an element type outside `Ty.gepElemAdmitted`'s list (an
+integer width it does not name, a vector that fails the condition below, or a
+`ptr`/`void` element), and the `inrange`/`nuw`/`nusw` modifiers are each refused
+by a message naming what was refused.  A **named struct** element is admitted on
+its declared extent, and an **array** element type is reduced by the aggregate
+arm, both as the paragraph below states.  `inbounds` is
 accepted and dropped, and the printer emits an ordinary `getelementptr`, so the
 round trip adds no flag the source did not write.
 
-Several refusals are produced by the type parser rather than the `getelementptr`
-branch, because the element token is read as a type first: an aggregate such as
-`[8 x i8]` and a named struct such as `%struct.P` fail there with `unsupported
-type`, naming the first token it read (`[`, `%struct.P`).  A **vector** element
+Several refusals are produced by a different reader than the `getelementptr`
+branch's element check.  A **named struct** element type is resolved by
+`Parser.expectStructTy` from the declared `Layout`: its declared extent is both
+its allocated and its stored size, so the step scales by exactly that number,
+and a struct with no layout entry is refused by name (the extent is the
+datalayout's and the parser does not recompute it from fields).  An **array**
+element type is read by the aggregate arm, which reduces the two-index form to
+the one-index step at the array's element; a register or nonzero leading index
+is refused there by name.  A token `parseTy` does not read — a nested aggregate
+such as a second `[` — fails with `unsupported type`, naming the token it read.
+A **vector** element
 type is read by the same type reader and admitted under one condition — the lane
 width is a whole number of bytes **and** the packed size is a power of two,
 `w % 8 = 0` and `n * w / 8` — because a step may scale by `sizeBytes` only where
@@ -326,16 +336,27 @@ def gepVec : String := "  %q = getelementptr inbounds <4 x i32>, ptr %p, i64 %k"
 #guard refusedWithOut "  %q = getelementptr <3 x i32>, ptr %p, i64 %k"
   ["getelementptr element type", "<3 x i32>"] ["unsupported type"]
 
--- An aggregate element type is refused by the type parser, which is where the
--- element token is read as a type.  The assertion names that branch's wording
--- and the token it read, and rules out the `getelementptr` branch's wording —
--- so a change that rerouted this refusal is visible here.
-#guard refusedWithOut "  %q = getelementptr [8 x i8], ptr %p, i64 %k"
-  ["unsupported type '['"] ["getelementptr element type"]
+-- The type reader's `unsupported type` wording is a live detector, not a marker
+-- that matches nothing: a `load` of an aggregate type is refused there.  Without
+-- this guard every `absent` list in this file could pass forever even if the
+-- wording moved.
+#guard refusedWith "  %q = load [4 x i8], ptr %p" ["unsupported type '['"]
 
--- A named struct element type, likewise refused by the type parser.
+-- An aggregate element type in the *element* position is a whole array, and the
+-- aggregate arm reduces it: with a register leading index the refusal is that
+-- arm's, not the type reader's.  (The type reader's `unsupported type '['` is
+-- what a *nested* aggregate token gets, which the array reader refuses.)
+#guard refusedWithOut "  %q = getelementptr [8 x i8], ptr %p, i64 %k"
+  ["getelementptr over '[8 x i8]'", "literal 0 leading index"] ["unsupported type"]
+
+-- A named struct element type is resolved from the declared layout, so this
+-- module — parsed without one — refuses it by name, and the wording is the
+-- layout's rather than the type reader's.  The accepted pair is pinned in
+-- `tests/core-extension.lean`, where `parseModuleWith [("P", 24)]` reads the
+-- same line as `Instr.gep` at `Ty.struct "P" 24` and the printed reduced form
+-- re-parses to it.
 #guard refusedWithOut "  %q = getelementptr %struct.P, ptr %p, i64 %k"
-  ["unsupported type '%struct.P'"] ["getelementptr element type"]
+  ["named struct '%struct.P' has no declared layout"] ["unsupported type"]
 
 -- A base that is not a `ptr`.
 #guard refusedWith "  %q = getelementptr i8, i32 %p, i64 %k" ["base type", "i32"]

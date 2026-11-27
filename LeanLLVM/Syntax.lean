@@ -103,10 +103,12 @@ inductive Instr where
   The element type is a field, because the step scales the index by the element
   type's size: an `i32` element type adds `4 * off` bytes and an `i8` element
   type adds `off`, which is the byte count the earlier form expressed.  The
-  parser admits exactly the element types `Ty.gepElemAdmitted` names below — the
-  seven integer widths, and a vector of integer lanes whose lane width is a
+  parser admits exactly the element types `Ty.gepElemAdmitted` names — the
+  seven integer widths, `double`, a vector of integer lanes whose lane width is a
   whole number of bytes and whose packed size is a power of two (`w % 8 = 0` and
-  `n * w / 8` a power of two, hence at least 1) — and refuses
+  `n * w / 8` a power of two, hence at least 1), and a named struct carrying the
+  extent its declared `Layout` gives (whose declared extent is both its
+  allocated and its stored size) — and refuses
   the rest by name; the field itself is any `Ty`, and the step reads its
   `sizeBytes`.  A vector element type is admitted because it keeps the byte
   offset of a packed row (`<8 x i32>`, 32 bytes) expressible with no index
@@ -253,11 +255,28 @@ alignment above its size (`v64:128` would do it to `<2 x i32>`) would break the
 equality without touching either clause, so a change to the recorded layout
 reopens this admission rather than passing silently.
 
+A **named struct** is admitted on the extent its `Layout` entry declares.  A
+struct's declared extent *is* both of its sizes: LLVM's `DataLayout` computes a
+struct's size as its field layout (padding included), and its store size is that
+same size rounded up to a byte, so allocated and stored agree for every struct
+whose declared extent came from the target's own `DataLayout`.  `sizeBytes`
+returns that extent unchanged, so the step scales by exactly the number LLVM
+steps by.  The model still holds no field layout: the extent is the whole of
+what it knows about the struct, and the admission is only as good as the
+`Layout` argument — an entry whose number is not the datalayout's extent would
+make the step wrong, which is why the parser takes the number from the caller's
+declared layout rather than recomputing it.  `%struct.EPow`'s entry is 24
+(`uint64_t hi, lo; int32_t e`, padded to its 8-byte alignment), and the
+`num_el_el1` fixture indexes the 91-row `EPOW` table through it.
+
 This is an allowlist rather than a computation of the allocated size: the model
 has no use for one yet, and it does not characterise which other types would also
 agree (`i2` is allocated 1 for a stored 1 and is refused as policy; `<1 x i7>`
 and `<2 x i7>` pack and step alike and fail the whole-byte clause, exactly as
-`i2` is refused by the integer list).
+`i2` is refused by the integer list).  A struct is admitted because a `Layout`
+declares its extent, not because the model computed one: `Ty.array n (.struct _ b)`
+is `n * b` bytes, and that is what LLVM allocates for it when `b` is the
+datalayout's size.
 
 Two limits of the resulting guarantee belong with it.  First, the admitted set is
 what the model *establishes* and pins by measurement, not every type whose two
@@ -274,6 +293,11 @@ here. -/
 def Ty.gepElemAdmitted : Ty → Bool
   | .int 1 | .int 7 | .int 8 | .int 16 | .int 32 | .int 64 | .int 128 => true
   | .double => true
+  -- A named struct's declared extent is its allocated *and* stored size, so the
+  -- step scales by exactly that number; the reader that produces the `Ty.struct`
+  -- resolves the name against the declared `Layout`, and this case says only that
+  -- a resolved struct needs no further condition.
+  | .struct _ _ => true
   | .vec n (.int w) => w % 8 == 0 && isPowerOfTwo (n * w / 8)
   | _ => false
 
