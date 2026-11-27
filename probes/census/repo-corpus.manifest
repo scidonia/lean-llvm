@@ -17,6 +17,7 @@ parsed	probes/install/ir/marker_baseline.ll
 parsed	probes/install/ir/marker_candidate.ll
 parsed	probes/install/ir/marker_depth_count.ll
 parsed	probes/install/ir/marker_loop.ll
+refused	probes/install/ir/stage2.production.ll	expected a parameter name, got 'noundef'
 parsed	tests/call.ll
 parsed	tests/constfold.ll
 parsed	tests/memory.ll
