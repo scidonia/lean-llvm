@@ -49,23 +49,44 @@ statement at one token, `WalkAlignGaps` is it at every token, and
 and the two arms of `stage2NoEventWalkScalarSkip`.  `NumberExtentAssumed` then
 follows (`numberExtentAssumed_of_gap_loop`, `numberExtentAssumed_of_gap_direct`).
 
-The residue is the clause's initialisation.  The stage-1 emitter cannot supply
-it: its mask is a byte classifier (above), it never reads a tape, and its entry
-stream is a function of the document's bytes alone, so it cannot know which byte
-a parse ended a number on.  `TokenGapsSpace` is the clause stated over the tape,
-and `WalkAlignGaps.of_tokenGaps` shows that `WalkAlign` plus `TokenGapsSpace`
-yields `WalkAlignGaps` — so the residue is one tape-level statement, not a
-property of the alignment.  What can supply it is the parser's whitespace skip —
-`parseBytes` calls `parseValue` and then requires `skipFrom bs p.next =
-bs.length`, and the tape's tokens are the parser's — but the tree records the
-tape's spans only through `checkSpans` (`prev ≤ s.start`) and `TokenBytes` (each
-token's own bytes), neither of which says anything about the bytes in a gap.  A
-theorem `parseBytes_gaps_are_space` (parse acceptance implies `TokenGapsSpace`)
-is therefore the exact missing premise; this module states the clause, proves
-its initialiser and consumers, and leaves that one production open rather than
-assuming the false `WalkAlignStops`.
+Two of the scan's premises are now derived rather than assumed.  The number run's
+bytes are non-whitespace, from `NumConstituent`'s six bytes
+(`numRun_all_constituent`, `numConstituent_not_space`, `numRun_getD_not_space`,
+`numRunFrom_take_not_space`), so `numberExtentAssumed_of_gap_loop` takes the
+tape's run slice and bounds and derives the rest.  And the scan's answer is
+re-exported in the document's vocabulary: `isSpaceB_iff_skipWs` is the class
+bridge, `ScanArm` is `stage2NoEventWalkScalarSkip`'s conclusion at a lane with
+`σ = bs.getD · 0`, and `ScanArm.of_scalarSkip` turns the emitted bits into it.
+`NumberExtentAssumed.of_scanArm` composes the run, the gap and the scan's answer,
+and `numberArmPremises_of_parse_scan` is the whole consumer: parse acceptance, the
+token, the lane's identity, the gap and `ScanArm` give the number arm's five
+premises with no extent hypothesis anywhere.
+
+## The residue
+
+The one premise not produced here is the gap's initialisation from the parse.
+The stage-1 emitter cannot supply it: its mask is a byte classifier (above), it
+never reads a tape, and its entry stream is a function of the document's bytes
+alone, so it cannot know which byte a parse ended a number on.  `TokenGapsSpace`
+is the clause stated over the tape, and `WalkAlignGaps.of_tokenGaps` shows that
+`WalkAlign` plus `TokenGapsSpace` yields `WalkAlignGaps` — so the residue is one
+tape-level statement, not a property of the alignment.  What can supply it is the
+parser's whitespace skip — `parseBytes` calls `parseValue` and then requires
+`skipFrom bs p.next = bs.length`, and the tape's tokens are the parser's — but
+the tree records the tape's spans only through `checkSpans` (`prev ≤ s.start`)
+and `TokenBytes` (each token's own bytes), neither of which says anything about
+the bytes in a gap.  The missing statement is
+
+`parseBytes l (ByteString.literal bs) = .ok t → TokenGapsSpace bs t.tokens bs.length`
+
+and it is a new invariant over `parseValue`/`parseElemsTail`/`parseMembersTail`'s
+token lists (the `parse_all` induction's shape with a token-gap clause), not a
+predicate the tree already carries.  This module states the clause, proves its
+initialiser and its consumers including the scan re-export, and leaves that one
+production open rather than assuming the false `WalkAlignStops`.
 -/
 import LeanLLVM.Refinement.JsonNumberExtentAssumed
+import LeanLLVM.Refinement.JsonStage2NoEventWalkScalar
 
 set_option autoImplicit false
 set_option maxRecDepth 20000
@@ -75,6 +96,7 @@ namespace LeanLLVM.Refinement
 
 open LeanLLVM
 open LeanLLVM.JSON
+open LeanLLVM.StrtodRefine
 
 /-! ### A whitespace byte names no token class -/
 
@@ -203,6 +225,99 @@ theorem WalkAlignGaps.of_tokenGaps {m0 : Mem} {G : WalkGeom m0} {t : Tape}
     rw [hnone] at hgt
     exact hgt
 
+/-! ### The number run's bytes are not whitespace
+
+`NumConstituent`'s six bytes are the digits, `.`, `e`, `E`, `+` and `-`; none is
+one of RFC 8259 §2's four whitespace bytes.  `numRun` collects exactly the
+constituents (`numRun_cons`), so every byte of `numRunFrom`'s run is
+non-whitespace — the hypothesis the scan's stop equation consumes. -/
+
+/-- **Every byte of a `numRun` is a number constituent.**  The list view's
+induction is `numRun_cons`'s two cases. -/
+theorem numRun_all_constituent (b : Bytes) :
+    ∀ x ∈ numRun b, NumConstituent x = true := by
+  induction b using ByteString.induction_on with
+  | h0 => simp [numRun_empty]
+  | hs a rest ih =>
+      rw [numRun_cons]
+      split
+      · rename_i ha
+        intro x hx
+        simp only [ByteString.mem_cons] at hx
+        rcases hx with rfl | hx
+        · exact ha
+        · exact ih x hx
+      · simp
+
+/-- **A number constituent is not whitespace.**  The six cases are concrete
+bytes, so each is a `decide` at the constituent's value. -/
+theorem numConstituent_not_space {b : UInt8} (h : NumConstituent b = true) :
+    IsSpaceB b = false := by
+  have h20 : b ≠ 0x20 := by
+    intro hb; subst hb
+    have : NumConstituent (0x20 : UInt8) = false := by decide
+    rw [this] at h; cases h
+  have h09 : b ≠ 0x09 := by
+    intro hb; subst hb
+    have : NumConstituent (0x09 : UInt8) = false := by decide
+    rw [this] at h; cases h
+  have h0A : b ≠ 0x0A := by
+    intro hb; subst hb
+    have : NumConstituent (0x0A : UInt8) = false := by decide
+    rw [this] at h; cases h
+  have h0D : b ≠ 0x0D := by
+    intro hb; subst hb
+    have : NumConstituent (0x0D : UInt8) = false := by decide
+    rw [this] at h; cases h
+  unfold IsSpaceB
+  simp [h20, h09, h0A, h0D]
+
+/-- **A lane of a `numRun` is non-whitespace.** -/
+theorem numRun_getD_not_space {b : Bytes} {k : Nat}
+    (hk : k < (numRun b).data.toList.length) :
+    IsSpaceB ((numRun b).data.toList.getD k 0) = false := by
+  have hmem : (numRun b).data.toList[k] ∈ numRun b := by
+    rw [ByteString.mem_def, ByteString.toList_eq_data_toList]
+    exact List.getElem_mem hk
+  have hconst : NumConstituent ((numRun b).data.toList[k]) = true :=
+    numRun_all_constituent b _ hmem
+  have hget : (numRun b).data.toList.getD k 0 = (numRun b).data.toList[k] := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hk, Option.getD_some]
+  rw [hget]
+  exact numConstituent_not_space hconst
+
+/-- **The document's bytes inside a number run are non-whitespace.**  The run's
+slice is the span's bytes (`hslice`) and the span ends inside the document, so
+each index before the stop reads a run constituent. -/
+theorem numRunFrom_take_not_space {bs : List UInt8} {lane stop j : Nat}
+    (hstop_le : stop ≤ bs.length)
+    (hslice : (bs.drop lane).take (stop - lane) =
+      (numRunFrom (ByteString.literal bs) lane).data.toList)
+    (hlane : lane ≤ j) (hj : j < stop) :
+    IsSpaceB (bs.getD j 0) = false := by
+  have hslice' : (bs.drop lane).take (stop - lane) =
+      (numRun ((ByteString.literal bs).drop lane)).data.toList := by
+    rw [← numRunFrom_eq]
+    exact hslice
+  have hrunLen : (numRun ((ByteString.literal bs).drop lane)).data.toList.length
+      = stop - lane := by
+    have h := congrArg List.length hslice'
+    rw [List.length_take, List.length_drop] at h
+    have hle : stop - lane ≤ bs.length - lane := by omega
+    rw [Nat.min_eq_left hle] at h
+    exact h.symm
+  have hdoc : bs.getD j 0 =
+      (numRun ((ByteString.literal bs).drop lane)).data.toList.getD (j - lane) 0 := by
+    rw [List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD]
+    have h1 : bs[j]? = (bs.drop lane)[j - lane]? := by
+      rw [List.getElem?_drop, Nat.add_sub_of_le hlane]
+    have h2 : (bs.drop lane)[j - lane]? =
+        ((bs.drop lane).take (stop - lane))[j - lane]? := by
+      rw [List.getElem?_take, ite_eq_left (by omega)]
+    rw [h1, h2, hslice']
+  rw [hdoc]
+  exact numRun_getD_not_space (by rw [hrunLen]; omega)
+
 /-! ### The scan's stop, from the gap
 
 `JsonStage2NoEventWalkScalarSkip` has two arms.  On the loop arm the scan has
@@ -280,6 +395,138 @@ theorem numberExtentAssumed_of_gap_direct {bs : List UInt8} {sp : Span}
     NumberExtentAssumed bs sp q :=
   ⟨stop_eq_of_gap_direct (q := q) (stop := sp.stop) hqcond hgap hne⟩
 
+/-! ### The scan's answer in the document's terms
+
+`stage2NoEventWalkScalarSkip` reports the emitted class by its `stage2SkipWs` bit;
+`isSpaceB_iff_skipWs` is the bridge.  `ScanArm` is the theorem's conclusion at a
+lane with `σ = bs.getD · 0` and `u0 = bs.getD (cond - 1) 0`, and
+`ScanArm.of_scalarSkip` re-exports it in that vocabulary — so a consumer takes the
+scan's answer as one predicate at the token rather than restating its shape. -/
+
+/-- **The emitted whitespace class is RFC 8259's.** -/
+theorem isSpaceB_iff_skipWs (b : UInt8) :
+    IsSpaceB b = true ↔ stage2SkipWs (BitVec.ofNat 8 b.toNat) = true := by
+  rw [stage2SkipWs_iff]
+  unfold IsSpaceB
+  simp only [Bool.or_eq_true, decide_eq_true_eq]
+  constructor
+  · intro h
+    rcases h with ((h | h) | h) | h <;> (rw [h]; decide)
+  · intro h
+    rcases h with h | h | h | h
+    · have ht : b.toNat = 9 := by
+        simpa only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (UInt8.toNat_lt b)] using h
+      have hb : b = (0x09 : UInt8) := UInt8.toNat_inj.mp (by rw [ht]; decide)
+      rw [hb]; decide
+    · have ht : b.toNat = 10 := by
+        simpa only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (UInt8.toNat_lt b)] using h
+      have hb : b = (0x0A : UInt8) := UInt8.toNat_inj.mp (by rw [ht]; decide)
+      rw [hb]; decide
+    · have ht : b.toNat = 13 := by
+        simpa only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (UInt8.toNat_lt b)] using h
+      have hb : b = (0x0D : UInt8) := UInt8.toNat_inj.mp (by rw [ht]; decide)
+      rw [hb]; decide
+    · have ht : b.toNat = 32 := by
+        simpa only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (UInt8.toNat_lt b)] using h
+      have hb : b = (0x20 : UInt8) := UInt8.toNat_inj.mp (by rw [ht]; decide)
+      rw [hb]; decide
+
+/-- **The emitted class is false exactly when the document byte is not
+whitespace.** -/
+theorem isSpaceB_eq_false_iff (b : UInt8) :
+    IsSpaceB b = false ↔ stage2SkipWs (BitVec.ofNat 8 b.toNat) = false := by
+  constructor
+  · intro h
+    cases hs : stage2SkipWs (BitVec.ofNat 8 b.toNat) with
+    | false => rfl
+    | true => exact absurd ((isSpaceB_iff_skipWs b).mpr hs) (by rw [h]; simp)
+  · intro h
+    cases hb : IsSpaceB b with
+    | false => rfl
+    | true => exact absurd ((isSpaceB_iff_skipWs b).mp hb) (by rw [h]; simp)
+
+/-- **The stage-2 scalar scan's answer at a number's lane**, in the document's
+terms: the stop lies in `[lane, cond]`; it is `cond` or a whitespace byte; and
+either the scan loop passed only non-whitespace (`[lane, q)`), or the direct arm
+stopped at `cond` with a non-whitespace byte at `cond - 1`. -/
+def ScanArm (bs : List UInt8) (lane q cond : Nat) : Prop :=
+  lane ≤ q ∧ q ≤ cond ∧
+    (q = cond ∨ IsSpaceB (bs.getD q 0) = true) ∧
+      ((∀ j, lane ≤ j → j < q → IsSpaceB (bs.getD j 0) = false) ∨
+        (q = cond ∧ IsSpaceB (bs.getD (cond - 1) 0) = false))
+
+/-- **The scan's conclusion, re-exported at the lane.**  This is
+`stage2NoEventWalkScalarSkip`'s answer with `σ = bs.getD · 0` and
+`u0 = bs.getD (cond - 1) 0`, through the class bridge. -/
+theorem ScanArm.of_scalarSkip {bs : List UInt8} {lane q cond : Nat}
+    (hle : lane ≤ q) (hqle : q ≤ cond)
+    (hq : q = cond ∨ stage2SkipWs (BitVec.ofNat 8 (bs.getD q 0).toNat) = true)
+    (harm : (∀ j, lane ≤ j → j < q →
+        stage2SkipWs (BitVec.ofNat 8 (bs.getD j 0).toNat) = false) ∨
+      (q = cond ∧ stage2SkipWs (BitVec.ofNat 8 (bs.getD (cond - 1) 0).toNat) = false)) :
+    ScanArm bs lane q cond := by
+  refine ⟨hle, hqle, ?_, ?_⟩
+  · rcases hq with h | h
+    · exact Or.inl h
+    · exact Or.inr ((isSpaceB_iff_skipWs _).mpr h)
+  · rcases harm with h | ⟨hqc, hne⟩
+    · left
+      intro j hj hjq
+      exact (isSpaceB_eq_false_iff _).mpr (h j hj hjq)
+    · right
+      exact ⟨hqc, (isSpaceB_eq_false_iff _).mpr hne⟩
+
+/-- **The scan's answer and the document's run give the stop equation.**  The
+run's bytes are the span's (`hslice`) and are non-whitespace; the gap to `cond` is
+whitespace; and `ScanArm` is the scan's own answer.  No extent hypothesis is
+used: this constructs `NumberExtentAssumed`. -/
+theorem NumberExtentAssumed.of_scanArm {bs : List UInt8} {sp : Span}
+    {lane q cond : Nat} (hlane : lane = sp.start) (hstart : sp.start ≤ sp.stop)
+    (hstop_le : sp.stop ≤ bs.length)
+    (hslice : (bs.drop sp.start).take (sp.stop - sp.start) =
+      (numRunFrom (ByteString.literal bs) sp.start).data.toList)
+    (hgap : StopToEntrySpace bs sp.stop cond)
+    (hscan : ScanArm bs lane q cond) : NumberExtentAssumed bs sp q := by
+  subst hlane
+  obtain ⟨hle, hqle, hq, harm⟩ := hscan
+  have hrun : ∀ j, sp.start ≤ j → j < sp.stop → IsSpaceB (bs.getD j 0) = false := by
+    intro j hj hjstop
+    exact numRunFrom_take_not_space hstop_le hslice hj hjstop
+  rcases harm with hpre | ⟨hqc, hne⟩
+  · exact ⟨stop_eq_of_gap_loop (lane := sp.start) (cond := cond) (stop := sp.stop)
+      (q := q) hstart hgap hrun hle hqle hq hpre⟩
+  · exact ⟨stop_eq_of_gap_direct (q := q) (stop := sp.stop) hqc hgap hne⟩
+
+/-- **The number arm's premises from a parse acceptance and the scan's answer.**
+No `NumberExtentAssumed` remains as a hypothesis: the tape, the token and
+`hparse` give the span's maximal run and its bounds, `hgap` is the document's
+inter-token whitespace, and `hscan` is the scan's own answer at the token's lane.
+The consequent is `numberArmPremises_of_parseAssumed`'s five premises. -/
+theorem numberArmPremises_of_parse_scan {l : Limits} {t : Tape}
+    {bs : List UInt8} {sp : Span} {lane q cond : Nat}
+    (hparse : parseBytes l (ByteString.literal bs) = .ok t)
+    (htok : Token.number sp ∈ t.tokens)
+    (hlane : lane = sp.start) (hgap : StopToEntrySpace bs sp.stop cond)
+    (hscan : ScanArm bs lane q cond) :
+    ∃ (lex : List UInt8) (d : Decimal),
+      (bs.drop lane).take (q - lane) = lex ∧
+        StrtodReader.reader (ByteString.literal lex) = some d ∧
+          d.wellFormed ∧
+            q = lane + lex.length ∧
+              (numFastEmitted (ByteString.literal lex)).toBits =
+                (strtodSpec d).toBits := by
+  obtain ⟨v, hdec, hin, -⟩ := decodeTape_correct l (ByteString.literal bs) t hparse
+  have hstart : sp.start ≤ sp.stop := tape_number_start_le_stop hdec hin htok
+  have hstop_le : sp.stop ≤ bs.length := by
+    have hspans : checkSpans (ByteString.literal bs) t.tokens 0 = true := by
+      simpa [spansWellFormed, hin] using (tape_valid t v hdec).1
+    exact (checkSpans_mem (prev := 0) hspans htok).2.1
+  have hslice : (bs.drop sp.start).take (sp.stop - sp.start) =
+      (numRunFrom (ByteString.literal bs) sp.start).data.toList :=
+    tape_number_maximal_run hdec hin htok
+  exact numberArmPremises_of_parseAssumed hparse htok
+    (NumberExtentAssumed.of_scanArm hlane hstart hstop_le hslice hgap hscan) hlane
+
 /-! ### Axiom footprints -/
 
 #print axioms classOfByte_eq_none_of_isSpace
@@ -288,9 +535,18 @@ theorem numberExtentAssumed_of_gap_direct {bs : List UInt8} {sp : Span}
 #print axioms WalkAlign.isSpace_false_of_stops
 #print axioms WalkAlignGaps.at
 #print axioms WalkAlignGaps.of_tokenGaps
+#print axioms numRun_all_constituent
+#print axioms numConstituent_not_space
+#print axioms numRun_getD_not_space
+#print axioms numRunFrom_take_not_space
 #print axioms stop_eq_of_gap_loop
 #print axioms stop_eq_of_gap_direct
 #print axioms numberExtentAssumed_of_gap_loop
 #print axioms numberExtentAssumed_of_gap_direct
+#print axioms isSpaceB_iff_skipWs
+#print axioms isSpaceB_eq_false_iff
+#print axioms ScanArm.of_scalarSkip
+#print axioms NumberExtentAssumed.of_scanArm
+#print axioms numberArmPremises_of_parse_scan
 
 end LeanLLVM.Refinement

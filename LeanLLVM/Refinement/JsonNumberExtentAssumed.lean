@@ -84,14 +84,17 @@ can supply neither the false clause nor the true one.
 What the stop equation needs is the document's gap: between a token's stop and
 the walk's `%cond` bound the bytes are whitespace.  `JsonStage2WalkStopsGap`
 states that clause (`StopToEntrySpace`, `WalkAlignGaps`) and proves its consumers:
-`stop_eq_of_gap_loop` and `stop_eq_of_gap_direct` derive the scan's stop, and
-`numberExtentAssumed_of_gap_loop`/`_direct` yield `NumberExtentAssumed` itself.
+`stop_eq_of_gap_loop` and `stop_eq_of_gap_direct` derive the scan's stop,
+`numberExtentAssumed_of_gap_loop`/`_direct` yield `NumberExtentAssumed` itself,
+and `numberArmPremises_of_parse_scan` is the whole consumer — parse acceptance,
+the token, the lane's identity, the gap and the scan's re-exported answer
+(`ScanArm`) give the number arm's five premises with no extent hypothesis.
 The residue is the clause's initialisation, and it is the parser's rather than
 the emitter's: `parseBytes` skips whitespace between tokens (`spaceRun_all`,
 `skipFrom_space`, which `TapeCorrect`'s decoder proof already uses), but the tape
 predicates record only `checkSpans`'s `prev ≤ s.start` and each token's own bytes
 (`TokenBytes`).  A theorem that a parse-accepted tape's inter-token gaps are
-whitespace is the exact missing premise.
+whitespace (`TokenGapsSpace`) is the exact missing premise.
 
 ## What it is not
 
