@@ -1419,3 +1419,219 @@ this freeze the gap is these five things:
 The two standing assumptions are unchanged: the C-to-IR and IR-to-object steps
 for the installed units are compiler correctness, and the native admission's
 agreement with `admission` is a check, not a theorem.
+
+## The revision's instruments at `c8f1f94`
+
+Everything below was observed from one tree, produced by `git archive c8f1f94`
+and initialized there (`git init -q; git add -A`); the repository's object
+database was attached so the one check that reads a pinned revision's blob
+(`tests/json-noevent/check.sh`, NE4) could do so, and `git status` reported no
+tracked change against `c8f1f94`.  The machine was the worker
+`nx-ag-01a21253` (`europe-west1-b`, `n4-highmem-8`: 8 vCPU, Intel Xeon Platinum
+8581C, 62 GiB, hostname `nixos`), Lean 4.35.0 and clang/LLVM 21.1.8 from the
+flake.  Nothing was built or run on the development machine.
+
+### The freeze digest
+
+The digest covers every path these instruments read from:
+
+```bash
+git diff f39a621 c8f1f94 --binary -- LeanLLVM LeanLLVMTest LeanLLVM.lean probes tests docs | sha256sum
+da245ce760b3887be2ab536c5c8b398e08182695102ea0bb9f5e07ee5aac903c  -
+```
+
+It is a digest of the twelve-commit interval's diff, so it moves if any tracked
+byte under those paths moves, and it says nothing about files outside them —
+`flake.nix`, `flake.lock`, `lakefile.toml` and the CI configuration are not
+covered.  In the table below each instrument is additionally pinned by the git blob it
+was at `c8f1f94` — a SHA-1 object id, where the freeze digest above is SHA-256 —
+which is the check that the script that ran is the script this page describes.
+
+### What was run, and what each instrument can claim
+
+| Instrument | Digest (`git rev-parse c8f1f94:<path>`) | Corpus / arms | Non-coverage |
+|---|---|---|---|
+| `probes/install/lake-locked.sh build` | `a5afc527925ccee2b6a3e973201fd5f430eb0f1a` | the default targets `leanllvm`, `ITree`, `LeanLLVMTest`: 2548 jobs, exit 0, no `error:` line | compilation only; it does not run whatever proof a module carries |
+| `probes/json/route/build.sh` (`OPT=-O2`, `TIMING=0`) | `ce01e5e6c0040cbfec46c08254894364ff502111` | six kernel TUs, the two no-event units, the depth counter, `policy.c`, `shim.c`, `RouteMain`, the driver and `guard_check`; symbol assertions on the adapter and the executable | the link's symbol list is asserted, not the object's behaviour; the Lean cone must have been built first |
+| `tests/json-indexed-reader.sh` | `b68691c8cc043786b37f7b45d281a86d07eee5ee` | 29 hand-built streams: empty, truncated record, spans past either source, unknown tags, undecodable bodies, a 2,000-event array | buffers a route never returns; it is not a proof of the two readers' equality |
+| `probes/json/route/indexed-check.sh` | `eea29fa8331430b8ff2ad9f51cba6d2cb1b21efd` | 147 documents (130 `tests/json/corpus` + 14 `tests/json-value/corpus` + three 64 KiB synthetic shapes): 76 fast-path streams compared, 71 outside the fast path | only documents the route admits; agreement of two readers, not either against the model |
+| `tests/json-event-slice/check.sh` | `b9465a2e740841f882b0782aed6febcd383abbcd` | two fixtures, `[1]` (native success) and the zero-byte document (reference fallback) | two documents; `EvbEmission` remains the declared assumption |
+| `tests/json-value/check.sh` | `91124cfbdaada6b90bc2855bde54576c28418cd7` | 14 documents, digests pinned, one tampered expectation rejected | finite corpus; the value is the reference path's, not the object's |
+| `tests/json-noevent/check.sh` | `74e349156ca0cd8971498a5f8059ae82a7ea484d` | 69-document corpus, both arms of both routes, the in-script cuts, NE4 byte identity against `66159e24`, NE8's 183 base rows | the corpus is finite; the model relation stays in Lean |
+| `tests/json-s1-masks/check.sh` | `cecd3b04aad6625de3fdf6d31c9ba0cfdcb9c28a` | 688,824 rows (8 mixed + 8 × 86 corpus windows + 131,072 byte + 524,288 alphabet + 32,768 random), both arms | aligned staging only; the fixture's alignment gap is stated in the script |
+| `tests/m4-loop-emission.sh` | `8381903d6fb7fac374e85cbcdbf2f5827ad8cd04` | `--capture` under `lake`/`clang`/`opt` shims and the four header-refusal modes over the copied driver | the shims are not the real compiler pipeline; five fixtures, not a grammar |
+| `tests/json/check.sh` | `167312a14216411795b07acecb13b781fbf5d7da` | 130-document corpus plus the tampered manifest | the runner against a hand-written manifest |
+| `tests/json-classify/check.sh` | `00c1953bd31a8eb206ad8c9f3c3e70919979ca32` | the block classifier's two actors over corpus windows and the generated arms | aligned 32-byte windows only |
+| `tests/json-entry/check.sh` | `01f772b592eb696f1abeb7afce655773faa67958` | the entry streams' two actors over the mask corpus and arms | the emitted literal chain stays in Lean |
+| `tests/json-utf8/check.sh` | `295e38072e1775371ab3d440b97e955b29cb02b2` | 73,610 rows per gate value, three actors and a scalar reference | gate soundness is stated over the published staging obligation |
+
+`probes/json/route/build.sh`'s binary was
+`7b2ad9106cf525492efd9917d4d43d07bca624850370d72a293a9841f1bf8b10`
+(SHA-256, uninstrumented build).  The stage columns in the sweep section come
+from the same script rebuilt with `TIMING=1`; that build's binary is a different
+artefact and is not the one the route checks ran.
+
+### The routes that changed, and the controls
+
+Uncut, every command below exited 0.  The default build is
+`nix develop -c bash probes/install/lake-locked.sh build`: it printed
+`Build completed successfully (2548 jobs).` and no `error:` line.  The route's
+link step needed one cone build first — `tests/json-indexed-reader.sh`'s own
+target `LeanLLVM.Refinement.JsonEventCursorInterface` is not imported by the
+default targets, so the first `probes/json/route/build.sh` exited 1 with
+`build: absent: .lake/build/ir/LeanLLVM/Refinement/JsonEventCursor.c`; the
+hinted cone build (73 jobs) then the same link step exited 0.  The extra
+executables the stage-1 routes drive were built by the same lock:
+`lake-locked.sh build leanllvm-json leanllvm-json-classify leanllvm-json-entry
+leanllvm-json-utf8 leanllvm-json-s1-masks` (2552 jobs, exit 0).
+
+| Command | Exit | Tail |
+|---|---|---|
+| `tests/json-indexed-reader.sh` | 0 | `indexed-reader: ok — 29 cases, both readers agree` |
+| `probes/json/route/indexed-check.sh` | 0 | `indexed-check: ok — 147 documents, 76 fast-path streams compared, 71 outside the fast path` |
+| `tests/json-event-slice/check.sh` | 0 | `ok: [1] is a native success: verdict=1 nk=3 nxp=0 ndst=0 nev=11 err=0` and `ok: the [1] event slice's two caller fixtures` |
+| `tests/json-value/check.sh` | 0 | `json-value: ok — 14 documents, digests match, tampered expectation rejected` |
+| `tests/json-noevent/check.sh` | 0 | `ok: the event arm reproduces all 183 base rows (exit, six words, both payloads, document and stdout)` and `ok: the no-event entries agree with the certified routes; the sentinel separates refusals; the census and the byte identity are pinned` |
+| `tests/json-s1-masks/check.sh` | 0 | `ok: the detector bites: 128248 of 688824 row(s) moved, all comma-carrying; first is mixed…` |
+| `tests/m4-loop-emission.sh --capture` | 0 | `ok: E1: the body shifts the xor result by the lane offset that is the SSA result of 'mul i64 <counter-load>, 8' …` then `all assertions held` |
+| `tests/m4-loop-emission.sh --declare-attr` | 0 | `E4: … unsupported attribute group '#0' after the parameter list of @f` |
+| `tests/m4-loop-emission.sh --declare-param-attr` | 0 | `E5: … parameter 1 of @f carries the attribute 'range', which is not modelled` |
+| `tests/m4-loop-emission.sh --return-attr` | 0 | `E2: … unsupported return attribute 'range ( i64 0 , 1 )' before the return type of @f` |
+| `tests/m4-loop-emission.sh --function-attr` | 0 | `E3: … unsupported token(s) 'noreturn' after the parameter list of @f` |
+
+The mask control's clean arm is the row equality: 688,824 rows classified by the
+Lean body and the object, with the object built from `kernel/json/s1_block.c`
+(digest `288fb42237c9d5e42940155037ddc1026302e50888e60154b12c006bc7f82991`)
+rather than from the fixture.  Its mutated arm is the same run's detector: the
+flipped table entry moves 128,248 rows, every one comma-carrying, and the first
+moved row is the `mixed` row printed above.  So the control fails where the
+classification says it should and nowhere else.
+
+The event slice's two fixtures are the whole of that scenario:
+
+- **`corpus/one` is `[1]`.**  `--doc` exits 0 with
+  `verdict=1 nk=3 nxp=0 ndst=0 nev=11 err=0` — an empty arena and a real verdict,
+  so the native call ran and did not fall back — and `--value` prints
+  `value: verdict=1 value=5b23303030303030303030303030663033665d`, the UTF-8 hex
+  of `[#000000000000f03f]`, the same canonical value `[1.0]` has.
+- **`corpus/empty` is the zero-byte document.**  Admission declines it, no native
+  call is made, and both arms report the reference parser's own refusal:
+  `refused: invalid: unexpected end at 0` on stderr at exit 2, and
+  `value: refused class=invalid:unexpectedEnd offset=0` on stdout at exit 2.
+- The scenario's control reads the value line's form from `tests/json-value`'s
+  `refused-empty` first, so a detector that reads nothing fails as an absence.
+
+### The unaffected stage-1 routes
+
+All four still pass, and none stopped at setup in this run:
+
+| Route | Exit | Tail |
+|---|---|---|
+| `tests/json/check.sh` | 0 | `ok: the corpus agrees with the manifest; a tampered expectation is a mismatch` |
+| `tests/json-classify/check.sh` | 0 | `ok: the installed object (sha256 95a38141…) agrees with the Lean body on 71 window(s)`; the detector moves `0x7bd6f7b7` to `0x7bd4f7a7` at offset 0 of `mixed.block` |
+| `tests/json-entry/check.sh` | 0 | `ok: the object (kernel sha256 f712e98a…) agrees with the Lean body on 197595 row(s)`; the POS8, B8 and B3 detectors move 2,091, 65,544 and 65,545 rows |
+| `tests/json-utf8/check.sh` | 0 | `ok: both gate values return the same word on 73053 documents`; the defect object moves exactly the 144 rows whose last byte is `C0`, `C1` or at least `F5` at both gates |
+
+One setup fact is worth recording because it is easy to read as a route failure:
+none of these four executables is a default target (`lakefile.toml`'s
+`defaultTargets` are `leanllvm`, `ITree` and `LeanLLVMTest`), so on a tree built
+by the default command alone `leanllvm-json`, `leanllvm-json-classify`,
+`leanllvm-json-entry` and `leanllvm-json-utf8` are absent and each script exits
+3 at its own absent-binary line.  The pass above is after building those five
+targets by name (`leanllvm-json-s1-masks` included, for the mask route).  That
+is a build prerequisite, not a regression: nothing in this revision changed
+those scripts' fixtures or their setup checks.
+
+### The reader's before-and-after sweep
+
+Both trees were built on this host and swept back to back in one session, on
+the generator's dense shape at its fixed size sweep: `f39a621` (the last
+evidence freeze, whose `--value` consumes the returned buffers with the list
+reader `eventsOfBytes`) and `c8f1f94` (this revision, `eventsOfBytesIndexed`),
+each `OPT=-O2`, kernel `-O2`, `TIMING=1`.  Each cell is the median of three
+whole `--value` calls for 64 KiB to 512 KiB and one call at 1 MiB under a 600 s
+bound, timed from before the spawn to after the exit with the value line
+discarded; both binaries were run through the identical loop.
+
+| Size (bytes) | `f39a621`, list reader (s) | `c8f1f94`, indexed reader (s) | Ratio |
+|---|---|---|---|
+| 65,536 | 5.327 | 0.449 | 11.9 |
+| 131,072 | 20.995 | 0.541 | 38.8 |
+| 262,144 | 82.052 | 0.751 | 109.3 |
+| 524,288 | 336.125 | 1.200 | 280.1 |
+| 1,048,576 | did not finish inside 600 s (`exit 124`) | 2.584 | — |
+
+The pre-change binary's growth is superlinear in the size; the indexed reader's
+is not.  The instrumented revision also prices the two calls it makes after the
+native call, on the same five documents (`TIMING=1` build, medians of three
+21-repeat stage probes, zero fallbacks):
+
+| Size (bytes) | Wall (ms) | `value_bytes_ns` (ms) | `value_decode_ns` (ms) | path |
+|---|---|---|---|---|
+| 65,536 | 450.3 | 4.71 | 0.97 | fast |
+| 131,072 | 549.7 | 9.38 | 1.97 | fast |
+| 262,144 | 757.0 | 18.71 | 3.92 | fast |
+| 524,288 | 1,254.9 | 37.95 | 8.62 | fast |
+| 1,048,576 | 2,943.6 | 77.91 | 18.36 | fast |
+
+**Caveats that belong to these numbers.**  One session on one spot worker
+(`nx-ag-01a21253`), not a quiet host: no PMU, `CLOCK_MONOTONIC` reads only, and
+the machine is shared.  The wall and the component intervals do not compose by
+subtraction — the wall is a single spawn-and-exit call while the components come
+from a 21-repeat probe inside one process — and the two instruments disagree on
+the same builds by up to 14 % at 1 MiB (`value-sweep.sh`'s own wall was 2,944 ms
+against the loop's 2,584 ms; at 128 KiB, 550 against 541 ms).  The comparison is
+same-host, same-session and same shape, which is what makes the ratio
+meaningful, but it is not a quiet-host measurement, and the 1 MiB point on the
+pre-change side is an absence (a timed-out call), not a measured wall.
+
+### What remains unproved at this revision
+
+- **The two readers are equal only where they were compared.**  `indexed-check`
+  compared them on 76 admitted streams and `tests/json-indexed-reader.lean` on
+  29 hand-built buffers.  No theorem states
+  `eventsOfBytesIndexed = eventsOfBytes` for arbitrary buffers, and a buffer the
+  routed object never returns is outside both instruments.
+- **The emitted-stream step is an assumption, not a proof.**  `EvbEmission`
+  (`LeanLLVM/Refinement/JsonEventEmission.lean`) is the declared premise that the
+  selected object leaves the arena and the trace's event bytes at their
+  destinations.  The event slice is that premise's caller side on two documents;
+  nothing in this revision eliminates the premise.
+- **The objects are compared with the bodies, not proved equal to them.**
+  `tests/json-classify`, `tests/json-entry`, `tests/json-s1-masks` and
+  `tests/json-noevent` compare a compiled object with a Lean body over generated
+  arms.  The arms are bounded (688,824 mask rows, 73,610 UTF-8 rows per gate,
+  183 base rows), and the refinement statements that would quantify over all
+  inputs are the Lean development's, not these routes'.
+- **Admission's depth and policy are finite.**  `tests/json/check.sh` and the
+  route's depth and policy rows sample the corpus; the 520-frame stack bound and
+  the character-policy scan are not exhaustively enumerated here.
+- **One session, one spot machine, no PMU.**  The sweep's walls are
+  `CLOCK_MONOTONIC` around a process spawn, on a shared machine that is not
+  quiet, and the reader and decode columns come from a 21-repeat probe while the
+  wall is a single call.  The two do not compose by subtraction, and the numbers
+  are not a quiet-host measurement.
+- **The pre-change sweep stops at 512 KiB.**  The 1 MiB document did not finish
+  inside the 600 s call bound on the pre-change binary, so the before/after
+  ratio is measured on four sizes and the fifth is an absence, not a number.
+- **The identity row needs history the archive does not carry.**
+  `tests/json-noevent/check.sh`'s NE4 compares six paths with
+  `66159e24`'s blobs through `git show`.  A bare `git archive c8f1f94` tree
+  without the object database stops that check at setup, so the byte-identity
+  claim is conditional on attaching the history.
+- **The capture mode is shimmed.**  `tests/m4-loop-emission.sh --capture` runs
+  the capture script against local shims for `lake`, `clang` and `opt`, so it
+  checks the relations the script asserts over an emission, not a real compiler
+  pipeline.  The four header-refusal modes are five fixed fixtures; they show the
+  refusal fires, not that the header grammar is complete.
+- **The mask detector's moved-row count is a property of its own cut.**  The
+  script builds the defect object and counts the rows the flipped table entry
+  moves; that shows the detector bites, and the row equality against the body is
+  the separate claim.
+- **No axiom audit is part of any route.**  `lake build` elaborates every proof
+  in the default targets, but no instrument on this page prints the axioms a
+  theorem rests on, and `sorry`-freedom is not asserted here.
+- **The digest is scoped.**  It covers `LeanLLVM`, `LeanLLVMTest`, `LeanLLVM.lean`,
+  `probes`, `tests` and `docs` between `f39a621` and `c8f1f94`.  The flake, its
+  lock and `lakefile.toml` are outside it, so the toolchain that built these
+  artefacts is named by version, not pinned by the digest.
