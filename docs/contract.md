@@ -2060,12 +2060,13 @@ tape the decoder accepts.
 **The facts.**  `TokenBytes bs tok` is the document-side statement a token carries:
 
 ```text
-TokenBytes bs (.punct _ s)      :=  s.stop = s.start + 1
+TokenBytes bs (.punct _ s)      :=  s.stop = s.start + 1 ∧ bs[s.start]? = some p.byte
 TokenBytes bs (.null s)         :=  (bs.drop s.start).take 4 = literal "null"  ∧ s.stop = s.start + 4
 TokenBytes bs (.bool true s)    :=  (bs.drop s.start).take 4 = literal "true"  ∧ s.stop = s.start + 4
 TokenBytes bs (.bool false s)   :=  (bs.drop s.start).take 5 = literal "false" ∧ s.stop = s.start + 5
 TokenBytes bs (.number s)       :=  ∃ lex, (bs.drop s.start).take (s.stop - s.start) = lex
                                       ∧ lex.length = s.stop - s.start ∧ RfcNumber lex
+                                      ∧ lex = numRunFrom bs s.start
 TokenBytes bs (.string s)       :=  bs[s.start]? = some 0x22
                                       ∧ ∃ cs, StringAt .strict bs s.start s.stop cs
 ```
@@ -2076,9 +2077,19 @@ at the guards that produced each token).  Nothing private had to be exported for
 it: the facts are read off the guards rather than restated from the parser's
 soundness theorem, so `DecodesValue` and the per-branch `valueAt_*_inv` lemmas stay
 `private` and no claim about the parser is duplicated.  The punctuation byte is
-deliberately *not* in `TokenBytes`: the run's own read supplies it (`WalkAlign.class`
-plus the arm's byte test), which is why §7.12's four container rows need nothing
-from the tape but the one-byte stop.
+part of `TokenBytes`: the guard reads `bs[i]?` at the span's start, so the row
+records it beside the one-byte width, and §7.12's four container rows read it
+through `WalkAlign.class` plus the arm's byte test rather than supplying it from
+the span discipline alone.
+
+The number row's `lex = numRunFrom bs s.start` is the decoder's own construction:
+`decodeValue`'s number branch sets `lex := numRunFrom bs i` and emits the span
+`⟨i, i + lex.length⟩`, so the span's bytes *are* the maximal number run rather
+than merely some RFC 8259 number.  `tape_tokenBytes_number` carries the equality to
+the record byte list, and `JsonNumberPremises.tape_number_maximal_run` /
+`parse_number_maximal_run` restate it as the number arm's extent, which is why the
+release theorem's extent assumption (`JsonNumberExtentAssumed`) no longer names
+maximality.
 
 **The record each class carries.**  `LeanLLVM/Refinement/JsonStage2TraceRow.lean`
 reads those facts at the byte list the records are stated over

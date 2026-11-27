@@ -212,7 +212,7 @@ theorem records_exists {bs arena : List UInt8} (hlen : bs.length ≤ 2 ^ 20) :
                 · exact bodiesWithin_of_tag_ne (by simp [EventRecord.consume, ConsumerEvent.kind, stage2TagNum, EventRecord.tagKey]) (by simp [EventRecord.consume, ConsumerEvent.kind, stage2TagNum, EventRecord.tagStr])
                 · exact hwit e he
       | number s =>
-          obtain ⟨lex, hslice, hlen', hrfc⟩ := htb _ List.mem_cons_self
+          obtain ⟨lex, hslice, hlen', hrfc, -⟩ := htb _ List.mem_cons_self
           obtain ⟨hlt0, -⟩ := hsp _ List.mem_cons_self
           have hlt : s.start < s.stop := by simpa only [Token.span] using hlt0
           obtain ⟨d, hread⟩ : ∃ d, StrtodReader.reader lex = some d := by

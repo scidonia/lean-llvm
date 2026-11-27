@@ -46,24 +46,32 @@ grammar token has and an accepted prefix lacks.
 **What is proved here.**  `numberPayload_at_tape_token` derives, from
 `decodeTape` and the tape's token list alone, the slice, a reader witness, its
 well-formedness, and the payload equality: the extent is orthogonal to the
-payload.  `numberArmPremises_of_extent` adds the extent and produces the five
-premises above as one existential.  `tokenRecord_number_of_tape_reader` is the
-tape-side record restated at the document's own lexeme (a reader witness, not
-`d.lexeme`), which is the form the event arm's `TokenRecord.number` constructor
-already accepts.
+payload.  `tape_number_maximal_run` and `tape_number_start_le_stop` are the
+decoder's half of the extent, and `parse_number_maximal_run` (with
+`parse_number_maximal_run_literal` at the document's byte list) states it for a
+document `parseBytes` accepts: the span's bytes are `numRunFrom`'s run, so
+maximality needs no hypothesis.  `numberArmPremises_of_extent` adds the extent
+and produces the five premises above as one existential.
+`tokenRecord_number_of_tape_reader` is the tape-side record restated at the
+document's own lexeme (a reader witness, not `d.lexeme`), which is the form the
+event arm's `TokenRecord.number` constructor already accepts.
 
-**Obstruction.**  Neither conjunct is derivable from the tree's current
-definitions.  `WalkAlign` (`JsonStage2WalkAlignment.lean:313`) pins each token's
-*start* to `entryPos G k` and the next entry to the next token's start; it never
-states that the next entry is the current token's *stop*.  `entryPos` is a lane
-read of a staged table (`JsonStage2WalkScopeGeom.entryPos`,
+**Obstruction.**  The maximal-run conjunct is *not* an assumption: `TokenBytes`'s
+number row names `numRunFrom`'s run as the span's bytes (`decodeTokenBytes_aux`
+carries the equality from `decodeValue`'s own `lex := numRunFrom bs i`), so
+`tape_number_maximal_run` derives it from `decodeTape` and
+`parse_number_maximal_run` from `parseBytes`, and `tape_number_start_le_stop`
+gives the span's well-formedness from the run's non-emptiness.  What is left of
+the statement is the stop equation `q = sp.stop`, and that is the walk's half.
+`WalkAlign` (`JsonStage2WalkAlignment.lean:313`) pins each token's *start* to
+`entryPos G k` and the next entry to the next token's start; it never states
+that the next entry is the current token's *stop*.  `entryPos` is a lane read of
+a staged table (`JsonStage2WalkScopeGeom.entryPos`,
 `WalkGeom.entries : readLanes32 m0 ep nep = some ent`) — the stage-1 emitter
 that fills those lanes has no Lean semantics anywhere in the tree.  The scalar
 scan's stop `q` is a walk value, and `JsonStage2NoEventWalkValue` proves only
-`lane ≤ q ≤ cond` and `q = cond ∨ stage2SkipWs` at `q`; the maximal-run side is
-the decoder's own (`JSON/TapeCorrect.decodeValue`'s number guard, whose evidence
-`decodeTokenBytes_aux` discards when it states `TokenBytes`).  So closing this
-premise needs a *definition change* — a stop clause such as `WalkAlignStops`
+`lane ≤ q ≤ cond` and `q = cond ∨ stage2SkipWs` at `q`.  So closing the stop
+equation needs a *definition change* — a stop clause such as `WalkAlignStops`
 below, added to the alignment the walk's invariant preserves (initialised from
 the stage-1 emitter) — together with a *measurement or a body proof* of that
 emitter's stop side: the mask classifier in the tree produces entry positions,
@@ -169,6 +177,58 @@ theorem NumberTokenExtentAt.slice {bs : List UInt8} {sp : Span} {q : Nat}
     (bs.drop sp.start).take (sp.stop - sp.start) =
       (numRunFrom (ByteString.literal bs) sp.start).data.toList := h.2.2
 
+/-- **The maximal run at a tape's number token, from the decoder.**  `TokenBytes`'s
+number row names `numRunFrom`'s run as the span's bytes, so a token of an accepted
+tape is the grammar token's extent with no hypothesis about the scanner: the
+maximality the extent statement used to assume is here a theorem about
+`decodeTape`. -/
+theorem tape_number_maximal_run {t : Tape} {v : JSON.Value} {bs : List UInt8}
+    {s : Span} (hdec : decodeTape t = some v) (hin : t.input = ByteString.literal bs)
+    (htok : Token.number s ∈ t.tokens) :
+    (bs.drop s.start).take (s.stop - s.start) =
+      (numRunFrom (ByteString.literal bs) s.start).data.toList := by
+  obtain ⟨lex, htake, -, -, hrun⟩ := tape_tokenBytes_number hdec hin htok
+  exact htake.trans hrun
+
+/-- **A tape's number span is well formed, from the decoder.**  The run is an RFC
+8259 number, hence non-empty, and it is the span's bytes with the span's length,
+so the span advances. -/
+theorem tape_number_start_le_stop {t : Tape} {v : JSON.Value} {bs : List UInt8}
+    {s : Span} (hdec : decodeTape t = some v) (hin : t.input = ByteString.literal bs)
+    (htok : Token.number s ∈ t.tokens) : s.start ≤ s.stop := by
+  obtain ⟨lex, -, hlen, hnum, -⟩ := tape_tokenBytes_number hdec hin htok
+  have hpos : 0 < lex.length := by
+    have h1 : 0 < (ByteString.literal lex).length := rfcNumber_nonempty hnum
+    simpa using h1
+  omega
+
+/-- **The extent at a token of a parsed document.**  `parseBytes` accepts `bs` as
+the tape `t`, so every number token of `t` stands over the maximal number run from
+its start: the document's bytes at the span are `numRunFrom`'s data.  This is the
+decoder-side half of the number extent, usable in place of the release theorem's
+maximal-run premise. -/
+theorem parse_number_maximal_run {l : Limits} {bs : Bytes} {t : Tape}
+    (h : parseBytes l bs = .ok t) {s : Span} (htok : Token.number s ∈ t.tokens) :
+    (bs.drop s.start).take (s.stop - s.start) = numRunFrom bs s.start := by
+  obtain ⟨v, hdec, hin, -⟩ := decodeTape_correct l bs t h
+  obtain ⟨lex, htake, -, -, hrun⟩ :=
+    tape_tokenBytes t v hdec (.number s) htok
+  rw [← hin]
+  exact htake.trans hrun
+
+/-- **The extent at a token of a parsed document, at the document's byte list.**
+The form the release theorem's `bs : List UInt8` uses: the list's bytes at the
+span are `numRunFrom`'s data over the literal. -/
+theorem parse_number_maximal_run_literal {l : Limits} {doc : List UInt8} {t : Tape}
+    (h : parseBytes l (ByteString.literal doc) = .ok t) {s : Span}
+    (htok : Token.number s ∈ t.tokens) :
+    (doc.drop s.start).take (s.stop - s.start) =
+      (numRunFrom (ByteString.literal doc) s.start).data.toList := by
+  have h1 := congrArg (fun b : Bytes => b.data.toList) (parse_number_maximal_run h htok)
+  rw [ByteString.data_toList_take, ByteString.data_toList_drop,
+    ByteString.data_toList_literal] at h1
+  exact h1
+
 /-- **The payload at a tape's number token, from the tape alone.**  The slice, a
 reader witness at it, that decimal's well-formedness, and the eight bytes the
 model conversion would write.  The extent is not used: the payload is a function
@@ -182,7 +242,7 @@ theorem numberPayload_at_tape_token {t : Tape} {v : JSON.Value} {bs : List UInt8
           d.wellFormed ∧
             (numFastEmitted (ByteString.literal lex)).toBits =
               (strtodSpec d).toBits := by
-  obtain ⟨lex, htake, -, hnum⟩ := tape_tokenBytes_number hdec hin htok
+  obtain ⟨lex, htake, -, hnum, -⟩ := tape_tokenBytes_number hdec hin htok
   obtain ⟨d, hd⟩ := Option.isSome_iff_exists.mp (StrtodReader.reader_complete hnum)
   have hwf := StrtodReader.reader_wf hd
   exact ⟨lex, d, htake, hd, hwf, numberPayload_of_reader (d := d) hd hwf⟩
@@ -205,7 +265,7 @@ theorem numberArmPremises_of_extent {t : Tape} {v : JSON.Value} {bs : List UInt8
             q = lane + lex.length ∧
               (numFastEmitted (ByteString.literal lex)).toBits =
                 (strtodSpec d).toBits := by
-  obtain ⟨lex, htake, hlen, hnum⟩ := tape_tokenBytes_number hdec hin htok
+  obtain ⟨lex, htake, hlen, hnum, -⟩ := tape_tokenBytes_number hdec hin htok
   obtain ⟨d, hd⟩ := Option.isSome_iff_exists.mp (StrtodReader.reader_complete hnum)
   have hwf := StrtodReader.reader_wf hd
   have hle : sp.start ≤ sp.stop := NumberTokenExtentAt.start_le_stop hext
@@ -231,7 +291,7 @@ theorem tokenRecord_number_of_tape_reader {t : Tape} {v : JSON.Value}
     (hread : StrtodReader.reader
       (ByteString.literal ((bs.drop s.start).take (s.stop - s.start))) = some d) :
     TokenRecord bs arena (.number (strtodSpec d).toBits) (.number s) := by
-  obtain ⟨lex, htake, hlen, hnum⟩ := tape_tokenBytes_number h hin htok
+  obtain ⟨lex, htake, hlen, hnum, -⟩ := tape_tokenBytes_number h hin htok
   have hpos : 0 < lex.length := by
     simpa using rfcNumber_nonempty hnum
   have hle : s.start ≤ s.stop := by omega
@@ -337,6 +397,10 @@ theorem numFastAccumulatorAgreement_intRun {calls : Calls} {d : Decimal}
 #print axioms NumberTokenExtentAt.start_le_stop
 #print axioms NumberTokenExtentAt.stop_eq
 #print axioms NumberTokenExtentAt.slice
+#print axioms tape_number_maximal_run
+#print axioms tape_number_start_le_stop
+#print axioms parse_number_maximal_run
+#print axioms parse_number_maximal_run_literal
 #print axioms numberPayload_at_tape_token
 #print axioms numberArmPremises_of_extent
 #print axioms tokenRecord_number_of_tape_reader

@@ -95,16 +95,18 @@ theorem tape_tokenBytes_false {t : Tape} {v : JSON.Value} {bs : List UInt8}
     ByteString.data_toList_literal] at h1
   exact h1
 
-/-- **A number token's span and lexeme, from the tape.**  The span holds a maximal
-run of number bytes, and that run is an RFC 8259 number. -/
+/-- **A number token's span and lexeme, from the tape.**  The span holds
+`numRunFrom`'s run of number bytes from the span's start, and that run is an RFC
+8259 number: the token's extent is the maximal run, not an accepted prefix. -/
 theorem tape_tokenBytes_number {t : Tape} {v : JSON.Value} {bs : List UInt8}
     (h : decodeTape t = some v) (hin : t.input = ByteString.literal bs)
     {s : Span} (htok : Token.number s ∈ t.tokens) :
     ∃ lex : List UInt8, (bs.drop s.start).take (s.stop - s.start) = lex ∧
-      lex.length = s.stop - s.start ∧ RfcNumber (ByteString.literal lex) := by
+      lex.length = s.stop - s.start ∧ RfcNumber (ByteString.literal lex) ∧
+        lex = (numRunFrom (ByteString.literal bs) s.start).data.toList := by
   have hb := TokenBytes.of_input hin (tape_tokenBytes t v h (.number s) htok)
-  obtain ⟨lex, htake, hlen, hnum⟩ := hb
-  refine ⟨lex.data.toList, ?_, ?_, ?_⟩
+  obtain ⟨lex, htake, hlen, hnum, hrun⟩ := hb
+  refine ⟨lex.data.toList, ?_, ?_, ?_, ?_⟩
   · have h1 := congrArg (fun b : Bytes => b.data.toList) htake
     rw [ByteString.data_toList_take, ByteString.data_toList_drop,
       ByteString.data_toList_literal] at h1
@@ -112,6 +114,7 @@ theorem tape_tokenBytes_number {t : Tape} {v : JSON.Value} {bs : List UInt8}
   · rw [← hlen, ByteString.length_eq_size, ByteString.size_eq_data,
       Array.length_toList]
   · rwa [ByteString.literal_data_toList]
+  · rw [hrun]
 
 /-- **A key or string token's quote and body, from the tape.**  The span opens with
 the quotation mark and reads as a JSON string literal. -/
@@ -195,7 +198,7 @@ theorem tokenRecord_number_of_tape {t : Tape} {v : JSON.Value} {bs arena : List 
     {d : Decimal} (hwf : d.wellFormed)
     (hlex : d.lexeme.data.toList = (bs.drop s.start).take (s.stop - s.start)) :
     TokenRecord bs arena (.number (strtodSpec d).toBits) (.number s) := by
-  obtain ⟨lex, htake, hlen, hnum⟩ := tape_tokenBytes_number h hin htok
+  obtain ⟨lex, htake, hlen, hnum, -⟩ := tape_tokenBytes_number h hin htok
   have hlexpos : 0 < lex.length := by
     have h1 : 0 < (ByteString.literal lex).length := rfcNumber_nonempty hnum
     simpa using h1

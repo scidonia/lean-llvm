@@ -1082,9 +1082,9 @@ guards are the evidence. -/
 
 /-- The document facts a token carries.  A punctuation span is one byte and the
 document holds the byte the kind denotes; a literal's span is the literal's own
-length and the document holds its bytes; a number's span holds the maximal
-lexeme, which is an RFC 8259 number; a key or string's span opens with the quote
-and reads as a JSON string literal. -/
+length and the document holds its bytes; a number's span holds `numRunFrom`'s run
+from the span's start, which is an RFC 8259 number; a key or string's span opens
+with the quote and reads as a JSON string literal. -/
 def TokenBytes (bs : Bytes) : Token → Prop
   | .punct p s => s.stop = s.start + 1 ∧ bs[s.start]? = some p.byte
   | .null s =>
@@ -1098,7 +1098,7 @@ def TokenBytes (bs : Bytes) : Token → Prop
         s.stop = s.start + 5
   | .number s =>
       ∃ lex : Bytes, (bs.drop s.start).take (s.stop - s.start) = lex ∧
-        lex.length = s.stop - s.start ∧ RfcNumber lex
+        lex.length = s.stop - s.start ∧ RfcNumber lex ∧ lex = numRunFrom bs s.start
   | .string s =>
       bs[s.start]? = some 0x22 ∧ ∃ cs : List Nat, StringAt .strict bs s.start s.stop cs
 
@@ -1182,10 +1182,11 @@ private theorem decodeTokenBytes_aux (bs : Bytes) :
             subst hs
             intro tok htok
             rcases List.mem_cons.mp htok with rfl | hmem
-            · refine Or.inr ⟨numRun (bs.drop i), ?_, ?_, numLexB_spec hlex⟩
+            · refine Or.inr ⟨numRun (bs.drop i), ?_, ?_, numLexB_spec hlex, ?_⟩
               · rw [Nat.add_sub_cancel_left]
                 exact (numRun_spec (bs.drop i)).1
               · rw [Nat.add_sub_cancel_left]
+              · exact (numRunFrom_eq bs i).symm
             · exact Or.inl hmem
           · cases hdec
         | string s =>
