@@ -379,3 +379,4 @@ import LeanLLVM.Refinement.JsonStage2WalkStopsGap
 import LeanLLVM.Refinement.JsonNumFastAssumed
 import LeanLLVM.Refinement.JsonNumberSegmentation
 import LeanLLVM.Refinement.JsonStage2NumFastCalleeD8
+import LeanLLVM.Refinement.JsonStage2NumFastEpilogueShape
