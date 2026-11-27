@@ -1,14 +1,42 @@
 /-
-# The number path's write spine: stated, because the scan does not supply it
+# The number path's write spine: why four reads, and not a memory
 
-`evb_emission_of_bracket_walk` (`JsonStage2WalkSpansChain.lean:394`) takes the
-arena datum of `[1]`'s emission from the walk's own accept route, and it takes one
-memory equation towards that: `hmem : m = walkFinishMemAccept G s₃.mem C₃.alen
-C₃.evlen`.  The equation is the accept finalisation's two cursor stores
-(`%ndst`/`%nev`) over the loop's last memory (`JsonStage2WalkTargetPost.lean:123`).
-The question this module answers is whether the stage-2 scan's own run supplies it.
+`evb_emission_of_bracket_walk` (`JsonStage2WalkSpansChain.lean:393`) takes `[1]`'s
+emission from the walk's own accept route, at the four reads `JsonWalkReads` names
+(`JsonStage2WalkSpansNil.lean`) rather than at a whole memory.  This module is the
+argument for that shape.  The equation it replaced was
+`hmem : m = walkFinishMemAccept G s₃.mem C₃.alen C₃.evlen`, the accept finalisation's
+two cursor stores over the loop's last memory (`JsonStage2WalkTargetPost.lean:123`).
 
-## The scan's run theorem, the memory it concludes, the frame it carries
+That equation is stronger than the emission reads, and no frame supplies it:
+`UnchangedOutside mem m R` is a pointwise equality *outside* the union of `R`
+(`CallsFootprint.lean:45`), so it is silent inside the list.  Two consequences are
+proved here rather than asserted:
+
+* **A frame cannot identify a memory.**  A write inside a listed region leaves the
+  frame true and changes the memory (`frame_not_identifying`), so no frame,
+  however wide, can give an equation of whole memories.
+* **The scan's frame is not even the walk's.**  The report's arena entry is
+  `(dst, ndst' + stage2ArenaReserve)` (`stage2Writes`, `JsonStage2Contract.lean:350`)
+  and the walk's is `(G.dst, C.alen)`.  At the accept route the reserved extent is
+  the carried cursor (`stage2BoundaryAt_of_accept`'s `U_le_ndst`,
+  `JsonStage2WalkTargetPost.lean:767`), so the two lists differ by the decoder's
+  64-byte slack alone: the report's list covers bytes the walk's leaves out, and
+  the frame at it does not restrict the walk's list
+  (`frame_weaker_not_stronger`, `reportFrame_not_walkWideAt`).  The containment
+  runs the other way, which is why the tree states the walk's frame *transfers to*
+  the report's (`UnchangedOutside.of_covered`, `JsonStage2Contract.lean:774`).
+
+## Where the interface lives
+
+`JsonWalkReads` — the returned memory at the two cursor words and the two payloads —
+and its builder `jsonWalkReads_of_mem` are declared in `JsonStage2WalkSpansNil`, the
+lowest module the seam (`JsonStage2WalkSpansChain`) can name.  `jsonWalkReads_of_mem`
+proves the four reads follow from the accept finalisation, so the equation keeps one
+use there, as the producer of the reads; the emission the chain calls takes the
+reads and names no whole memory.
+
+## The scan's run theorem and the memory it concludes
 
 * **The run theorem.**  `Stage2WalkObligation` (`JsonStage2Body.lean:3495`) is the
   scan's obligation; `stage2_walk_yields_record` (`:3512`) is its consumer at the
@@ -22,44 +50,15 @@ The question this module answers is whether the stage-2 scan's own run supplies 
   (`walkFinishPost_accept`, `JsonStage2WalkTargetPost.lean:985`;
   `stage2Boundary_of_accept`, `:777`) know the memory is `walkFinishMemAccept` and
   conclude `stage2Boundary` at it — under the same existential, so the equation is
-  not projectable from the conclusion.
-* **The frame it carries.**  `stage2Boundary`'s frame conjunct is `∃ nextEnd, next
-  ≤ nextEnd ∧ UnchangedOutside mem m (stage2ReportFrame … next nextEnd)`
-  (`JsonStage2Contract.lean:1227`), whose region list is the report's:
-  `stage2ReportPresent` (the ABI's five write extents plus
-  `stage2ReportScratch`) and the stack interval `(next, nextEnd - next)`.
-  `walkWideAt` (`JsonStage2WalkScopeGeom.lean:393`), the list the walk's invariant
-  is stated at, is `walkPresent` (the arena and event prefixes *at the carried
-  cursors*, the seven appended objects, `%d.i`) and the same stack interval.
+  not projectable from the conclusion.  The terminal constructor therefore has the
+  witness and must preserve its reads; a consumer behind the frame cannot rebuild
+  them.
 
-## The answer: it is not derivable, and both halves fail
-
-`UnchangedOutside mem m R` is a pointwise equality *outside* the union of `R`
-(`CallsFootprint.lean:45`); it is silent inside the list.  That has two
-consequences, and this module proves both rather than asserting them:
-
-* **A frame cannot identify a memory.**  A write inside a listed region leaves
-  the frame true and changes the memory (`frame_not_identifying`), so no frame,
-  however wide, can give an equation of whole memories.
-* **The scan's frame is not even the walk's.**  The report's arena entry is
-  `(dst, ndst' + stage2ArenaReserve)` (`stage2Writes`, `JsonStage2Contract.lean:350`)
-  and the walk's is `(G.dst, C.alen)`.  At the accept route the reserved extent is
-  the carried cursor (`stage2BoundaryAt_of_accept`'s `U_le_ndst`,
-  `JsonStage2WalkTargetPost.lean:767`), so the two lists differ by the decoder's
-  64-byte slack alone: the report's list covers bytes the walk's leaves out, and
-  the frame at it does not restrict the walk's list
-  (`frame_weaker_not_stronger`, `reportFrame_not_walkWideAt`).  The containment
-  runs the other way, which is why the tree states the walk's frame *transfers to*
-  the report's (`UnchangedOutside.of_covered`, `JsonStage2Contract.lean:774`).
-
-So the write spine is one interface, and it is stated once: `JsonWalkSpine`, the
-walk's accept route's memory equation.  `walk_accept_ndst_zero_of_spine` and
-`evb_emission_of_walk_spine` show it is exactly what the emission's arena datum
-consumes.  The interface is route-level rather than per number token: it is the
-`[1]` walk's returned memory, one value beside the number-conversion assumption
+The interface is route-level rather than per number token: it is the `[1]` walk's
+returned memory, one value beside the number-conversion assumption
 `JsonNumFastAssumed` and not a field of it — a per-token structure would carry the
-same walk-level equation once per token, and its parameters (`bs d i0 d0 n`) do
-not name a geometry, a carry or a state.
+same walk-level reads once per token, and its parameters (`bs d i0 d0 n`) do not
+name a geometry, a carry or a state.
 -/
 import LeanLLVM.Refinement.JsonStage2WalkSpansChain
 
@@ -72,41 +71,12 @@ open LeanLLVM
 open LeanLLVM.JSON
 open LeanLLVM.Refinement.WalkScope
 
-/-! ### The caller's write spine, named
-
-The release's memory interface: at the state the walk's accept route ends on, the
-memory the stage-2 call returns is the route's own last two stores over that
-state's memory.  This is `evb_emission_of_bracket_walk`'s `hmem` as a value, so
-the assumption list cites it instead of prose. -/
-
-/-- **The call's return is the walk's accept finalisation.**  One field: the
-returned memory is `walkFinishMemAccept G s.mem C.alen C.evlen` — the arena and
-event cursors at `%ndst` and `%nev` written over the memory the loop's last state
-left.
-
-It is a value and not a theorem of the scan.  The scan's run theorem concludes
-`∃ v m, runFuel … = some (.ret v m)` (`Stage2WalkCompletes`,
-`JsonStage2Body.lean:1747`; `stage2_walk_yields_record`, `:3512`), so the memory
-is existentially bound; the post's whole-memory clauses are four read-backs,
-presence, and the frame at `stage2ReportFrame` (`stage2Boundary`,
-`JsonStage2Contract.lean:1137`; its frame clause at `:1227`).  A frame is silent inside its own list
-(`UnchangedOutside`, `CallsFootprint.lean:45`), so it cannot pin a memory
-(`frame_not_identifying`), and the list it is stated at is wider than the walk's
-`walkWideAt` in the arena and event extents, so it cannot be narrowed to it either
-(`reportFrame_not_walkWideAt`).  The tree names the memory where it proves the
-boundary — `walkFinishPost_accept` (`JsonStage2WalkTargetPost.lean:985`) — but the
-boundary hides it under the same existential. -/
-structure JsonWalkSpine {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
-    (m : Mem) : Prop where
-  /-- The returned memory is the accept route's two cursor words over the state's
-  memory. -/
-  mem : m = walkFinishMemAccept G s.mem C.alen C.evlen
-
 /-! ### A frame is silent inside its own list
 
 Two memories, one frame: a write inside a listed region keeps the frame and moves
 the memory.  So no frame is a memory, and no equation of whole memories follows
-from one. -/
+from one.  This is why the interface had to be the returned memory's four reads and
+could not be a frame. -/
 
 /-- **A frame does not identify its memory.**  A write at a byte inside one of the
 frame's regions leaves the frame true and gives a different memory: the frame is a
@@ -166,28 +136,20 @@ theorem reportFrame_not_walkWideAt {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
 
 /-! ### The interface at the emission
 
-`evb_emission_of_walk_accept` (`JsonStage2WalkSpansNil.lean:201`) takes the
-equation and turns it into the arena datum the emission reads: the accept route's
-`%ndst` word, which `C.spans = []` and a zero-staged slot make zero
-(`walk_accept_ndst_zero`, `:168`).  These two theorems are that composition at the
-interface, so the assumption list's value is the one the emission consumes. -/
+`evb_emission_of_walk_accept` (`JsonStage2WalkSpansNil.lean`) is the emission at
+these four reads: it turns the interface's `ndst` field into the arena datum the
+emission reads, which `C.spans = []` and a zero-staged slot make zero.  The name
+below is the one the assumption section publishes for that conclusion; the proof is
+the accept route's, so the two cannot drift apart. -/
 
-/-- **The arena datum at the interface.**  The emission's `%ndst` word follows from
-the interface, the merge state's empty span list and the zero staging. -/
-theorem walk_accept_ndst_zero_of_spine {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
-    {s : State} {m : Mem}
-    (h : JsonWalkSpine G C s m) (hndstG : G.ndst = evbLayout.ndst)
-    (hInv : WalkInv G C s) (hspans : C.spans = [])
-    (hstaged : readBytes m0 G.ndst 8 = some (wordBytes 8 0)) :
-    readBytes m evbLayout.ndst 8 = some (wordBytes 8 0) :=
-  walk_accept_ndst_zero hndstG hInv hspans hstaged h.mem
-
-/-- **`[1]`'s emission from the interface.**  `evb_emission_of_walk_accept` at
-`JsonWalkSpine`: the emission theorem with its memory equation supplied by the
-value rather than by a hypothesis in prose. -/
+/-- **`[1]`'s emission from the four reads.**  `evb_emission_of_spec` needs one
+read of the returned memory: its `%ndst` word, zero at this staging.  That is the
+interface's `ndst` field at `C.alen = 0`; the remaining three conjuncts are the
+run's own report (`hext`) and the specification post at `m` (`hspec`), which the
+emission theorem already takes.  No whole memory is named. -/
 theorem evb_emission_of_walk_spine {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G}
     {s : State} {m : Mem} {next ndstU nev' : Nat}
-    (h : JsonWalkSpine G C s m)
+    (h : JsonWalkReads G C m)
     (hpre : routePre evbLayout evbDoc)
     (hndstG : G.ndst = evbLayout.ndst)
     (hInv : WalkInv G C s) (hspans : C.spans = [])
@@ -204,18 +166,14 @@ theorem evb_emission_of_walk_spine {m0 : Mem} {G : WalkGeom m0} {C : WalkCarry G
           (ByteString.literal evs) (ByteString.literal arena)).bind valueOfEvents =
         scalarCanonValueOfBytes evbDoc ∧
       Nonempty EvbCertificate :=
-  evb_emission_of_walk_accept hpre hndstG hInv hspans hstaged h.mem hext hspec
+  evb_emission_of_walk_accept h hpre hndstG hInv hspans hstaged hext hspec
 
 /-! ### Axiom footprints
 
 `#print axioms` under `#guard_msgs`, so the build checks each footprint rather than
-printing it.  The last one carries `Classical.choice` from
-`evb_emission_of_walk_accept`'s route (`JsonStage2WalkSpansNil.lean:201`), whose pin
-carries the same carrier; nothing in this module introduces it. -/
-
-/-- info: 'LeanLLVM.Refinement.JsonWalkSpine' does not depend on any axioms -/
-#guard_msgs in
-#print axioms JsonWalkSpine
+printing it.  The emission carries `Classical.choice` from `evb_emission_of_spec`'s
+route (`JsonEventEmission.lean`), whose pin carries the same carrier; nothing in
+this module introduces it. -/
 
 /-- info: 'LeanLLVM.Refinement.frame_not_identifying' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
@@ -228,10 +186,6 @@ carries the same carrier; nothing in this module introduces it. -/
 /-- info: 'LeanLLVM.Refinement.reportFrame_not_walkWideAt' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in
 #print axioms reportFrame_not_walkWideAt
-
-/-- info: 'LeanLLVM.Refinement.walk_accept_ndst_zero_of_spine' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms walk_accept_ndst_zero_of_spine
 
 /-- info: 'LeanLLVM.Refinement.evb_emission_of_walk_spine' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

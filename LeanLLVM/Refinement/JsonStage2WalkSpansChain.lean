@@ -45,10 +45,9 @@ closer's carry by term (for a caller that has descended into the route), and
 the opener's 9, the revolution's 2, the number's `p₂`, the revolution's 2 and the
 closer's `p₃` — and `bracket_walk_chain` adds the span result and the invariant at
 the composed endpoint.  `evb_emission_of_bracket_walk` is `evb_emission_of_walk_accept`
-at that end state: the span-list premise is the chain's, not an assumption, and no
-arena word at the walk is taken.  The residual is the identification of the
-pipeline's returned memory with the accept finalisation (`hmem`), as in
-`JsonStage2WalkSpansNil`.
+at that end state: the span-list premise is the chain's, not an assumption, no
+arena word at the walk is taken, and the returned memory enters as the four reads
+`JsonWalkReads` names rather than as an equation with the accept finalisation.
 
 There is no `sorry`, `admit` or `native_decide`.
 -/
@@ -380,17 +379,17 @@ theorem evbDoc_entryBytes {m0 : Mem} {G : WalkGeom m0}
 
 /-! ### The emission at the chain's end
 
-`evb_emission_of_walk_accept` takes the merge state's invariant and its empty span
-list.  Here both come from the chain: the invariant is the composed segment's, and
-the span list is `spans_nil_of_arm_chain`'s.  No arena word at the walk and no span
-list are assumed; what remains is `hmem`, the pipeline's returned memory being the
-walk's accept finalisation. -/
+`evb_emission_of_walk_accept` takes the merge state's invariant, its empty span
+list and the returned memory's four reads.  The first two come from the chain: the
+invariant is the composed segment's, and the span list is `spans_nil_of_arm_chain`'s.
+No arena word at the walk, no span list and no memory equation are assumed; the
+returned memory is `JsonWalkReads`'s four values. -/
 
 /-- **The emission at `[1]`, the span premise discharged by the chain.**  The
 arena datum `evb_emission_of_spec` reads follows from the merge carry's empty span
 list — derived here from the seed, the opener's, number's and closer's carries and
-the two head passes — the zeroed staging, and the identification of the returned
-memory with the accept route's. -/
+the two head passes — the zeroed staging, and the `%ndst` read the returned memory
+carries.  The whole-memory equation is not among the premises. -/
 theorem evb_emission_of_bracket_walk {m0 : Mem} {G : WalkGeom m0} {S : WalkStage G}
     {C₁ H₁ C₂ H₂ C₃ : WalkCarry G} {s₀ s₁ sh₁ s₂ sh₂ s₃ : State}
     {p₁ p₂ p₃ : Nat} {b : BitVec 8} {ev : EventRecord}
@@ -409,7 +408,7 @@ theorem evb_emission_of_bracket_walk {m0 : Mem} {G : WalkGeom m0} {S : WalkStage
     (hH₂ : H₂ = headPassC C₂ k₂ sp₂)
     (h₃ : C₃ = closeCEnd (closeC₁₀b H₂) spz c8)
     (hstaged : readBytes m0 G.ndst 8 = some (wordBytes 8 0))
-    (hmem : m = walkFinishMemAccept G s₃.mem C₃.alen C₃.evlen)
+    (hreads : JsonWalkReads G C₃ m)
     (hext : pipelineOutputExtents evbArgs (.ret (some (.int 64 1)) m) ndstU nev')
     (hspec : Sigma_pipeline stage2EventRel evbLayout.base evbArgs evbMem next
       (.ret (some (.int 64 1)) m)) :
@@ -424,7 +423,7 @@ theorem evb_emission_of_bracket_walk {m0 : Mem} {G : WalkGeom m0} {S : WalkStage
       Nonempty EvbCertificate := by
   obtain ⟨-, hInv, hspans⟩ :=
     bracket_walk_chain hopen hhead₁ hnumber hhead₂ hcloser h₁ hH₁ h₂ hH₂ h₃
-  exact evb_emission_of_walk_accept hpre hndstG hInv hspans hstaged hmem
+  exact evb_emission_of_walk_accept hreads hpre hndstG hInv hspans hstaged
     hext hspec
 
 /-! ### Axiom footprints -/
