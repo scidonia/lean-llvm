@@ -66,15 +66,14 @@ is a `define` block, so it carries no `@EPOW` or `@g_el_window` declaration — 
 table's rows and the counter's word are the staging's data (`NumElRow`,
 `numElGlobals`), not text the fixture states.
 
-**The arm as stated is false, and the section below proves why.**  The window arm
-loads `@g_el_window`, adds one and stores it back before it calls `el_exact`,
-while `numElAnswer` writes nothing but the eight bytes at `out`
-(`numElAnswer_frame`).  So no equality between the body's run and `numElAnswer`
-holds on that arm (`numEl_ifThen18_counter`): the run's memory has the counter's
-next word and the model's has the word it was given.  The difference is proved at
-both ends rather than papered over: an equality needs either a model that carries
-the counter — `numElAnswer` is the walk's `NumFastCalleesAnswered` value, so that
-is a change at the walk's selection — or a frame that exempts the counter's cell.
+**The window arm writes the counter, and the model carries it.**  The window arm
+loads `@g_el_window`, adds one and stores it back before it calls `el_exact`; the
+model's `numElAnswer` is `numElAnswerAt numElWindowAddr`, whose memory is
+`numElWindowMem` — the next word on that arm (`numElCounterMem`) and the caller's
+memory on the others.  So the block's memory is the model's:
+`numEl_ifThen18_counter_write` is the byte-level identity between the store the
+body makes and the write `numElCounterMem` makes at the same cell, and the run in
+`JsonStage2NumFastCalleeElRun` composes it into the arm's equality.
 -/
 import LeanLLVM.Refinement.JsonStage2HelperIR
 import LeanLLVM.Refinement.JsonStage2NumFastCalls
@@ -705,10 +704,10 @@ theorem numElCalls_elPack_refuse (epow : Int → Option EPow) {m : BitVec 64}
 
 `if.then18` is the one arm of the body that touches a global besides `out`: it
 loads `@g_el_window`, adds one and stores it back, then calls `el_exact`.  The
-model `numElAnswer` writes nothing but the eight bytes at `out`, so the two
-answers cannot be the same `CallOutcome` on this arm: the body's memory holds the
-counter's next word and the model's holds the word it was given.  The statements
-below are that difference, both halves proved of the pinned text. -/
+model's `numElCounterMem` writes the same cell with the same next word, so the
+block's answer and the model's agree; `numEl_ifThen18_counter_write` is the
+byte-level identity between the emitted store and the model's write, proved of
+the pinned text and the staging's word. -/
 
 /-- `%d = load i64, ptr @g`, a global's word.  `evalOperand` resolves the symbol
 through the environment exactly as it resolves a register, which is how the
@@ -836,82 +835,24 @@ theorem numEl_counter_succ_ne (k : Nat) (hk : k < 2 ^ 64) :
     rw [htop, Nat.mod_self]
     omega
 
-/-- **The model writes nothing but the eight bytes at `out`.**  Every answer
-`numElAnswer` gives has a memory that differs from its input only inside the
-value's slot: the accepted arm writes the eight bytes, and the declined arm
-writes nothing. -/
-theorem numElAnswer_frame (epow : Int → Option EPow) (w q : BitVec 64) (out : Nat)
-    (mem : Mem) (next : Nat) {r : CallOutcome}
-    (h : numElAnswer epow [.int 64 w, .int 64 q, .ptr out] mem next = some r) :
-    ∀ a n, a + n ≤ out ∨ out + 8 ≤ a → readBytes r.mem a n = readBytes mem a n := by
-  intro a n hdisj
-  unfold numElAnswer at h
-  cases hd : numElEl1 epow w.toNat q.toInt with
-  | none =>
-      simp only [hd] at h
-      cases h
-      rfl
-  | some bits =>
-      simp only [hd] at h
-      cases h
-      rw [JsonEntrySteps.readBytes_writeBytes_frame mem (natToBytes bits 8) out a n
-        (by
-          rcases hdisj with h | h
-          · exact Or.inl h
-          · exact Or.inr (by rw [natToBytes_length]; exact h))]
-
-/-- **The window arm's answer is not the model's.**  At a staging whose counter
-word is `k` and whose `out` is below the counter's cell, the block leaves the
-counter's cell holding the next word, and `numElAnswer` leaves it holding `k`:
-whatever the model answers at the same arguments, the two memories disagree
-there. -/
-theorem numEl_ifThen18_counter (epow : Int → Option EPow) (env : Env) (s : State)
-    {W : BitVec 64} {lz : BitVec 32} {row out k : Nat} {q : BitVec 64} {t : EPow}
-    {bits : Nat} {wm : BitVec 64}
-    (hW : lookupName env "%shl" = some (.int 64 W))
-    (hlz : lookupName env "%cast" = some (.int 32 lz))
-    (hrow : lookupName env "%arrayidx" = some (.ptr row))
-    (hq : lookupName env "%q" = some (.int 64 q))
-    (hout : lookupName env "%out" = some (.ptr out))
-    (hglob : lookupName env "@g_el_window" = some (.ptr 0x200000))
-    (hread : readBytes s.mem 0x200000 8 = some (natToBytes k 8))
-    (hk : k < 2 ^ 64) (hdisj : out + 8 ≤ 0x200000)
-    (hep : epow q.toInt = some t)
-    (he : elExact W.toNat lz.toNat t q.toInt = some bits) :
-    ∀ r, numElAnswer epow [.int 64 wm, .int 64 q, .ptr out] s.mem s.next = some r →
-      ∃ (env' : Env) (mem' : Mem),
-        denoteCode (numElCalls epow) numElIfThen18Instrs (stateAt env s) =
-          some (stateAt env' { s with mem := mem' }) ∧
-        lookupName env' "%call" = some (.int 32 1) ∧
-        readBytes mem' 0x200000 8 ≠ readBytes r.mem 0x200000 8 := by
-  intro r hr
-  have hframe := numElAnswer_frame epow wm q out s.mem s.next hr 0x200000 8
-    (Or.inr hdisj)
-  refine ⟨("%call", .int 32 1) ::
-      ("%inc", .int 64 ((BitVec.ofNat 64 k) + 1#64)) ::
-      ("%2", .int 64 (BitVec.ofNat 64 k)) :: env,
-    writeBytes (writeBytes s.mem 0x200000
-      (natToBytes (((BitVec.ofNat 64 k) + 1#64).toNat) 8)) out (natToBytes bits 8),
-    ?_, ?_, ?_⟩
-  · exact numEl_ifThen18_denote epow env s hW hlz hrow hq hout hglob hread hk hep he
-  · block_lk
-  · rw [hframe, hread]
-    intro hbad
-    have hread' : readBytes
-        (writeBytes (writeBytes s.mem 0x200000
-          (natToBytes (((BitVec.ofNat 64 k) + 1#64).toNat) 8)) out (natToBytes bits 8))
-        0x200000 8 = some (natToBytes (((BitVec.ofNat 64 k) + 1#64).toNat) 8) := by
-      rw [JsonEntrySteps.readBytes_writeBytes_frame _ _ out _ _
-        (Or.inr (by rw [natToBytes_length]; omega))]
-      exact readBytes_writeBytes_same s.mem _ (addr := 0x200000)
-    rw [hread'] at hbad
-    have hsucc : ((BitVec.ofNat 64 k) + 1#64).toNat = (k + 1) % 2 ^ 64 := by
-      have h1 : (1#64 : BitVec 64).toNat = 1 := by decide
-      rw [BitVec.toNat_add, BitVec.toNat_ofNat, h1]
-      rw [Nat.mod_eq_of_lt hk]
-    rw [hsucc] at hbad
-    exact numEl_counter_succ_ne k hk (numEl_natToBytes_inj (Nat.mod_lt _ (by decide)) hk
-      (Option.some.inj hbad))
+/-- **The window block's counter write is the model's.**  The emitted `if.then18`
+stores the word after `k` at `@g_el_window`; `numElCounterMem` stores the same
+word, because the staging's cell reads `k`.  So the block's memory is the model's
+`numElWindowMem` at the fixture's staging address, and the window arm's answer is
+the model's on both outcomes. -/
+theorem numEl_ifThen18_counter_write {mem : Mem} {k : Nat}
+    (hread : readBytes mem 0x200000 8 = some (natToBytes k 8)) (hk : k < 2 ^ 64) :
+    writeBytes mem 0x200000 (natToBytes (((BitVec.ofNat 64 k) + 1#64).toNat) 8) =
+      numElCounterMem mem 0x200000 := by
+  unfold numElCounterMem
+  have hbytes : bytesToNat ((readBytes mem 0x200000 8).getD []) = k := by
+    rw [hread, Option.getD_some, natToBytes_toNat,
+      show (256 : Nat) ^ 8 = 2 ^ 64 from by decide]
+    exact Nat.mod_eq_of_lt hk
+  have hword : ((BitVec.ofNat 64 k) + 1#64).toNat = (k + 1) % 2 ^ 64 := by
+    have h1 : (1#64 : BitVec 64).toNat = 1 := by decide
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, h1, Nat.mod_eq_of_lt hk]
+  rw [hbytes, hword]
 
 /-! ### Axiom footprints
 
@@ -971,12 +912,6 @@ them.  The instrument is `#print axioms`; a declaration proved with `sorry` prin
 #guard_msgs in
 #print axioms numEl_ifThen18_denote
 
-/-- info: 'LeanLLVM.Refinement.numElAnswer_frame' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms numElAnswer_frame
-
-/-- info: 'LeanLLVM.Refinement.numEl_ifThen18_counter' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms numEl_ifThen18_counter
+#print axioms numEl_ifThen18_counter_write
 
 end LeanLLVM.Refinement
