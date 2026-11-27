@@ -87,9 +87,11 @@
 #                    consumed, so one pass would keep it)
 #                    poison/UB-promise flags on `add`, `shl`, `trunc`, `zext`,
 #                    `or` and `getelementptr`.  `LeanLLVM.Syntax` has no field
-#                    for any of them, and `Parser.lean` refuses a `getelementptr`
-#                    carrying `nuw`/`nusw` by name, so the flag is dropped
-#                    rather than approximated.  Dropping a promise permits more
+#                    for any of them: `Parser.lean` reads and drops `nuw`/`nsw`
+#                    on `add`, `sub`, `mul` and `shl` and `nuw` on
+#                    `getelementptr`, and refuses `getelementptr`'s
+#                    `nusw`/`inrange` by name, so the flag is dropped rather
+#                    than approximated.  Dropping a promise permits more
 #                    programs than LLVM does, never fewer: the fixture is the
 #                    text compiled at the end of the route, so no semantic
 #                    bridge is crossed.
@@ -100,12 +102,14 @@
 #                    `[64, 2^32 - 1]`, not the empty set: the word is zero or
 #                    at least 64, which every return satisfies -- zero is `0`,
 #                    and a non-zero status carries a non-zero kind in bits
-#                    6-7.  `Parser.lean` refuses a return attribute before the
-#                    return type by name, and the attribute is a promise about
-#                    the returned value rather than part of the computation:
-#                    the refinement theorem states the returned word as an
-#                    equation, which is narrower than the range, and dropping
-#                    the attribute can only enlarge the permitted returns.
+#                    6-7.  `Parser.lean` reads a return attribute before the
+#                    return type, checks the shape its name requires and drops
+#                    it (`checkReturnAttrs`), and the attribute is a promise
+#                    about the returned value rather than part of the
+#                    computation: the refinement theorem states the returned
+#                    word as an equation, which is narrower than the range, and
+#                    dropping the attribute can only enlarge the permitted
+#                    returns.
 #   `%"reg2mem alloca point" = bitcast i32 0 to i32`
 #                    a dead marker `reg2mem` inserts once per function.  It has
 #                    no uses, and `bitcast i32 0 to i32` is not a shape the
@@ -420,9 +424,10 @@ emit "$work/json-scan.candidate.ll" "; The window scanner as emitted, in the fra
 ; \`0\`, and a non-zero one carries a non-zero kind in bits 6-7, so it is at
 ; least 64 -- and dropping the attribute at capture therefore removes a
 ; caller-facing promise rather than a computation: it can only enlarge the set
-; of permitted returns.  \`Parser.lean\` refuses a return attribute before the
-; return type by name, and the fixture is the text that is compiled at the end
-; of the route, so nothing semantic is crossed.
+; of permitted returns.  \`Parser.lean\` reads a return attribute before the
+; return type, checks the shape its name requires and drops it, and the fixture
+; is the text that is compiled at the end of the route, so nothing semantic is
+; crossed.
 ;
 ; The accesses carry no \`align\` because the parser's \`load\`/\`store\` have no
 ; alignment field; the contract's \`scanAlignmentFree\` records that none is

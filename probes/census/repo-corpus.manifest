@@ -1,5 +1,5 @@
 parsed	probes/install/ir/baseline.ll
-refused	probes/install/ir/baseline.o1.ll	unsupported return attribute
+refused	probes/install/ir/baseline.o1.ll	expected a parameter name, got 'noundef'
 refused	probes/install/ir/baseline.raw.ll	expected a parameter name, got 'noundef'
 parsed	probes/install/ir/caller.ll
 parsed	probes/install/ir/candidate.ll

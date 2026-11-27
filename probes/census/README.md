@@ -38,6 +38,28 @@ Measured 2026-11-08 with the driver built from this tree:
   extra 19 files are untracked build output under `probes/*/build`, which is why
   `--all` reports without asserting: the checked manifest is the tracked set.
 
+Measured 2026-11-27, with the driver carrying the module-header change
+(`nix develop -c lake build leanllvm LeanLLVMTest`, exit 0):
+
+- **The checked rows: 29 files — 26 parse, 3 are refused — and all three
+  refusals name the parameter attribute**
+  (`expected a parameter name, got 'noundef'`).  `baseline.o1.ll`'s return
+  attribute `range` is read, checked and dropped, so its refusal moved inward to
+  the parameter list the two raw fixtures also stop at; the manifest row names
+  that token.
+- **Coverage over the 53 tracked `*.ll` files: 0 with an `icmp … ptr` line, 0
+  with a written callee function type, 8 with a literal vector operand, 6 with an
+  `extractelement` line, 6 with an `insertelement` line and 6 with a
+  `zeroinitializer` operand.**
+- The census exits nonzero on this tree for a reason independent of that change:
+  the manifest predates 24 tracked `*.ll` files — the four `stage2.callee.*`
+  fixtures, the seven `stage2.helper.*` bodies, `stage2.candidate`,
+  `stage2-noevent.candidate`, `json-pipeline.candidate`,
+  `json-s1-blocks.candidate`, `marker_noevent`, the production fixture, and the
+  seven `tests/counterexamples/` bodies — and `repo-census.sh` reports them as
+  omitted.  The production fixture's row is added with the commit that carries
+  it.
+
 ## The stage-1 kernel
 
 `tests/v16/ci2.ll` is `v16.generated.ll`'s `@ci2` — the stage-1 index kernel the

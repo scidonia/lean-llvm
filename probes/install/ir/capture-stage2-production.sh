@@ -111,6 +111,8 @@ raw_status=0
 cat > "$work/site.awk" <<'AWK'
 # The parse refusal names a block and the token it refused; find the first
 # instruction in that block carrying the token, and the define that encloses it.
+# A refusal in a parameter list names the function instead, and its site is the
+# `define` line that carries the parameter.
 BEGIN {
   msg = ENVIRON["MSG"]
   blk = ""
@@ -127,7 +129,22 @@ END {
   start = 0
   for (i = 1; i <= NR; i++)
     if (blk != "" && index(line[i], blk ":") == 1) { start = i; break }
-  if (start == 0) exit
+  if (start == 0) {
+    if (index(msg, "in parameters of @") > 0) {
+      at = index(msg, "@")
+      rest = substr(msg, at + 1)
+      match(rest, /^[A-Za-z0-9_.$]+/)
+      nm = substr(rest, 1, RLENGTH)
+      for (i = 1; i <= NR; i++)
+        if (index(line[i], "define ") == 1 && index(line[i], "@" nm "(") > 0) {
+          t = line[i]
+          gsub(/^[ \t]+/, "", t)
+          printf "%s\t-\t%d\t%s\n", nm, i, t
+          exit
+        }
+    }
+    exit
+  }
   hit = 0
   for (i = start; i <= NR; i++) {
     if (i > start && line[i] ~ /^[A-Za-z0-9_.]+:/) break
@@ -251,7 +268,7 @@ cp "$work/stage2.ll" "$artifact"
   printf 'declares\t%s\n' "$ndecl"
   printf 'functions\t%s\n' "$funcs"
   printf 'verify\topt -passes=verify: ok\n'
-  printf 'parser_layout\tparseModule (empty Layout): named structs in an alloca or getelementptr need a declared byte extent the driver does not supply\n'
+  printf 'parser_layout\tparseModule (empty Layout): the module'"'"'s own %%struct.EPow/%%struct.Stk/%%struct.StkBn definitions supply the byte extents its allocas need, computed from their fields and the target datalayout; no declared layout is passed\n'
   printf 'import\texit %s: %s\n' "$raw_status" "$raw_message"
   printf 'object\tclang %s -c -Xclang -disable-llvm-passes %s -o stage2.o\n' \
     "${opt_level} -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64" \

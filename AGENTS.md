@@ -587,17 +587,59 @@ re-elaborating the delta.
   observation is `tests/phi-differential.sh`, which compares `clang`'s answers
   with the model's on the same files and is an observation, not a proof.
 - The parser refuses the surfaces it checks, with a message naming the
-  construct: unmodelled instructions, block structure, and a function header --
-  a definition's or a declaration's.  A return attribute before the return
-  type, a function attribute or attribute group reference after the parameter
-  list, and, on a declaration, a parameter attribute and a variable argument
-  list are all refused (`tests/m4-loop-emission.sh --return-attr`,
-  `--function-attr`, `--declare-attr`, `--declare-param-attr`).  Do not
-  silently approximate an unmodelled construct on those surfaces.  The only
+  construct: unmodelled instructions, block structure, a definition's function
+  attribute or attribute group reference after the parameter list, and, on a
+  declaration, a return attribute, a parameter attribute and a variable argument
+  list (`tests/m4-loop-emission.sh --return-attr`, `--function-attr`,
+  `--declare-attr`, `--declare-param-attr`).  A return attribute before a
+  definition's return type is read and dropped (see below), and a token in that
+  position the return-attribute reader has no rule for is refused by name.  Do
+  not silently approximate an unmodelled construct on those surfaces.  The only
   attribute-shaped tokens accepted and dropped are the closed linkage,
   visibility and calling-convention set `isHeaderSurface` names, on both
-  headers, because the model has none of their semantics; a token outside that
-  set is refused rather than dropped.
+  headers, and a definition's return attributes, because the model has none of
+  their semantics; a token outside those sets is refused rather than dropped.
+- The module header is accepted and dropped: `source_filename = "..."`, the two
+  `target` lines, globals (`@name = ...`), attribute groups
+  (`attributes #N = { ... }`) and metadata nodes (`!name = !...`) are read for
+  the shape each must have and then dropped, because `Module` has no field for
+  any of them — the source name and target identity say where the text came
+  from, a global's initializer is a constant grammar the model has no table for
+  (a symbol operand's value is the address the run binds to it), and an
+  attribute group or metadata node attaches to nothing the model reads.  A named
+  `%name = type` definition is the exception: it is dropped as text, but a
+  `%struct.X` body's byte extent is computed from its fields and the target data
+  layout, because `Ty.struct` carries exactly that extent and the driver passes
+  no `Layout`; a declared extent and the module's must agree, a data-layout spec
+  the extent rule does not model is refused by name rather than skipped, and a
+  header's struct may name one defined later.  The pair is: a text with the
+  non-type header parses to the same `Module` the text without it parses to, and
+  a text with the `type` lines parses to the same `Module` the declared-layout
+  spelling parses to (`LeanLLVMTest/Core.lean`, `tests/core-extension.lean`).
+- A definition's return attribute before the return type is read, checked for the
+  shape its name requires, and dropped: it can only exclude return values, so
+  dropping it models a superset of the text's defined values, and the returned
+  value is the `Calls` environment's outcome, which no field here constrains.
+  The pair is the same AST and the same run as the attribute-free spelling, plus
+  the refusal by name of an attribute the reader has no reading for
+  (`nofpclass`, whose argument is a floating-point class vocabulary).  A
+  declaration's return attribute is still refused, with the rest of its header,
+  and the asymmetry is deliberate: `Decl` is the module's own statement of the
+  symbol's interface, so a constraint dropped from it would leave that interface
+  claiming more than the text does, while a definition's returned value is the
+  `Calls` environment's.  `LeanLLVMTest/Core.lean` pins both sides, so changing
+  one without the other fails a guard.
+- An entry block written without a label is accepted and given the smallest
+  decimal the body's tokens do not use; LLVM lets only the entry block stand
+  unlabelled and gives it no predecessors, so no jump can reach the synthesized
+  name.  The pair is the same AST as the same program with that label written
+  out, and the same run; every later block must carry its label.
+- The arithmetic overflow flags `nuw` and `nsw` are accepted and dropped on
+  `add`, `sub`, `mul` and `shl`, and `nuw` on `getelementptr`: a flag that can
+  only exclude inputs models a superset when dropped, the reading `samesign`
+  gets, and the pair is the same AST and the same run.  The flags stay refused
+  where LLVM does not define them (`udiv nuw`, `zext nneg`, `or disjoint`), and
+  `getelementptr`'s `inrange`/`nusw` stay refused.
 - Five surfaces are accepted rather than refused, and each has its paired check
   in `LeanLLVMTest/Core.lean`.  Four are dropped because the model has nothing
   for them to affect: a function's linkage, visibility and calling convention,

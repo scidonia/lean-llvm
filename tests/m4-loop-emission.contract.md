@@ -51,11 +51,15 @@ instruction tokens.
 
 `leanllvm` reads textual IR, runs the pipeline on every function and writes
 textual IR back.  A function header — a definition's or a declaration's — is
-checked for attributes the semantics does not model, and an unmodelled one is
-refused rather than parsed past, with a message naming the attribute as
-`AGENTS.md`, "What a change must satisfy", requires.  On a definition an
-unmodelled return attribute before the return type and an unmodelled function
-attribute after the parameter list are declined.  On a declaration an unmodelled
+checked for attributes the semantics does not model, and one the reader cannot
+read is refused rather than parsed past, with a message naming the attribute as
+`AGENTS.md`, "What a change must satisfy", requires.  On a definition a return
+attribute before the return type whose shape the reader does read is checked and
+then dropped — it can only exclude return values, so dropping it models a
+superset of the text's defined values, which is the accepted-surface rule
+`AGENTS.md` states for `icmp`'s `samesign` — while a return attribute the reader
+has no reading for (`nofpclass`) and an unmodelled function attribute after the
+parameter list are declined.  On a declaration an unmodelled
 return attribute, a parameter attribute, a variable argument list, and any token
 after the parameter list — a function attribute, an attribute group reference,
 `unnamed_addr`, an address space, a section, an alignment, a metadata
@@ -66,11 +70,11 @@ A diagnostic that only echoes the header line back does not satisfy E2, E3,
 E4 or E5: the accepted form is a single diagnostic line that both names the
 attribute and says that attribute is unsupported or unmodelled — `unsupported`,
 `unmodelled`, `unmodeled`, or the parser's own `not modelled` idiom.
-A header attribute that constrains the returned value, or one that changes what
-the function promises its caller, is part of the function's contract; a driver
-that parses past it and writes the function back without it has accepted a
-contract the pipeline proved nothing about.  E2 and E3 pin that at the driver's
-command line.  Both place the attribute where LLVM's own emission puts it, as
+An attribute the reader cannot read, or one that changes what the function
+promises its caller, is part of the function's contract; a driver that parses
+past it and writes the function back without it has accepted a contract the
+pipeline proved nothing about.  E2 and E3 pin that at the driver's command
+line.  Both place the attribute where LLVM's own emission puts it, as
 `probes/install/ir/baseline.o1.ll` shows for a return attribute, and each input
 carries its attribute only in the header line.  E4 pins the same for a
 declaration, whose attribute likewise stands only in its header line.  E5 pins
@@ -141,22 +145,25 @@ before the check starts.
   Lean emission rather than carry the body as a file nothing regenerates, so
   the text that is parsed and proved is the program Lean emits.
 
-### E2 — the driver refuses an unmodelled return attribute
+### E2 — the driver refuses a return attribute it cannot read
 
 - **Actor:** the IR transformation integrator.
 - **Given:** the already built `leanllvm` driver copied into a private temporary
   directory; a single-function input in that directory carrying no attribute,
   which the same copied driver rewrites and leaves an output file for; and a
   second single-function input whose header is
-  `define range(i64 0, 1) i64 @f(i64 %x)`, the return attribute before the
+  `define nofpclass(nan) i64 @f(i64 %x)`, the return attribute before the
   return type and nowhere else in the input.
 - **When:** the integrator invokes the copied driver once, as
   `--passes none <input.ll> -o <output.ll>`.
-- **Then:** it exits nonzero, one diagnostic line names `range` and says that
+- **Then:** it exits nonzero, one diagnostic line names `nofpclass` and says that
   return attribute is unsupported or unmodelled, and it creates no output file.
-- **Why:** a return attribute constrains the value the function returns, so a
-  driver that drops it and writes the function back has accepted a wider
-  contract than the one it was given.
+- **Why:** `nofpclass`'s argument names a vocabulary of floating-point classes
+  the model has no reading of, so the reader cannot check it; a driver that
+  dropped it would accept a contract the pipeline proved nothing about.  A
+  definition's return attribute whose shape the reader does read (`range`,
+  `zeroext`, …) is checked and dropped by design, with the widening recorded at
+  the decision and the pair pinned in `LeanLLVMTest/Core.lean`.
 
 ### E3 — the driver refuses an unmodelled function attribute
 

@@ -18,8 +18,14 @@
 # --return-attr is E2 and --function-attr is E3: the leanllvm driver must
 # refuse a function header carrying a semantic attribute it does not model,
 # rather than parse past it and rewrite the function without it.  E2's header
-# carries the return attribute `range(i64 0, 1)` before the return type, E3's
-# carries the function attribute `noreturn` after the parameter list.
+# carries the return attribute `nofpclass(nan)` before the return type — one
+# whose argument names a floating-point class vocabulary the reader has no
+# reading of — and E3's carries the function attribute `noreturn` after the
+# parameter list.  (A definition's return attribute whose shape the reader does
+# read, such as `range`, is checked and dropped by design: it can only exclude
+# return values, so dropping it widens, and `LeanLLVMTest/Core.lean` pins the
+# pair.  A declaration's return attribute is still refused, with the rest of its
+# header.)
 #
 # --declare-attr is E4: a `declare` header is checked the same way.  E4's
 # declaration carries the attribute group reference `#0` after its parameter
@@ -848,11 +854,12 @@ declare void @f(i32 range(i32 0, 8), i32)
 IR
   elif [ "$mode" = --return-attr ]; then
     label=E2
-    attribute=range
-    construct="return attribute 'range(i64 0, 1)'"
+    attribute=nofpclass
+    construct="return attribute 'nofpclass(nan)'"
     cat > "$case_dir/header.ll" <<'IR'
-; The return attribute constrains the value the function returns.
-define range(i64 0, 1) i64 @f(i64 %x) {
+; The return attribute names a floating-point class vocabulary the model has no
+; reading of, so the reader refuses it rather than dropping it on its syntax.
+define nofpclass(nan) i64 @f(i64 %x) {
 entry:
   ret i64 %x
 }

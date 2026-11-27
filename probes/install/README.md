@@ -295,14 +295,21 @@ both are restored and re-checked. A depth selection re-elaborates
 cannot certify changed bytes for any of the four units.
 
 `attributes=reject` records the attribute policy: the fixtures carry none, and
-the parser refuses an unmodelled attribute in a function header rather than
-dropping it silently -- `tests/m4-loop-emission.sh --return-attr`,
-`--function-attr` and `--declare-attr` exercise that at the driver's command
-line. The loop fixture needs no stripping: the printer writes the modelled AST,
-and the emitter refuses to print unless its own output parses back to the same
-function. For `baseline.ll` and `candidate.ll` `capture.sh` removes `noundef`,
-`align`, `tbaa`, attribute groups and module-level lines the parser does not
-model; the parser would refuse the unstripped text. That removal is justified
+the parser refuses an attribute it cannot read -- a definition's return attribute
+outside the set it checks, a function attribute or attribute group reference
+after a parameter list, and a declaration's return attribute, parameter attribute
+and post-parameter tokens -- rather than dropping it silently --
+`tests/m4-loop-emission.sh --return-attr`, `--function-attr`, `--declare-attr`
+and `--declare-param-attr` exercise that at the driver's command
+line.  A definition's return attribute whose shape the reader does read is
+dropped by design, with the widening recorded at the decision and the pair pinned
+in `LeanLLVMTest/Core.lean`.  The loop
+fixture needs no stripping: the printer writes the modelled AST, and the
+emitter refuses to print unless its own output parses back to the same
+function. For `baseline.ll` and `candidate.ll` `capture.sh` removes `noundef`
+and the other parameter attributes, `align`, `tbaa`, attribute groups and the
+module-level header lines the fixture does not need; the parser would refuse the
+unstripped text on its parameter attributes. That removal is justified
 per item in the script's comment and is an assertion about the value each
 retained instruction computes; it is not a proof that the stripped and original
 texts are semantically equivalent, and it does not undo assumptions an

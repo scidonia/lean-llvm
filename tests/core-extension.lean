@@ -302,9 +302,24 @@ ptr: '@g' is written here at type i64"
   ret i64 0") =
   some "in block 'entry': a global symbol needs a name after '@'"
 
-#guard refusal ("@g = global i8 0\n" ++ wrap "  store ptr @g, ptr %p
-  ret i64 0") =
-  some "expected 'define' or 'declare', got '@g = global i8 0'"
+-- A global's definition belongs to the module header: read for its `@name =`
+-- shape and dropped, so the text parses to the module the same program without
+-- the line parses to.
+#guard
+  match parseModule ("@g = global i8 0\n" ++ wrap "  store ptr @g, ptr %p
+  ret i64 0"), parseModule (wrap "  store ptr @g, ptr %p
+  ret i64 0") with
+  | .ok m, .ok m' => decide (m = m')
+  | _, _ => false
+
+-- The header rule is a shape rule, not a free pass: a line that is not a
+-- declaration, a definition or a header construct is still refused, and so is a
+-- global with no value.
+#guard refusal "@g\n" =
+  some "expected a module declaration, 'define' or 'declare', got '@g'"
+
+#guard refusal "@g =\n" =
+  some "malformed global definition '@g': expected a value"
 
 #guard refusal (wrap "  store ptr @g, ptr %p
   ret i64 0") = none
@@ -325,6 +340,39 @@ example {calls : Calls} {s t s' : State} {p : Operand}
     ∃ t', evalInstr calls t (.store .ptr (.global "@g") p) = some t' ∧
       State.AgreeOn (Instr.uses (.store .ptr (.global "@g") p)) s' t' :=
   evalInstr_agree calls h (fun _ hn => hn) hs
+
+-- A definition's return attribute is read and dropped; a declaration's is
+-- refused.  Both sides are pinned here so the asymmetry is visible: a change
+-- that "fixes" one side without the other fails a guard.
+def defReturnAttrSrc : String :=
+"define range(i64 0, 1) i64 @return_attr(i64 %x) {
+entry:
+  ret i64 %x
+}
+"
+
+def defReturnAttrPlainSrc : String :=
+"define i64 @return_attr(i64 %x) {
+entry:
+  ret i64 %x
+}
+"
+
+def declReturnAttrSrc : String :=
+"declare range(i64 0, 1) i64 @return_attr_decl(i64)
+"
+
+-- The definition side: the attribute leaves no field behind, so both texts
+-- parse to one module.
+#guard
+  match parseModule defReturnAttrSrc, parseModule defReturnAttrPlainSrc with
+  | .ok a, .ok b => decide (a = b)
+  | _, _ => false
+
+-- The declaration side: the same attribute is refused by name, before the
+-- parameter list is even read.
+#guard refusal declReturnAttrSrc =
+  some "unsupported return attribute 'range ( i64 0 , 1 )' before the return type of @return_attr_decl"
 
 /-! ### The binary64 forms -/
 
@@ -563,7 +611,7 @@ entry:
   | _ => false
 
 #guard refusal structSample =
-  some "in block 'entry': named struct '%struct.Stk' has no declared layout: the model takes a struct's byte extent from the target datalayout (a `Layout` argument) and does not recompute it from fields"
+  some "in block 'entry': named struct '%struct.Stk' has no byte extent: the module defines no '%struct.Stk = type' line for it, and the declared layout does not give one either"
 
 /-! ### A named struct as a `getelementptr` element type
 
@@ -617,9 +665,11 @@ def structGepRun : Option Nat :=
 #guard structGepRun = some 172
 
 -- The neighbouring form: without a layout entry the element's extent is not in
--- the text, and the refusal names the layout rather than the type reader.
+-- the text, and the refusal names the missing extent — neither the module's own
+-- `%struct.X = type` line nor the declared layout gives one — rather than the
+-- type reader.
 #guard refusal structGepSample =
-  some "in block 'entry': named struct '%struct.P' has no declared layout: the model takes a struct's byte extent from the target datalayout (a `Layout` argument) and does not recompute it from fields"
+  some "in block 'entry': named struct '%struct.P' has no byte extent: the module defines no '%struct.P = type' line for it, and the declared layout does not give one either"
 
 -- An aggregate in the `getelementptr` element position is the two-index form's
 -- element: the aggregate arm reduces it, and a register leading index is refused
@@ -635,7 +685,7 @@ def structGepRun : Option Nat :=
 
 #guard refusal (wrap "  %a = alloca [4 x i24]
   ret i64 0") =
-  some "in block 'entry': array element type 'i24' is not admitted: an array's allocated size is its element count times the element's allocated size, so its element must be a type whose allocated and stored sizes agree — the set `Ty.gepElemAdmitted` pins (the integer widths i1, i7, i8, i16, i32, i64 and i128, a whole-byte vector whose packed size is a power of two, and a named struct resolved from the declared layout)"
+  some "in block 'entry': array element type 'i24' is not admitted: an array's allocated size is its element count times the element's allocated size, so its element must be a type whose allocated and stored sizes agree — the set `Ty.gepElemAdmitted` pins (the integer widths i1, i7, i8, i16, i32, i64 and i128, a whole-byte vector whose packed size is a power of two, and a named struct resolved from the effective layout)"
 
 #guard refusal (wrap "  %a = alloca [[2 x i8] x 3]
   ret i64 0") = some "in block 'entry': a nested array type is not modelled"

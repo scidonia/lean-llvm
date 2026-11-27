@@ -35,19 +35,21 @@ pointer index LLVM uses — a behaviour this model does not represent.
 A base that is not a `ptr`, a second index, an index type that is not an integer
 no wider than 64 bits, an element type outside `Ty.gepElemAdmitted`'s list (an
 integer width it does not name, a vector that fails the condition below, or a
-`ptr`/`void` element), and the `inrange`/`nuw`/`nusw` modifiers are each refused
+`ptr`/`void` element), and the `inrange`/`nusw` modifiers are each refused
 by a message naming what was refused.  A **named struct** element is admitted on
 its declared extent, and an **array** element type is reduced by the aggregate
-arm, both as the paragraph below states.  `inbounds` is
-accepted and dropped, and the printer emits an ordinary `getelementptr`, so the
-round trip adds no flag the source did not write.
+arm, both as the paragraph below states.  `inbounds` and `nuw` are
+accepted and dropped — a flag that can only exclude inputs models a superset of
+the text's defined inputs when dropped — and the printer emits an ordinary
+`getelementptr`, so the round trip adds no flag the source did not write.
 
 Several refusals are produced by a different reader than the `getelementptr`
 branch's element check.  A **named struct** element type is resolved by
 `Parser.expectStructTy` from the declared `Layout`: its declared extent is both
 its allocated and its stored size, so the step scales by exactly that number,
 and a struct with no layout entry is refused by name (the extent is the
-datalayout's and the parser does not recompute it from fields).  An **array**
+datalayout's, taken from the declared layout or the module's own type
+definition, and never recomputed from a field guess).  An **array**
 element type is read by the aggregate arm, which reduces the two-index form to
 the one-index step at the array's element; a register or nonzero leading index
 is refused there by name.  A token `parseTy` does not read — a nested aggregate
@@ -178,7 +180,7 @@ def gepVec : String := "  %q = getelementptr inbounds <4 x i32>, ptr %p, i64 %k"
 
 -- And it round-trips: the printed form carries the modifier the parser accepts
 -- and the vector element type it parsed, and carries no `nuw`, which the parser
--- refuses and the capture strips.
+-- accepts and drops and the capture strips.
 #guard
   match instrsOf gepVec with
   | some [i] =>
@@ -278,8 +280,8 @@ def gepVec : String := "  %q = getelementptr inbounds <4 x i32>, ptr %p, i64 %k"
 -- a token the message does not carry.  Without this, a `mentions` that matched
 -- nothing would make every refusal below vacuous.
 #guard
-  match parseWith "  %q = getelementptr nuw i8, ptr %p, i64 %k" with
-  | .error e => mentions e "nuw" ∧ !mentions e "inbounds"
+  match parseWith "  %q = getelementptr nusw i8, ptr %p, i64 %k" with
+  | .error e => mentions e "nusw" ∧ !mentions e "inbounds"
   | .ok _ => false
 
 -- The detector's other side: an accepted line is not reported as a refusal, so
@@ -349,14 +351,15 @@ def gepVec : String := "  %q = getelementptr inbounds <4 x i32>, ptr %p, i64 %k"
 #guard refusedWithOut "  %q = getelementptr [8 x i8], ptr %p, i64 %k"
   ["getelementptr over '[8 x i8]'", "literal 0 leading index"] ["unsupported type"]
 
--- A named struct element type is resolved from the declared layout, so this
--- module — parsed without one — refuses it by name, and the wording is the
--- layout's rather than the type reader's.  The accepted pair is pinned in
+-- A named struct element type is resolved from the effective layout, so this
+-- module — parsed with no declared layout and no `%struct.P = type` line —
+-- refuses it by name, and the wording is the missing extent's rather than the
+-- type reader's.  The accepted pair is pinned in
 -- `tests/core-extension.lean`, where `parseModuleWith [("P", 24)]` reads the
 -- same line as `Instr.gep` at `Ty.struct "P" 24` and the printed reduced form
 -- re-parses to it.
 #guard refusedWithOut "  %q = getelementptr %struct.P, ptr %p, i64 %k"
-  ["named struct '%struct.P' has no declared layout"] ["unsupported type"]
+  ["named struct '%struct.P' has no byte extent"] ["unsupported type"]
 
 -- A base that is not a `ptr`.
 #guard refusedWith "  %q = getelementptr i8, i32 %p, i64 %k" ["base type", "i32"]
@@ -377,13 +380,29 @@ def gepVec : String := "  %q = getelementptr inbounds <4 x i32>, ptr %p, i64 %k"
 -- accept an index the step would truncate.
 #guard refusedWith "  %q = getelementptr i32, ptr %p, i128 %k" ["index width i128", "truncated"]
 
--- The modifiers that constrain the offset, each refused by name: the instruction
--- has no field for them, and dropping one would accept a narrower promise than
--- the text carries.
+-- `inrange` promises the result lies inside an allocation, which the model's
+-- byte step has no term for, and `nusw` is the signed-wrap flag over an address
+-- arithmetic the model does not sign; both are refused by name.  `nuw` is
+-- accepted and dropped, so it is not among them.
 #guard refusedWith "  %q = getelementptr inrange(0, 4) i8, ptr %p, i64 %k" ["inrange"]
-#guard refusedWith "  %q = getelementptr nuw i8, ptr %p, i64 %k" ["nuw"]
 #guard refusedWith "  %q = getelementptr nusw i8, ptr %p, i64 %k" ["nusw"]
-#guard refusedWith "  %q = getelementptr inbounds nuw i8, ptr %p, i64 %k" ["nuw"]
+#guard refusedWith "  %q = getelementptr inbounds nusw i8, ptr %p, i64 %k" ["nusw"]
+
+-- `nuw` is accepted and dropped: the two texts parse to one instruction, the
+-- printed form carries no flag, and the run computes the same address.
+#guard instrsOf "  %q = getelementptr nuw i8, ptr %p, i64 %k" = instrsOf gepRegister
+#guard instrsOf "  %q = getelementptr inbounds nuw i8, ptr %p, i64 %k" =
+  instrsOf gepInbounds
+
+#guard
+  match instrsOf "  %q = getelementptr nuw i8, ptr %p, i64 4" with
+  | some [i] =>
+      !mentions (Instr.render i) "nuw" &&
+        (match evalInstr noCalls
+            { env := [("%p", .ptr 100)], mem := [], next := 0, pc := "entry", pre := none } i with
+         | some s => lookupName s.env "%q" = some (.ptr 104)
+         | none => false)
+  | _ => false
 
 /-! ### The address the step computes -/
 

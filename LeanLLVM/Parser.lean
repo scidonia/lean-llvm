@@ -14,9 +14,12 @@ under that predicate's one condition, or a named struct whose extent the
 declared `Layout` gives (the `[N x T]` two-index form reduces to the same step
 at `T`) — and every other `getelementptr` shape is
 refused by name: an element type outside that admission, a base that is not a
-`ptr`, a second index, a wider index, and the `inrange`/`nuw`/`nusw` modifiers.
-`inbounds` is accepted and dropped, because the instruction has no field for it;
-the printer emits neither, so a parse/print round trip does not add it.
+`ptr`, a second index, a wider index, and the `inrange`/`nusw` modifiers.
+`inbounds` and `nuw` are accepted and dropped, because the instruction has no
+field for either and a flag that can only exclude inputs models a superset when
+dropped; the printer emits neither, so a parse/print round trip does not add
+them.  `nusw` is the signed-wrap flag and stays refused: the model's address
+arithmetic is unsigned, so there is nothing for the exclusion to be about.
 Of the vector fragment the modelled part is the one an emitted body contains —
 `load` of `<n x i8>` and of integer lanes, a `store` of integer lanes whose total
 width is a whole number of bytes (the mask store's `<n x i1>` rule at `w = 1`),
@@ -30,17 +33,40 @@ register of another type is refused by name while an undefined one stays
 accepted and is `ub` when read.  A lane access's index is read as an unsigned
 count and its width is checked and dropped; an index outside the vector's lane
 range is not refused here (it is not a syntax error) and is undefined behaviour
-at run time, which is what LLVM's poison becomes in this model.  A function
-header — a definition's or a declaration's — is checked for attributes the
-semantics does not model: a return attribute before the return type, a function
-attribute or attribute group reference after the parameter list, and, on a
-declaration, a parameter attribute are all refused by name.  A definition's
-parameter list is read positionally, so an attribute there fails the name check;
-a declaration's parameters are read as types, with a parameter name dropped
-because `Decl` carries none.  A declaration's variable argument list is refused
-by name.  Linkage, visibility and a calling convention before the return type
-are accepted and dropped on both, because the model has none of their
-semantics.
+at run time, which is what LLVM's poison becomes in this model.  An entry block
+may be written without a label — the shape clang emits — and is given one the
+body's own tokens do not use; every other block must carry its label.  A
+function header — a definition's or a declaration's — is checked for attributes
+the semantics does not model.  A *definition's* return attribute before the
+return type is read, checked for the shape its name requires and dropped: it can
+only exclude return values, so dropping it widens — the reading `icmp`'s
+`samesign` gets — and the returned value is the `Calls` environment's outcome,
+which the module's text does not fix.  A *declaration's* return attribute is
+refused with the rest of its non-modelled header surface, because `Decl` is the
+module's own statement of that symbol's interface — its return and parameter
+types — so a constraint dropped from it would leave the interface claiming more
+than the text does.  The two headers therefore differ on this one attribute,
+deliberately: the asymmetry is recorded rather than closed, and
+`LeanLLVMTest/Core.lean` pins both sides.  A function attribute or attribute
+group reference after the parameter list, and, on a declaration, a parameter
+attribute are refused by name too.  A definition's parameter list is read
+positionally, so an attribute there fails the name check; a declaration's
+parameters are read as types, with a parameter name dropped because `Decl`
+carries none.  A declaration's variable argument list is refused by name.
+Linkage, visibility and a calling convention before the return type are accepted
+and dropped on both, because the model has none of their semantics.
+
+A module's header — `source_filename`, `target datalayout`, `target triple`,
+named `%name = type` definitions, globals, attribute groups and metadata nodes —
+is read, checked for shape and dropped, because `Module` has no field for any of
+it.  One piece is read rather than dropped: a named struct's byte extent is
+computed from its fields and the target data layout, because the model carries a
+struct's extent and nothing else; where the caller also declares an extent the
+two must agree.  A struct may name one defined later in the same header.  The
+arithmetic overflow flags `nuw`/`nsw` are accepted and dropped on `add`, `sub`,
+`mul` and `shl`, and refused everywhere else, for the same reason a return
+attribute is: an operation that wraps under a flag is poison, so dropping it
+models a superset of the text's defined inputs.
 
 A call is written `[<dst> =] [tail] call <ty> [<function type>]
 @<callee>(<args>)`, where the function type may be omitted.  `tail` is
@@ -82,7 +108,9 @@ specifier, a DLL storage class and a calling convention before its return type,
 named or numbered; those are accepted and dropped, because the model has no
 linkage or calling-convention semantics — the `Calls` environment decides which
 definition answers and how the call is made.  A return attribute stands in the
-same position and is refused.  `icmp`'s `samesign` flag is accepted and dropped:
+same position and is read, checked and dropped by `checkReturnAttrs`, for the
+reason recorded there: it can only exclude return values, so dropping it widens.
+`icmp`'s `samesign` flag is accepted and dropped:
 the modelled predicate is the plain one, and the flag can only *exclude* inputs,
 so dropping it models a superset of the text's defined inputs rather than a
 narrowing of them.
@@ -241,16 +269,16 @@ def expectTy : P Ty := do
       | .error e => P.fail e
 
 /-- A declared layout for named structs: the byte extent the target datalayout
-gives each `%struct.<name>`.  The model takes a struct's extent as declared, not
-recomputed: the extent depends on the target's alignment rules (padding the
-emission's `%struct.Stk` from its fields' stored sizes would need a field layout
-and an ABI alignment rule), and every access inside the struct is a byte
-`getelementptr` at a constant offset, so nothing in the model needs the fields.
-A struct with no entry here is refused by name. -/
+gives each `%struct.<name>`.  A caller may supply one; the module's own
+`%struct.X = type { ... }` definitions are read too, and their extents are
+computed from the fields and the target data layout (see "The module header"
+below).  Where both give a name they must agree.  Every access inside a struct
+is a byte `getelementptr` at a constant offset, so nothing in the model needs the
+fields; a struct with no entry from either source is refused by name. -/
 abbrev Layout := List (String × Nat)
 
 /-- Resolve a named struct type to its declared extent.  `t` is the token the
-caller already read, `%struct.<name>`; the entry is looked up in the declared
+caller already read, `%struct.<name>`; the entry is looked up in the effective
 `layout`, and a name with no entry is refused by name rather than given a
 guessed extent.  This is the one resolver: `alloca`, an array element and a
 `getelementptr` element type all take a struct's extent from it, so the three
@@ -260,9 +288,9 @@ def resolveStruct (layout : Layout) (t : String) : Except String Ty :=
   match lookupName layout name with
   | some bytes => .ok (.struct name bytes)
   | none =>
-      .error s!"named struct '{t}' has no declared layout: the model takes a \
-          struct's byte extent from the target datalayout (a `Layout` argument) and \
-          does not recompute it from fields"
+      .error s!"named struct '{t}' has no byte extent: the module defines no \
+          '%struct.{name} = type' line for it, and the declared layout does not \
+          give one either"
 
 /-- Read a named struct type from the token stream.  The token is consumed here
 and resolved by `resolveStruct`. -/
@@ -303,14 +331,16 @@ def expectArrayTy (layout : Layout) : P Ty := do
             must be a type whose allocated and stored sizes agree — the set \
             `Ty.gepElemAdmitted` pins (the integer widths i1, i7, i8, i16, i32, i64 and \
             i128, a whole-byte vector whose packed size is a power of two, and a named \
-            struct resolved from the declared layout)"
+            struct resolved from the effective layout)"
 
 /-- Parse the type an `alloca` allocates: an array, a named struct resolved from
-the declared `layout`, or any scalar type `expectTy` reads.  A named struct
+the effective `layout`, or any scalar type `expectTy` reads.  A named struct
 reaches an instruction's type field only as an allocation, an array element or a
 `getelementptr` element type; a load, a store, a parameter and a comparison
-operand type is still read by `expectTy`, which refuses it, and this reader and
-the `getelementptr` branch are the two that resolve the name. -/
+operand type is still read by `expectTy`, which refuses it, and this reader, the
+array reader and the `getelementptr` branch are the three that resolve the name.
+The effective layout is the caller's declared one merged with the extents the
+module's own `%struct.X = type` definitions compute. -/
 def expectAllocaTy (layout : Layout) : P Ty := do
   match (← P.peek) with
   | some "[" => expectArrayTy layout
@@ -574,10 +604,35 @@ inductive Stmt where
   | instr (i : Instr)
   | term (t : Term)
 
+/-- Drop the arithmetic overflow flags written before an operation's type.  The
+model's arithmetic is wrapping, and either flag can only *exclude* inputs — a
+wrap under it is poison — so dropping it models a superset of the text's defined
+inputs rather than a narrowing of them.  Only `add`, `sub`, `mul` and `shl` take
+the flags; every other operation is read without them and still refuses them as
+a type it cannot read. -/
+def dropOverflowFlags (fuel : Nat) (ts : List String) : List String :=
+  match fuel with
+  | 0 => ts
+  | fuel + 1 =>
+      match ts with
+      | "nuw" :: rest => dropOverflowFlags fuel rest
+      | "nsw" :: rest => dropOverflowFlags fuel rest
+      | _ => ts
+
+/-- Consume and drop the `nuw`/`nsw` flags written before a binary operation's
+type. -/
+def parseOverflowFlags : P Unit := fun ts =>
+  match ts with
+  | "nuw" :: rest => .ok ((), dropOverflowFlags 1 rest)
+  | "nsw" :: rest => .ok ((), dropOverflowFlags 1 rest)
+  | _ => .ok ((), ts)
+
 /-- A binary operation.  The vector form is lane-wise and is modelled only for
 the operations the classifier is emitted with; the rest are refused on vectors
-by name. -/
-def parseBinop (dst : String) (bop : BinOp) : P Stmt := do
+by name.  `overflow` says whether the operation is one of the four that take
+`nuw`/`nsw`; the flags are read and dropped there and nowhere else. -/
+def parseBinop (dst : String) (bop : BinOp) (overflow : Bool) : P Stmt := do
+  if overflow then parseOverflowFlags else pure ()
   let ty ← expectTy
   match ty with
   | .int w =>
@@ -1388,19 +1443,19 @@ def expectDouble : P Unit := do
 def parseValueInstr (layout : Layout) (dst : String) : P Stmt := do
   let op ← P.next
   match op with
-  | "add" => parseBinop dst .add
-  | "sub" => parseBinop dst .sub
-  | "mul" => parseBinop dst .mul
-  | "udiv" => parseBinop dst .udiv
-  | "sdiv" => parseBinop dst .sdiv
-  | "urem" => parseBinop dst .urem
-  | "srem" => parseBinop dst .srem
-  | "and" => parseBinop dst .and
-  | "or" => parseBinop dst .or
-  | "xor" => parseBinop dst .xor
-  | "shl" => parseBinop dst .shl
-  | "lshr" => parseBinop dst .lshr
-  | "ashr" => parseBinop dst .ashr
+  | "add" => parseBinop dst .add true
+  | "sub" => parseBinop dst .sub true
+  | "mul" => parseBinop dst .mul true
+  | "udiv" => parseBinop dst .udiv false
+  | "sdiv" => parseBinop dst .sdiv false
+  | "urem" => parseBinop dst .urem false
+  | "srem" => parseBinop dst .srem false
+  | "and" => parseBinop dst .and false
+  | "or" => parseBinop dst .or false
+  | "xor" => parseBinop dst .xor false
+  | "shl" => parseBinop dst .shl true
+  | "lshr" => parseBinop dst .lshr false
+  | "ashr" => parseBinop dst .ashr false
   | "icmp" =>
       -- `samesign` is accepted and dropped.  The modelled predicate is the plain
       -- one, and the flag can only *exclude* inputs — a comparison whose operands
@@ -1862,13 +1917,19 @@ def parseValueInstr (layout : Layout) (dst : String) : P Stmt := do
   | other => P.fail s!"unsupported instruction '{other}'"
 where
   /-- Consume a `getelementptr`'s modifiers.  `inbounds` is accepted and
-  dropped, because the instruction has no field for it; `inrange`, `nuw` and
-  `nusw` constrain the offset and are refused by name, because no semantics here
-  reads them and dropping one would model more programs than the text defines. -/
+  dropped, because the instruction has no field for it.  `nuw` is accepted and
+  dropped for the reason `samesign` is: it can only *exclude* inputs — a
+  computation that wraps under it is poison — so dropping it models a superset
+  of the text's defined inputs.  `inrange` and `nusw` are refused by name: the
+  first promises the result lies inside an allocation, which the model's byte
+  step has no term for, and the second is the signed-wrap flag, and the model's
+  address arithmetic is unsigned, so neither is a constraint the model can drop
+  without also dropping what it was about. -/
   gepModifiers : P Unit
     | "inbounds" :: rest => gepModifiers rest
+    | "nuw" :: rest => gepModifiers rest
     | f :: rest =>
-        if f = "inrange" || f = "nuw" || f = "nusw" then
+        if f = "inrange" || f = "nusw" then
           .error s!"getelementptr modifier '{f}' is not modelled"
         else .ok ((), f :: rest)
     | [] => .ok ((), [])
@@ -1987,9 +2048,28 @@ def parseBlockBody (layout : Layout) (name : String) (ls : List (List String)) :
   let (instrs, term, rest) ← collect ls [] false
   .ok (⟨name, instrs, term⟩, rest)
 
-/-- Parse the body of a function: a sequence of labelled blocks.  The fuel is
-the number of lines, so each recursion consumes one line even when a block body
-is length-checked by the parser rather than by the recursion. -/
+/-- A label for a block that carries none: the smallest decimal that appears
+neither as a label nor as a `%`-prefixed name anywhere in the body.  LLVM lets
+only a function's entry block stand unlabelled and gives it no predecessors, so
+well-formed text never jumps to it; choosing a name from outside the body's own
+tokens therefore cannot capture a jump the parser would otherwise leave
+undefined.  The label is written by the printer, and the printed module re-parses
+to the same blocks. -/
+def freshBlockLabel (body : List (List String)) : String :=
+  let toks := body.flatten
+  let rec go (fuel n : Nat) : String :=
+    match fuel with
+    | 0 => toString n
+    | fuel + 1 =>
+        let s := toString n
+        if toks.contains s || toks.contains ("%" ++ s) then go fuel (n + 1) else s
+  go (toks.length + 1) 0
+
+/-- Parse the body of a function: a sequence of labelled blocks, the first of
+which may stand unlabelled — the shape clang emits for an entry block, which is
+the only block LLVM allows that way.  The fuel is the number of lines, so each
+recursion consumes one line even when a block body is length-checked by the
+parser rather than by the recursion. -/
 def parseBlocks (layout : Layout) (ls : List (List String)) : Except String (List Block) :=
   let rec go : Nat → List (List String) → List Block → Except String (List Block)
     | 0, _, _ => .error "internal parser error: block fuel exhausted"
@@ -2000,7 +2080,13 @@ def parseBlocks (layout : Layout) (ls : List (List String)) : Except String (Lis
             match parseBlockBody layout name rest with
             | .error e => .error e
             | .ok (b, rest') => go fuel rest' (b :: acc)
-        | _ => .error s!"expected a block label, got '{String.intercalate " " l}'"
+        | _ =>
+            if acc.isEmpty then
+              let name := freshBlockLabel (l :: rest)
+              match parseBlockBody layout name (l :: rest) with
+              | .error e => .error e
+              | .ok (b, rest') => go fuel rest' [b]
+            else .error s!"expected a block label, got '{String.intercalate " " l}'"
   go (ls.length + 1) ls []
 
 /-- Find the `@name` token, returning the token before it (the return type),
@@ -2044,6 +2130,702 @@ def takeBody : List (List String) → Except String (List (List String) × List 
         let (body, rest') ← takeBody rest
         .ok (l :: body, rest')
 
+/-! ### The module header
+
+A production emission is not one `define` after another.  It opens with
+`source_filename`, `target datalayout` and `target triple`, defines named struct
+types, then writes globals, attribute groups and metadata nodes, and puts the
+functions after them.  `Module` has no field for any of it, so each is read for
+the shape it must have and dropped.  Two pieces are more than dropped: a named
+struct's byte extent is computed from its fields and the target data layout,
+because `Ty.struct` carries an extent that a body's `alloca` needs and the
+declared `Layout` may not supply it; and that extent is checked against a
+declared one when the caller gives both.
+
+The extent rule is the target's, not a field sum: fields are laid out on their
+allocated sizes and alignments, and a struct's size is rounded up to its largest
+field alignment.  Only the data-layout specs that rule reads are recorded — the
+integer, floating-point, pointer and vector alignments — while the rest are
+checked for shape and dropped.  A spec the reader has no rule for, and an
+aggregate-alignment spec (which would move a byte the rule has no term for), are
+refused by name rather than skipped.  On the pinned stage-2 emission this
+computes `%struct.Stk` as 1568 bytes, `%struct.StkBn` as 776 and `%struct.EPow`
+as 24 — clang's own record layout for the target.
+
+A printed module does not carry the definition, because `Module` has no field for
+it: the extent lives in the `Ty.struct` an `alloca` carries, so reparsing a
+printed struct `alloca` needs the extent from a declared `Layout` again.  That is
+the one place a parse/print round trip is not closed by this reader, and it is
+`Ty.struct`'s existing limit rather than a surface this grammar drops.
+-/
+
+/-- Round `n` up to a multiple of `a`, left unchanged when `a` is zero. -/
+def alignUp (n a : Nat) : Nat := if a = 0 then n else (n + a - 1) / a * a
+
+/-- The smallest power of two that is at least `n`. -/
+def pow2Ceil (n : Nat) : Nat :=
+  let rec go (fuel p : Nat) : Nat :=
+    match fuel with
+    | 0 => p
+    | fuel + 1 => if p ≥ n then p else go fuel (2 * p)
+  go 64 1
+
+/-- One recorded data-layout spec.  `width` is the integer or floating-point
+width in bits, a vector's size in bits, or a pointer's address space; `size` and
+`align` are the stored size and ABI alignment the spec gives, in bits. -/
+structure TargetSpec where
+  width : Nat
+  size : Nat
+  align : Nat
+
+/-- The parts of a target data layout a named struct's extent reads.  A pointer
+in address space 0 is `ptrSize` and `ptrAlign`; one in another address space is
+in `ptrs`. -/
+structure TargetLayout where
+  ints : List TargetSpec := []
+  floats : List TargetSpec := []
+  vecs : List TargetSpec := []
+  ptrs : List TargetSpec := []
+  ptrSize : Nat := 64
+  ptrAlign : Nat := 64
+
+/-- Parse a `:`-separated run of decimals. -/
+def parseNatRun (s : String) : Option (List Nat) :=
+  let rec go : List String → Option (List Nat)
+    | [] => some []
+    | p :: rest => do
+        let n ← parseNat p
+        let ns ← go rest
+        pure (n :: ns)
+  go (s.splitOn ":")
+
+/-- Read the specs of a `target datalayout` string.  The ones that determine a
+field's size or alignment are recorded; the ones the model's extent rule never
+reads — the endianness, the name mangling, the native widths, the stack
+alignment — are checked for shape and dropped.  A spec outside the ones below,
+and an aggregate-alignment spec, are refused by name: a dropped spec that could
+move a byte would make an extent silently wrong, and one that cannot is what the
+rule is allowed not to read. -/
+def parseDataLayout (text : String) : Except String TargetLayout :=
+  let rec go : List String → TargetLayout → Except String TargetLayout
+    | [], t => .ok t
+    | spec :: rest, t =>
+        if spec.isEmpty then go rest t
+        else
+          let head := match spec.toList with
+            | [] => ""
+            | c :: _ => String.singleton c
+          let body := match spec.toList with
+            | [] => ""
+            | _ :: cs => String.ofList cs
+          match head with
+          | "e" | "E" =>
+              if body.isEmpty then go rest t
+              else .error s!"data layout spec '{spec}' is not modelled"
+          | "m" =>
+              if body.startsWith ":" && body.length > 1 then go rest t
+              else .error s!"data layout spec '{spec}' is not modelled: expected a mangling"
+          | "n" | "S" =>
+              match parseNatRun body with
+              | some _ => go rest t
+              | none => .error s!"data layout spec '{spec}' is not modelled: expected decimal widths"
+          | "p" =>
+              match body.splitOn ":" with
+              | asTok :: sizeTok :: abiTok :: _ => do
+                  let as ← if asTok.isEmpty then pure 0 else
+                    match parseNat asTok with
+                    | some n => pure n
+                    | none => throw s!"data layout spec '{spec}': address space '{asTok}' is not a decimal"
+                  let size ← match parseNat sizeTok with
+                    | some n => pure n
+                    | none => throw s!"data layout spec '{spec}': pointer size '{sizeTok}' is not a decimal"
+                  let abi ← match parseNat abiTok with
+                    | some n => pure n
+                    | none => throw s!"data layout spec '{spec}': pointer alignment '{abiTok}' is not a decimal"
+                  if size = 0 || abi = 0 || size % 8 ≠ 0 || abi % 8 ≠ 0 then
+                    throw s!"data layout spec '{spec}' is not modelled: a pointer's size and alignment must be whole bytes"
+                  if as = 0 then
+                    go rest { t with ptrSize := size, ptrAlign := abi }
+                  else
+                    go rest { t with ptrs :=
+                      ({ width := as, size := size, align := abi } : TargetSpec) :: t.ptrs }
+              | _ => .error s!"data layout spec '{spec}' is not modelled: expected [<address space>:]<size>:<alignment>"
+          | "i" =>
+              match body.splitOn ":" with
+              | wTok :: ws => do
+                  let w ← match parseNat wTok with
+                    | some n => pure n
+                    | none => throw s!"data layout spec '{spec}': integer width '{wTok}' is not a decimal"
+                  let size ← match ws with
+                    | [] => pure w
+                    | s0 :: _ => match parseNat s0 with
+                        | some n => pure n
+                        | none => throw s!"data layout spec '{spec}': integer size '{s0}' is not a decimal"
+                  let abi ← match ws with
+                    | _ :: s0 :: _ => match parseNat s0 with
+                        | some n => pure n
+                        | none => throw s!"data layout spec '{spec}': integer alignment '{s0}' is not a decimal"
+                    | _ => pure size
+                  if w = 0 || abi = 0 || abi % 8 ≠ 0 then
+                    throw s!"data layout spec '{spec}' is not modelled: an alignment must be whole bytes"
+                  go rest { t with ints :=
+                    ({ width := w, size := size, align := abi } : TargetSpec) :: t.ints }
+              | [] => .error s!"data layout spec '{spec}' is not modelled"
+          | "f" =>
+              match body.splitOn ":" with
+              | wTok :: ws => do
+                  let w ← match parseNat wTok with
+                    | some n => pure n
+                    | none => throw s!"data layout spec '{spec}': floating-point width '{wTok}' is not a decimal"
+                  let size ← match ws with
+                    | [] => pure w
+                    | s0 :: _ => match parseNat s0 with
+                        | some n => pure n
+                        | none => throw s!"data layout spec '{spec}': floating-point size '{s0}' is not a decimal"
+                  let abi ← match ws with
+                    | _ :: s0 :: _ => match parseNat s0 with
+                        | some n => pure n
+                        | none => throw s!"data layout spec '{spec}': floating-point alignment '{s0}' is not a decimal"
+                    | _ => pure size
+                  if w = 0 || abi = 0 || abi % 8 ≠ 0 then
+                    throw s!"data layout spec '{spec}' is not modelled: an alignment must be whole bytes"
+                  go rest { t with floats :=
+                    ({ width := w, size := size, align := abi } : TargetSpec) :: t.floats }
+              | [] => .error s!"data layout spec '{spec}' is not modelled"
+          | "v" =>
+              match body.splitOn ":" with
+              | sizeTok :: ws => do
+                  let size ← match parseNat sizeTok with
+                    | some n => pure n
+                    | none => throw s!"data layout spec '{spec}': vector size '{sizeTok}' is not a decimal"
+                  let abi ← match ws with
+                    | [] => pure size
+                    | s0 :: _ => match parseNat s0 with
+                        | some n => pure n
+                        | none => throw s!"data layout spec '{spec}': vector alignment '{s0}' is not a decimal"
+                  if size = 0 || abi = 0 || size % 8 ≠ 0 || abi % 8 ≠ 0 then
+                    throw s!"data layout spec '{spec}' is not modelled: a vector's size and alignment must be whole bytes"
+                  go rest { t with vecs :=
+                    ({ width := size, size := size, align := abi } : TargetSpec) :: t.vecs }
+              | [] => .error s!"data layout spec '{spec}' is not modelled"
+          | "a" | "A" =>
+              .error s!"data layout spec '{spec}' is not modelled: an aggregate-alignment spec would move a struct's byte"
+          | _ => .error s!"data layout spec '{spec}' is not modelled"
+  go (text.splitOn "-") {}
+
+/-- A field of a named struct's definition, read from the definition's own
+tokens.  The model keeps no aggregate type with fields — a named struct's extent
+is all `Ty.struct` carries — so this reading exists only to compute that extent
+and is dropped with the definition. -/
+inductive FieldTy where
+  | int (w : Nat)
+  | float (w : Nat)
+  | ptr (as : Nat)
+  | array (n : Nat) (elem : FieldTy)
+  | vec (n : Nat) (elem : FieldTy)
+  | named (key : String)
+  | inline (fields : List FieldTy) (packed : Bool)
+
+/-- Read one field type from the tokens of a struct definition, returning it and
+the remaining tokens.  A nested aggregate is read rather than refused, because a
+production emission's own type definitions write them (`[96 x i64]`); a named
+type is read as a reference to be resolved through the module's definitions,
+which is why a forward reference works.  A type outside the set below is
+refused by name. -/
+def parseFieldTy (fuel : Nat) (toks : List String) : Except String (FieldTy × List String) :=
+  match fuel with
+  | 0 => .error "internal parser error: field type fuel exhausted"
+  | fuel + 1 =>
+      -- The fields between an inline struct's braces, read by the same reader:
+      -- the recursion is on the enclosing function's fuel and on this loop's
+      -- own, so both are structurally decreasing.
+      let rec goFields (moreFuel : Nat) (ts : List String) :
+          Except String (List FieldTy × List String) :=
+        match moreFuel with
+        | 0 => .error "internal parser error: field list fuel exhausted"
+        | moreFuel + 1 =>
+            match ts with
+            | "}" :: rest => pure ([], rest)
+            | _ => do
+                let (f, rest) ← parseFieldTy fuel ts
+                match rest with
+                | "," :: rest' => do
+                    let (fs, rest'') ← goFields moreFuel rest'
+                    pure (f :: fs, rest'')
+                | "}" :: rest' => pure ([f], rest')
+                | _ => throw "a struct's field list needs ',' or '}' after a field type"
+      match toks with
+      | [] => .error "unexpected end of line in a struct field type"
+      | "[" :: nTok :: "x" :: rest => do
+          let n ← match nTok.toNat? with
+            | some n =>
+                if 0 < n then pure n else throw "a struct field's array needs at least one element"
+            | none => throw s!"invalid array element count '{nTok}' in a struct field"
+          let (elem, rest) ← parseFieldTy fuel rest
+          match rest with
+          | "]" :: more => pure (.array n elem, more)
+          | _ => throw "a struct field's array type needs a closing ']'"
+      | "<" :: nTok :: "x" :: rest => do
+          let n ← match nTok.toNat? with
+            | some n =>
+                if 0 < n then pure n else throw "a struct field's vector needs at least one lane"
+            | none => throw s!"invalid vector lane count '{nTok}' in a struct field"
+          let (elem, rest) ← parseFieldTy fuel rest
+          let elem ← match elem with
+            | .int w => pure (.int w)
+            | .float w => pure (.float w)
+            | _ => throw "a struct field's vector element is not modelled"
+          match rest with
+          | ">" :: more => pure (.vec n elem, more)
+          | _ => throw "a struct field's vector type needs a closing '>'"
+      | "<" :: "{" :: rest => do
+          let (fields, rest) ← goFields fuel rest
+          match rest with
+          | ">" :: more => pure (.inline fields true, more)
+          | _ => throw "a packed struct field needs a closing '>'"
+      | "{" :: rest => do
+          let (fields, rest) ← goFields fuel rest
+          pure (.inline fields false, rest)
+      | "ptr" :: "addrspace" :: "(" :: nTok :: ")" :: rest => do
+          let as ← match nTok.toNat? with
+            | some n => pure n
+            | none => throw s!"invalid address space '{nTok}' in a struct field"
+          pure (.ptr as, rest)
+      | "ptr" :: rest => pure (.ptr 0, rest)
+      | t :: rest =>
+          if t = "double" then pure (.float 64, rest)
+          else if t = "float" then pure (.float 32, rest)
+          else if t = "half" then pure (.float 16, rest)
+          else if t = "x86_fp80" then pure (.float 80, rest)
+          else if t = "fp128" || t = "ppc_fp128" then pure (.float 128, rest)
+          else if t.startsWith "%" then
+            let raw := (t.drop 1).toString
+            pure (.named (if raw.startsWith "struct." then (raw.drop 7).toString else raw), rest)
+          else
+            match (t.drop 1).toString.toNat? with
+            | some w =>
+                if t.startsWith "i" && 0 < w then pure (.int w, rest)
+                else throw s!"unsupported struct field type '{t}'"
+            | none => throw s!"unsupported struct field type '{t}'"
+
+/-- A field type's size and alignment: `store` is the size the value occupies,
+`alloc` the size it is allocated (the stored size rounded up to the alignment),
+and `align` the alignment itself.  A struct is laid out field by field on `alloc`
+and rounded to the largest `align`; a packed struct is laid out on `store` with
+alignment 1. -/
+structure FieldExtent where
+  store : Nat
+  alloc : Nat
+  align : Nat
+
+/-- A named struct definition, as the extent rule reads it.  `tokens` is the
+number of tokens its body was read from, which bounds the nesting the reader has
+to follow. -/
+structure StructDef where
+  key : String
+  fields : List FieldTy
+  packed : Bool
+  tokens : Nat
+
+/-- The extent of one field type.  `known` holds the extents of the struct
+definitions already laid out, and a named field that is not there is reported as
+one the module's header cannot reach — `resolveNamedTypes` lays definitions out
+in dependency order and turns that report into the refusal naming the circular
+or missing definition.  A struct's own fields reach this reader as an inline
+struct, so one function is the whole layout. -/
+def fieldExtent (dl : TargetLayout) (known : List (String × FieldExtent))
+    (fuel : Nat) (ft : FieldTy) : Except String FieldExtent :=
+  match fuel with
+  | 0 => .error "internal parser error: struct extent fuel exhausted"
+  | fuel + 1 =>
+      let rec goFields (moreFuel : Nat) (fs : List FieldTy) (off mx : Nat) (packed : Bool) :
+          Except String (Nat × Nat) :=
+        match moreFuel with
+        | 0 => .error "internal parser error: field list fuel exhausted"
+        | moreFuel + 1 =>
+            match fs with
+            | [] => pure (off, mx)
+            | f :: rest => do
+                let e ← fieldExtent dl known fuel f
+                let off' := if packed then off + e.store else alignUp off e.align + e.alloc
+                goFields moreFuel rest off' (if packed then mx else max mx e.align) packed
+      match ft with
+      | .int w =>
+          let alignBits := match dl.ints.find? (fun s => s.width = w) with
+            | some s => s.align
+            | none => 8 * min 16 (pow2Ceil ((w + 7) / 8))
+          let align := alignBits / 8
+          let store := (w + 7) / 8
+          pure { store := store, alloc := alignUp store align, align := align }
+      | .float w =>
+          let spec := dl.floats.find? (fun s => s.width = w)
+          let alignBits := match spec with
+            | some s => s.align
+            | none => 8 * min 16 (pow2Ceil ((w + 7) / 8))
+          let storeBits := match spec with
+            | some s => s.size
+            | none => w
+          let align := alignBits / 8
+          let store := (storeBits + 7) / 8
+          pure { store := store, alloc := alignUp store align, align := align }
+      | .ptr as => do
+          let (bytes, align) ←
+            if as = 0 then pure (dl.ptrSize / 8, dl.ptrAlign / 8)
+            else match dl.ptrs.find? (fun s => s.width = as) with
+              | some s => pure (s.size / 8, s.align / 8)
+              | none => throw s!"a struct field names address space {as}, which the target data layout gives no pointer spec for"
+          pure { store := bytes, alloc := alignUp bytes align, align := align }
+      | .array n elem => do
+          let e ← fieldExtent dl known fuel elem
+          pure { store := n * e.store, alloc := n * e.alloc, align := e.align }
+      | .vec n elem => do
+          let bits ← match elem with
+            | .int w => pure (n * w)
+            | .float w => pure (n * w)
+            | _ => throw "a struct field's vector element is not modelled"
+          let alignBits := match dl.vecs.find? (fun s => s.width = bits) with
+            | some s => s.align
+            | none => 8 * min 16 (pow2Ceil ((bits + 7) / 8))
+          let align := alignBits / 8
+          let store := (bits + 7) / 8
+          pure { store := store, alloc := alignUp store align, align := align }
+      | .named key =>
+          match lookupName known key with
+          | some e => pure e
+          | none => .error s!"'%struct.{key}' has no byte extent the module's header can reach"
+      | .inline fields packed => do
+          let (stop, mx) ← goFields fuel fields 0 1 packed
+          let align := max mx 1
+          let store := if packed then stop else alignUp stop align
+          pure { store := store, alloc := store, align := align }
+
+/-- Lay out one struct definition: its fields are read by the same reader as an
+inline struct, with the extents of the definitions already laid out supplied. -/
+def structExtent (dl : TargetLayout) (known : List (String × FieldExtent))
+    (fuel : Nat) (d : StructDef) : Except String FieldExtent :=
+  fieldExtent dl known fuel (.inline d.fields d.packed)
+
+/-- One `%name = type` definition.  `key` is the name the layout uses — a named
+struct's without the `struct.` prefix — and `fields` is `none` when the body is
+not a struct. -/
+structure NamedType where
+  key : String
+  fields : Option (List FieldTy) := none
+  packed : Bool := false
+  tokens : Nat := 0
+
+/-- Read one `%name = type <body>` definition.  A struct body — plain, packed,
+or inline — yields its fields; any other body (`opaque`, a scalar, an array, a
+vector) is read for shape and dropped, because the model's only reader of a
+named type is `alloca`'s and it resolves `%struct.*` alone. -/
+def parseNamedType (name : String) (body : List String) : Except String NamedType := do
+  let raw := (name.drop 1).toString
+  let isStructName := raw.startsWith "struct."
+  let key := if isStructName then (raw.drop 7).toString else raw
+  if key.isEmpty then throw s!"malformed type definition '{name}': a type needs a name"
+  let fuel := body.length + 2
+  let finish (fields : Option (List FieldTy)) (packed : Bool) : NamedType :=
+    { key := key, fields := fields, packed := packed, tokens := body.length }
+  match body with
+  | "{" :: _ => do
+      let (ft, rest) ← parseFieldTy fuel body
+      match ft, rest with
+      | .inline fields false, [] => pure (finish (some fields) false)
+      | _, _ => throw s!"malformed type definition of '%{raw}': tokens after the field list"
+  | "<" :: "{" :: _ => do
+      let (ft, rest) ← parseFieldTy fuel body
+      match ft, rest with
+      | .inline fields true, [] => pure (finish (some fields) true)
+      | _, _ => throw s!"malformed type definition of '%{raw}': a packed struct needs a closing '>'"
+  | ["opaque"] => pure (finish none false)
+  | _ => do
+      if isStructName then
+        throw s!"malformed type definition of '%{raw}': a named struct's body must be a struct type"
+      else do
+        let (_, rest) ← parseFieldTy fuel body
+        if rest.isEmpty then pure (finish none false)
+        else throw s!"malformed type definition of '%{raw}': tokens after the type"
+
+/-- The text of one quoted string, read from the tokens the `=` leaves.  The
+tokenizer splits on `:`, so a data layout's quoted text arrives in several
+tokens (`"e-m`, `:`, `e-p270`, …); they are joined with no separator, which is
+exact for a quoted string that contains no whitespace — the one thing the
+tokenizer cannot tell a quoted string from — and the surrounding quotes are then
+stripped. -/
+def stringLiteral (toks : List String) : Except String String :=
+  match toks with
+  | [] => throw "expected a quoted string"
+  | first :: _ =>
+      let joined := String.intercalate "" toks
+      if !(first.startsWith "\"") then
+        throw s!"expected a quoted string, got '{joined}'"
+      else
+        match joined.toList with
+        | '"' :: body =>
+            match body.reverse with
+            | '"' :: revBody =>
+                if revBody.isEmpty then throw s!"expected a quoted string, got '{joined}'"
+                else pure (String.ofList revBody.reverse)
+            | _ => throw s!"expected a quoted string, got '{joined}'"
+        | _ => throw s!"expected a quoted string, got '{joined}'"
+
+/-- Count the occurrences of one token. -/
+def countToken (t : String) : List String → Nat
+  | [] => 0
+  | x :: xs => (if x = t then 1 else 0) + countToken t xs
+
+/-- The data layout and the named type definitions of a module, read from its
+module-level lines and not from the lines of a body — the tokenizer drops
+indentation, so a body is skipped by counting braces: a definition's own braces
+balance on its line, while a body opens on its `define` and closes on its `}`.
+Everything else at module level is left to the reader that walks the lines in
+order, so a malformed global is reported where it stands. -/
+def scanHeader (lines : List (List String)) :
+    Except String (TargetLayout × List NamedType) :=
+  let rec go : List (List String) → Nat → TargetLayout → List NamedType →
+      Except String (TargetLayout × List NamedType)
+    | [], _, dl, ts => .ok (dl, ts.reverse)
+    | l :: rest, depth, dl, ts =>
+        let opens := countToken "{" l
+        let closes := countToken "}" l
+        let depth' := if closes ≤ depth + opens then depth + opens - closes else 0
+        if depth = 0 then
+          match l with
+          | "target" :: "datalayout" :: "=" :: value => do
+              let text ← stringLiteral value
+              let dl' ← parseDataLayout text
+              go rest depth' dl' ts
+          | name :: "=" :: "type" :: body =>
+              if name.startsWith "%" then do
+                let nt ← parseNamedType name body
+                go rest depth' dl (nt :: ts)
+              else go rest depth' dl ts
+          | _ => go rest depth' dl ts
+        else go rest depth' dl ts
+  go lines 0 {} []
+
+/-- Resolve every struct definition the module makes into the byte extents a
+body's `alloca` reads, and merge them with the caller's declared `Layout`.  A
+definition is laid out once every struct it names has been, so a header's
+forward references work; a round that lays out nothing leaves only definitions
+that contain themselves by value or name a struct the module does not define,
+and that set is refused by name.  Where the caller declares an extent it must
+agree with the module's, because the model's byte step has one extent and two
+texts would then mean two different instructions. -/
+def resolveNamedTypes (declared : Layout) (dl : TargetLayout) (types : List NamedType) :
+    Except String Layout := do
+  let defs := types.filterMap fun nt => nt.fields.map fun fs =>
+    ({ key := nt.key, fields := fs, packed := nt.packed, tokens := nt.tokens } : StructDef)
+  let rec rounds (fuel : Nat) (known : List (String × FieldExtent)) (pending : List StructDef) :
+      Except String (List (String × FieldExtent)) :=
+    match fuel with
+    | 0 => .error "internal parser error: struct layout did not converge"
+    | fuel + 1 =>
+        match pending with
+        | [] => pure known
+        | _ =>
+            let rec pass (remaining : List StructDef) (known : List (String × FieldExtent))
+                (blocked : List StructDef) : List StructDef × List (String × FieldExtent) :=
+              match remaining with
+              | [] => (blocked.reverse, known)
+              | d :: rest =>
+                  match structExtent dl known (d.tokens + 2) d with
+                  | .ok e => pass rest ((d.key, e) :: known) blocked
+                  | .error _ => pass rest known (d :: blocked)
+            let (blocked, known') := pass pending known []
+            if blocked.length = pending.length then
+              throw s!"the module's struct definitions cannot be laid out: \
+                  {String.intercalate ", " (blocked.map fun d => "'%struct." ++ d.key ++ "'")} \
+                  contains itself by value, or names a struct the module does not define"
+            else rounds fuel known' blocked
+  let known ← rounds (defs.length + 1) [] defs
+  defs.foldlM (fun out d =>
+    match lookupName known d.key with
+    | none => pure out
+    | some e =>
+        match lookupName out d.key with
+        | some bytes =>
+            if bytes = e.alloc then pure out
+            else throw s!"'%struct.{d.key}' is {e.alloc} bytes in the module, but the declared layout gives it {bytes}"
+        | none => pure (out ++ [(d.key, e.alloc)])) declared
+
+/-- The return-value attributes with no argument.  Each constrains the value a
+function returns, and in this model that value is whatever the `Calls`
+environment's outcome carries, so there is no field for the constraint. -/
+def isBareReturnAttr (t : String) : Bool :=
+  ["zeroext", "signext", "noext", "inreg", "noalias", "nonnull", "noundef"].contains t
+
+/-- The return-value attributes whose argument is parenthesised.  `nofpclass` is
+deliberately absent: its argument names a vocabulary of floating-point classes
+(`nan`, `inf`, `zero`, …) that the model has no reading of, and an attribute
+whose argument cannot be checked is refused by name rather than accepted on its
+syntax alone. -/
+def isParenReturnAttr (t : String) : Bool :=
+  ["dereferenceable", "dereferenceable_or_null", "range",
+   "sret", "byval", "byref", "inalloca", "preallocated"].contains t
+
+/-- Read one parenthesised attribute argument: the tokens between `(` and its
+`)`.  No attribute argument the reader admits nests, and a nested `(` is refused
+by name rather than counted. -/
+def takeParenArg : List String → Except String (List String × List String)
+  | [] => .error "unterminated attribute argument: expected ')'"
+  | ")" :: rest => .ok ([], rest)
+  | "(" :: _ => .error "a nested '(' in a return attribute's argument is not modelled"
+  | t :: rest => do
+      let (arg, rest) ← takeParenArg rest
+      .ok (t :: arg, rest)
+
+/-- Whether `s` is an integer literal, with an optional leading minus. -/
+def isIntLit (s : String) : Bool :=
+  (parseNat s).isSome || (s.startsWith "-" && (parseNat (s.drop 1).toString).isSome)
+
+/-- Check one return attribute's parenthesised argument for the shape its name
+requires: a range is an integer type and two integer bounds, a dereferenceable
+count is a decimal, and a type argument is a type. -/
+def checkReturnAttrArg (name : String) (arg : List String) : Except String Unit :=
+  if arg.isEmpty then .error s!"the return attribute '{name}' has an empty argument"
+  else match name with
+  | "range" =>
+      match arg with
+      | [tyTok, lo, ",", hi] =>
+          match parseTy tyTok with
+          | .ok (.int _) =>
+              if isIntLit lo && isIntLit hi then .ok ()
+              else .error s!"the return attribute 'range' needs two integer bounds, got '{lo}' and '{hi}'"
+          | .ok _ => .error s!"the return attribute 'range' needs an integer type, got '{tyTok}'"
+          | .error e => .error e
+      | _ => .error s!"the return attribute 'range' needs a type and two bounds, got '{String.intercalate " " arg}'"
+  | "dereferenceable" | "dereferenceable_or_null" =>
+      match arg with
+      | [n] => if (parseNat n).isSome then .ok ()
+          else .error s!"the return attribute '{name}' needs a decimal byte count, got '{n}'"
+      | _ => .error s!"the return attribute '{name}' needs one byte count, got '{String.intercalate " " arg}'"
+  | _ =>
+      match parseFieldTy (arg.length + 2) arg with
+      | .ok (_, []) => .ok ()
+      | .ok (_, extra) => .error s!"the return attribute '{name}' has tokens after its type: '{String.intercalate " " extra}'"
+      | .error e => .error e
+
+/-- Read a function definition's return attributes: each is checked for the shape
+its name requires and then dropped.  The model has no field for a constraint on
+the returned value — the caller's `Calls` environment supplies it — and every
+attribute here can only *exclude* return values (a violating one is poison), so
+dropping it models a superset of the text's defined values rather than a
+narrowing of them, the reading `icmp`'s `samesign` gets.  A token the reader has
+no rule for is refused by name, so the header is still checked rather than
+parsed past. -/
+def checkReturnAttrs (name : String) (toks : List String) : Except String Unit :=
+  let rec go : Nat → List String → Except String Unit
+    | 0, _ => .error "internal parser error: return attribute fuel exhausted"
+    | _, [] => .ok ()
+    | fuel + 1, "align" :: n :: rest =>
+        if (parseNat n).isSome then go fuel rest
+        else .error s!"the return attribute 'align' needs a decimal alignment, got '{n}'"
+    | _, ["align"] =>
+        .error "the return attribute 'align' needs a decimal alignment"
+    | fuel + 1, t :: rest =>
+        if isBareReturnAttr t then go fuel rest
+        else if isParenReturnAttr t then
+          match rest with
+          | "(" :: inner => do
+              let (arg, rest) ← takeParenArg inner
+              checkReturnAttrArg t arg
+              go fuel rest
+          | _ => .error s!"malformed return attribute '{t}': expected '('"
+        else .error s!"unsupported return attribute '{t}' before the return type of @{name}"
+  go (toks.length + 1) toks
+
+/-- Check a `source_filename = "..."` line and drop it: `Module` has no field
+for the source the text came from. -/
+def checkSourceFilename (l : List String) : Except String Unit :=
+  match l with
+  | "source_filename" :: "=" :: rest =>
+      let text := String.intercalate " " rest
+      match text.toList with
+      | '"' :: body =>
+          match body.reverse with
+          | '"' :: revBody =>
+              if revBody.isEmpty then .error "malformed source_filename: an empty string"
+              else .ok ()
+          | _ => .error s!"malformed source_filename: expected a quoted string, got '{text}'"
+      | _ => .error s!"malformed source_filename: expected a quoted string, got '{text}'"
+  | _ => .error s!"malformed source_filename line '{String.intercalate " " l}'"
+
+/-- Check a `target datalayout` or `target triple` line and drop it: the model
+has no target identity, and the extents a layout does determine are computed
+where a struct definition is read. -/
+def checkTargetLine (l : List String) : Except String Unit :=
+  match l with
+  | "target" :: "datalayout" :: "=" :: value =>
+      match stringLiteral value with
+      | .ok text =>
+          match parseDataLayout text with
+          | .ok _ => .ok ()
+          | .error e => .error e
+      | .error e => .error e
+  | "target" :: "triple" :: "=" :: value =>
+      match stringLiteral value with
+      | .ok text => if text.isEmpty then .error "malformed target triple: an empty string" else .ok ()
+      | .error e => .error e
+  | "target" :: key :: _ => .error s!"unsupported target declaration 'target {key}'"
+  | _ => .error s!"malformed target line '{String.intercalate " " l}'"
+
+/-- Check an `attributes #N = { ... }` line and drop it.  An attribute group
+collects the function, parameter and return attributes a header and a call refer
+to by number; the model has no attribute vocabulary, so there is nothing for the
+group's contents to attach to, and only the `attributes #N = { ... }` shape and
+its brace balance are checked. -/
+def checkAttributeGroup (l : List String) : Except String Unit :=
+  match l with
+  | "attributes" :: id :: "=" :: "{" :: body =>
+      if !id.startsWith "#" || (parseNat (id.drop 1).toString).isNone then
+        .error s!"malformed attribute group: '{id}' is not an attribute-group number"
+      else match body.reverse with
+        | "}" :: revInner =>
+            if revInner.contains "{" || revInner.contains "}" then
+              .error s!"malformed attribute group {id}: a nested brace is not modelled"
+            else .ok ()
+        | _ => .error s!"malformed attribute group {id}: expected '}'"
+  | _ => .error s!"malformed attribute group line '{String.intercalate " " l}'"
+
+/-- Check a global's definition line and drop it.  The model has no global
+table: a symbol operand's value is the address the run binds to the symbol, so
+the initializer has nothing here to affect, and only the `@<name> =` shape is
+checked.  The value is not read — it is a constant grammar of its own, and the
+model's reader of a symbol is `Operand.global`, which consults the run rather
+than the module. -/
+def checkGlobalLine (l : List String) : Except String Unit :=
+  match l with
+  | name :: "=" :: value =>
+      if name.length ≤ 1 || !name.startsWith "@" then
+        .error s!"malformed global definition '{name}': a global needs a name after '@'"
+      else if value.isEmpty then
+        .error s!"malformed global definition '{name}': expected a value"
+      else .ok ()
+  | _ => .error s!"malformed global line '{String.intercalate " " l}'"
+
+/-- Check a metadata definition line and drop it.  `!`-names and `!{...}`
+values are a sub-grammar of their own (`metadata`, `token` and specialized
+types) that the model has no reader for, so only the
+`<name> = [distinct] !<value>` shape is checked. -/
+def checkMetadataLine (l : List String) : Except String Unit :=
+  match l with
+  | name :: rest =>
+      if !name.startsWith "!" then
+        .error s!"malformed metadata line '{String.intercalate " " l}'"
+      else match rest with
+        | "=" :: value :: more =>
+            if value.startsWith "!" then .ok ()
+            else if value = "distinct" then
+              match more with
+              | v :: _ =>
+                  if v.startsWith "!" then .ok ()
+                  else .error s!"malformed metadata definition '{name}': expected a metadata value after 'distinct'"
+              | [] => .error s!"malformed metadata definition '{name}': expected a metadata value after 'distinct'"
+            else .error s!"malformed metadata definition '{name}': expected a metadata value"
+        | _ => .error s!"malformed metadata definition '{name}': expected '= [!distinct] !<value>'"
+  | [] => .error "malformed metadata line"
+
 /-- Header tokens a function header — a definition's or a declaration's — may
 carry before its return type and the model does not represent: linkage, the
 preemption and visibility specifiers, the DLL storage class, and a calling
@@ -2051,7 +2833,8 @@ convention.  They say which definition the linker picks and how the call is
 made; the model's `Calls` environment decides both from outside the module, and
 there is no linkage or calling-convention semantics inside it, so dropping
 them leaves nothing to affect.  The set is
-closed: a token outside it is refused, and a return attribute is reported as one.
+closed: a token outside it is left in place, and the return-attribute reader
+names it if it is not a return attribute either.
 
 Every named calling convention clang can emit is here, including the
 target-specific ones (`win64cc`, `x86_stdcallcc`, `aarch64_vector_pcs`, …): they
@@ -2082,7 +2865,8 @@ def isHeaderSurface (t : String) : Bool :=
    "amdgpu_gfx_whole_wave"].contains t
 
 /-- Drop the leading header tokens the model does not represent.  What is left is
-a return attribute, which the caller refuses by name. -/
+a return attribute: a definition's is read, checked and dropped by
+`checkReturnAttrs`, and a declaration's is refused by name. -/
 def dropHeaderSurface : List String → List String
   | [] => []
   | "cc" :: n :: rest =>
@@ -2101,13 +2885,13 @@ def parseFunction (layout : Layout) (header : List String) (rest : List (List St
   let name := (nameTok.drop 1).toString
   -- Linkage, visibility and a calling convention stand between `define` and the
   -- return type and are dropped; a return attribute stands in the same place and
-  -- is refused, because it constrains the value the function returns — it is part
-  -- of the function's contract, and parsing past it and printing the function
-  -- without it would accept a wider contract than the pipeline was given.
+  -- is read, checked for the shape its name requires, and dropped.  It can only
+  -- *exclude* return values — a violating value is poison — so dropping it
+  -- models a superset of the text's defined values; the reason is with
+  -- `checkReturnAttrs`.
   let beforeName := header.takeWhile (· ≠ nameTok)
   let returnAttrs := dropHeaderSurface ((beforeName.drop 1).dropLast)
-  if !returnAttrs.isEmpty then
-    throw s!"unsupported return attribute '{String.intercalate " " returnAttrs}' before the return type of @{name}"
+  checkReturnAttrs name returnAttrs
   let retTy ← parseTy retTok
   let (params, afterParams) ←
     match parseParams afterName with
@@ -2254,8 +3038,21 @@ def parseDecl (l : List String) : Except String Decl := do
       .ok { name := name, retTy := retTy, params := params }
   | _ => .error s!"malformed declaration '{String.intercalate " " l}'"
 
-/-- Parse a module: declarations, then function definitions. -/
+/-- Parse a module: its header, then its declarations, then its function
+definitions.  The header — `source_filename`, the two `target` lines, named type
+definitions, globals, attribute groups and metadata nodes — is read, checked for
+the shape it must have, and dropped, because `Module` has no field for any of it.
+A named struct definition is not merely dropped: its byte extent is computed from
+its fields and the target data layout, because a body's `alloca` needs an extent
+and the declared `Layout` may not carry it.  The lines are read twice: a first
+pass collects the data layout and the type definitions (a body's braces are
+skipped by depth, since the tokenizer drops indentation), so a struct may name
+one defined later in the same header, and the second walks the module in order.
+-/
 def parseModuleWith (layout : Layout) (src : String) : Except String Module := do
+  let lines := tokenLines src
+  let (dl, types) ← scanHeader lines
+  let effective ← resolveNamedTypes layout dl types
   let rec go : Nat → List (List String) → List Decl → List Function →
       Except String Module
     | 0, _, _, _ => .error "internal parser error: module fuel exhausted"
@@ -2267,17 +3064,50 @@ def parseModuleWith (layout : Layout) (src : String) : Except String Module := d
             | .error e => .error e
             | .ok d => go fuel rest (d :: decls) acc
         | "define" :: _ =>
-            match parseFunction layout l rest with
+            match parseFunction effective l rest with
             | .error e => .error e
             | .ok (f, rest') => go fuel rest' decls (f :: acc)
         | ["}"] => go fuel rest decls acc
-        | _ => .error s!"expected 'define' or 'declare', got '{String.intercalate " " l}'"
-  let lines := tokenLines src
+        | "source_filename" :: _ =>
+            match checkSourceFilename l with
+            | .error e => .error e
+            | .ok _ => go fuel rest decls acc
+        | "target" :: _ =>
+            match checkTargetLine l with
+            | .error e => .error e
+            | .ok _ => go fuel rest decls acc
+        | "attributes" :: _ =>
+            match checkAttributeGroup l with
+            | .error e => .error e
+            | .ok _ => go fuel rest decls acc
+        | name :: "=" :: "type" :: _ =>
+            if name.startsWith "%" then go fuel rest decls acc
+            else .error s!"expected a module declaration, 'define' or 'declare', got '{String.intercalate " " l}'"
+        | name :: "=" :: _ =>
+            if name.startsWith "@" then
+              match checkGlobalLine l with
+              | .error e => .error e
+              | .ok _ => go fuel rest decls acc
+            else if name.startsWith "!" then
+              match checkMetadataLine l with
+              | .error e => .error e
+              | .ok _ => go fuel rest decls acc
+            else .error s!"expected a module declaration, 'define' or 'declare', got '{String.intercalate " " l}'"
+        | t :: _ =>
+            if t.startsWith "!" then
+              match checkMetadataLine l with
+              | .error e => .error e
+              | .ok _ => go fuel rest decls acc
+            else .error s!"expected a module declaration, 'define' or 'declare', got '{String.intercalate " " l}'"
+        | [] => go fuel rest decls acc
   go (lines.length + 1) lines [] []
 
 
 /-- Parse a module with no declared struct layouts: the entry point every
-existing caller uses, and the one whose text carries no named struct. -/
+existing caller uses.  A named struct's extent, when its text carries one, is
+computed from the module's own `%struct.X = type` definition and the target data
+layout; a text that carries none is refused by name when an `alloca` names a
+struct, which is the same refusal a declared layout's absence gives. -/
 def parseModule (src : String) : Except String Module := parseModuleWith [] src
 
 end LeanLLVM

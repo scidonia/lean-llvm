@@ -296,11 +296,16 @@ not against an unversioned page.
    answer while the two executables contain demonstrably different bodies.
 5. **Decide the attribute policy per kind** and bind it, the target
    configuration and the artifact hashes into the manifest. The policy is
-   `reject`: the fixtures carry no attributes, and the parser refuses an
-   unmodelled attribute in a function header — a definition's or a
-   declaration's — rather than dropping it (`tests/m4-loop-emission.sh
-   --return-attr`, `--function-attr` and `--declare-attr` exercise that at the
-   driver's command line). The manifest binds the target
+   `reject` for an attribute the reader has no rule for: the fixtures carry no
+   attributes, and the parser refuses an attribute it cannot read — a
+   definition's return attribute outside the set it checks, a function attribute
+   or attribute group reference after a parameter list, and a declaration's
+   return attribute, parameter attribute and post-parameter tokens — rather than
+   dropping it (`tests/m4-loop-emission.sh --return-attr`, `--function-attr`,
+   `--declare-attr` and `--declare-param-attr` exercise that at the driver's
+   command line). A definition's return attribute whose shape the reader does
+   read is dropped, with the widening recorded at the decision and the pair
+   pinned in `LeanLLVMTest/Core.lean`. The manifest binds the target
    triple, the data layout and the target-feature policy (`none`), the contract
    and theorem names, the fixture, marker, caller and unit hashes, the
    differential transcript as ancillary evidence, and the digests of two

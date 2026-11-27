@@ -13,8 +13,8 @@ defines	4
 declares	10
 functions	leanllvm_json_stage2,num_scan,stk_mul_u64,stk_cmp
 verify	opt -passes=verify: ok
-parser_layout	parseModule (empty Layout): named structs in an alloca or getelementptr need a declared byte extent the driver does not supply
-import	exit 1: expected 'define' or 'declare', got 'source_filename = "kernel/json/stage2.c"'
+parser_layout	parseModule (empty Layout): the module's own %struct.EPow/%struct.Stk/%struct.StkBn definitions supply the byte extents its allocas need, computed from their fields and the target datalayout; no declared layout is passed
+import	exit 1: in parameters of @leanllvm_json_stage2: expected a parameter name, got 'noundef'
 object	clang -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -c -Xclang -disable-llvm-passes probes/install/ir/stage2.production.ll -o stage2.o
 object_sha256	045448b820ad01fe4727a4839c21ac6cc5361cc524494f0d5b45bd3ce487f168
 object_bytes	25264

@@ -48,11 +48,14 @@ def sampleFunction : Function :=
 
 -- A function definition's header is checked for attributes the semantics does
 -- not model.  `sample` above is the control: an attribute-free header parses.
--- An attribute that constrains the returned value, or one that changes what the
--- function promises its caller, is refused with a diagnostic naming it rather
--- than parsed past and printed back without it.
+-- A return attribute the reader has a shape rule for is read and dropped (the
+-- widening is recorded at `checkReturnAttrs` and pinned with its pair below); a
+-- return attribute it has no reading for, and an attribute that changes what the
+-- function promises its caller, are refused with a diagnostic naming them rather
+-- than parsed past and printed back without them.  `nofpclass`'s argument names
+-- a vocabulary of floating-point classes the model has no reading of.
 def returnAttrSample : String :=
-"define range(i64 0, 1) i64 @f(i64 %x) {
+"define nofpclass(nan) i64 @f(i64 %x) {
 entry:
   ret i64 %x
 }
@@ -70,7 +73,7 @@ def mentions (s sub : String) : Bool := (s.splitOn sub).length > 1
 
 #guard
   match parseModule returnAttrSample with
-  | .error e => mentions e "unsupported" && mentions e "range"
+  | .error e => mentions e "unsupported" && mentions e "nofpclass"
   | .ok _ => false
 
 #guard
@@ -595,8 +598,8 @@ kernels call at the symbols and arities the parser validates, the integer-lane
 vector `store`, and the vector `getelementptr` element type the table read is
 captured as.  Each must parse to its constructor, print to text the parser reads
 back, and print the vector element type rather than a scalar the token suggests,
-so a printer rule that dropped the element type, invented a `nuw` the parser
-refuses, or wrote an intrinsic's operand types wrong fails here rather than in an
+so a printer rule that dropped the element type, invented a `nuw` the source did
+not write, or wrote an intrinsic's operand types wrong fails here rather than in an
 emitted body. -/
 def entryFragmentSample : String :=
 "declare i32 @llvm.ctpop.i32(i32)
@@ -650,8 +653,9 @@ entry:
 
 -- The printed text is the parser's form: the vector element type and the vector
 -- store's type are written, `tail` is dropped because the parser does not keep
--- it, no `nuw` appears because the parser refuses one, and no `inbounds` appears
--- because the parser drops the source's flag and the printer adds none.
+-- it, no `nuw` appears because the parser drops it and the printer adds none, and
+-- no `inbounds` appears because the parser drops the source's flag and the
+-- printer adds none.
 #guard
   match parseModule entryFragmentSample with
   | .ok m =>
@@ -1272,10 +1276,10 @@ entry:
       [.int 64 (BitVec.ofNat 64 41)] =
     some (some (.ret (some (.int 64 (BitVec.ofNat 64 42))) []))
 
--- The boundary is where the attributes start: a token in the same position that
--- is not linkage or a calling convention is still a return attribute, and it is
--- refused as one.
-#guard refusedWith (headerSrc "zeroext ") ["zeroext", "return attribute"]
+-- The boundary is where the return attributes end: a definition's return
+-- attribute the reader has a shape rule for is dropped, and a token in that
+-- position it has no rule for is refused by name.
+#guard refusedWith (headerSrc "cold ") ["cold", "return attribute"]
 
 /-- An integer comparison with and without the `samesign` flag. -/
 def samesignSrc (flag : String) : String :=
@@ -1298,6 +1302,193 @@ small:
   some (some (.ret (some (.int 32 (BitVec.ofNat 32 1))) []))
 #guard runOf noCalls (samesignSrc "samesign ") [.int 32 (BitVec.ofNat 32 3)] =
   some (some (.ret (some (.int 32 (BitVec.ofNat 32 0))) []))
+
+/-! ### The module header, return attributes, unlabelled entries and overflow flags
+
+Four more pieces of LLVM's text the model has no field for, each checked the way
+the four above are: the construct parses to the AST the same program without it
+parses to, and the program runs to the same answer.  The module header is the one
+place where "dropped" needs a second half: a named struct's `type` line is
+dropped as text, but the byte extent its fields and the target data layout
+determine is exactly what `Ty.struct` carries, so it is read, computed and
+checked against a declared `Layout` where the caller gives one.  The reason each
+is droppable — or must be read — is with the parser, at the point of the
+decision.
+-/
+
+/-- A definition with and without a return attribute in front of its return type. -/
+def returnAttrSrc (attr : String) : String :=
+"define " ++ attr ++ "i32 @rether(i32 %x) {
+entry:
+  %y = add i32 %x, 1
+  ret i32 %y
+}
+"
+
+-- Read, checked for the shape its name requires, and dropped: every spelling
+-- parses to the AST the attribute-free spelling does.
+#guard sameFunction (returnAttrSrc "zeroext ") (returnAttrSrc "")
+#guard sameFunction (returnAttrSrc "range(i32 0, 2) ") (returnAttrSrc "")
+#guard sameFunction (returnAttrSrc "noalias nonnull noundef ") (returnAttrSrc "")
+#guard sameFunction (returnAttrSrc "dereferenceable(8) ") (returnAttrSrc "")
+#guard sameFunction (returnAttrSrc "inreg range(i32 -1, 2) ") (returnAttrSrc "")
+
+-- And the run is the same answer: the attribute left nothing behind.
+#guard runOf noCalls (returnAttrSrc "range(i32 0, 2) ") [.int 32 (BitVec.ofNat 32 41)] =
+  some (some (.ret (some (.int 32 (BitVec.ofNat 32 42))) []))
+
+-- The boundary: a return attribute whose argument the reader has no reading
+-- for is refused by name, and so is a malformed one.
+#guard refusedWith (returnAttrSrc "nofpclass(nan) ") ["nofpclass", "return attribute"]
+#guard refusedWith (returnAttrSrc "cold ") ["cold", "return attribute"]
+#guard refusedWith (returnAttrSrc "range(i32 1) ") ["range"]
+
+/-- A function whose entry block carries no label, beside the same program with
+the label the parser synthesizes written out. -/
+def unlabelledEntrySrc : String :=
+"define i32 @unlabelled(i32 %x) {
+  %y = add i32 %x, 1
+  ret i32 %y
+}
+"
+
+def labelledEntrySrc (label : String) : String :=
+"define i32 @unlabelled(i32 %x) {
+" ++ label ++ ":
+  %y = add i32 %x, 1
+  ret i32 %y
+}
+"
+
+-- The label is the smallest decimal the body's tokens do not use — here `0` — so
+-- the unlabelled spelling parses to the AST the labelled one does.
+#guard sameFunction unlabelledEntrySrc (labelledEntrySrc "0")
+
+-- And it runs: the entry block is the entry block either way.
+#guard runOf noCalls unlabelledEntrySrc [.int 32 (BitVec.ofNat 32 41)] =
+  some (some (.ret (some (.int 32 (BitVec.ofNat 32 42))) []))
+
+-- The entry is the only block that may stand unlabelled.
+#guard refusedWith "define i32 @f(i32 %x) {
+  %y = add i32 %x, 1
+  ret i32 %y
+  ret i32 %x
+}" ["expected a block label"]
+
+/-- An addition with and without an arithmetic overflow flag. -/
+def overflowSrc (flag : String) : String :=
+"define i32 @flags(i32 %x) {
+entry:
+  %y = add " ++ flag ++ "i32 %x, 1
+  ret i32 %y
+}
+"
+
+-- Dropped: no field carries the flag, so every spelling parses to one function.
+#guard sameFunction (overflowSrc "nuw ") (overflowSrc "")
+#guard sameFunction (overflowSrc "nsw ") (overflowSrc "")
+#guard sameFunction (overflowSrc "nuw nsw ") (overflowSrc "")
+#guard sameFunction (overflowSrc "nsw nuw ") (overflowSrc "")
+
+#guard runOf noCalls (overflowSrc "nuw nsw ") [.int 32 (BitVec.ofNat 32 41)] =
+  some (some (.ret (some (.int 32 (BitVec.ofNat 32 42))) []))
+
+-- The flags belong to the four operations that take them and to no others: a
+-- flag on `udiv`, and the `nusw` spelling, are still refused by name.
+#guard refusedWith "define i32 @division(i32 %x) {
+entry:
+  %y = udiv nuw i32 %x, 2
+  ret i32 %y
+}
+" ["nuw", "unsupported type"]
+
+#guard refusedWith (overflowSrc "nusw ") ["nusw"]
+
+/-- A `getelementptr` with and without the `nuw` modifier. -/
+def gepFlagSrc (flag : String) : String :=
+"define ptr @gepflags(ptr %p) {
+entry:
+  %q = getelementptr " ++ flag ++ "i8, ptr %p, i64 4
+  ret ptr %q
+}
+"
+
+#guard sameFunction (gepFlagSrc "inbounds nuw ") (gepFlagSrc "inbounds ")
+
+-- `nusw` is the signed-wrap flag, and the model's address arithmetic is
+-- unsigned; it stays refused by name.
+#guard refusedWith (gepFlagSrc "nusw ") ["nusw", "getelementptr"]
+
+/-- The header a production emission carries, around one definition: the source
+name, the target, a global, an attribute group and a metadata node. -/
+def moduleHeaderSrc : String :=
+"source_filename = \"kernel/json/stage2.c\"
+target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128\"
+target triple = \"x86_64-unknown-linux-gnu\"
+
+@.str = private unnamed_addr constant [5 x i8] c\"true\\00\", align 1
+attributes #0 = { nounwind }
+!0 = !{i32 1}
+
+"
+
+/-- The two named struct definitions, the first naming the second before it is
+defined: the header pass resolves forward references. -/
+def structDefsSrc : String :=
+"%struct.Stk = type { %struct.StkBn, %struct.StkBn, i64, i32 }
+%struct.StkBn = type { [96 x i64], i32 }
+"
+
+def structBodySrc : String :=
+"define i64 @hdr(ptr %p) {
+entry:
+  %v = alloca %struct.Stk, align 8
+  %w = alloca %struct.StkBn, align 8
+  ret i64 0
+}
+"
+
+-- The non-type header is dropped: the same module as the text without it.
+#guard parseModule (moduleHeaderSrc ++ structDefsSrc ++ structBodySrc) =
+  parseModule (structDefsSrc ++ structBodySrc)
+
+-- The type definitions are read rather than dropped: the module parses to what
+-- the declared-layout spelling of the same function parses to.
+#guard parseModule (structDefsSrc ++ structBodySrc) =
+  parseModuleWith [("Stk", 1568), ("StkBn", 776)] structBodySrc
+
+-- And the extents are the target's — fields on their allocated sizes, the
+-- struct rounded to its largest field alignment.
+#guard
+  match parseModule (structDefsSrc ++ structBodySrc) with
+  | .ok ⟨_, f :: _⟩ =>
+      match f.blocks with
+      | [b] => decide (b.instrs =
+          [.alloca "%v" (.struct "Stk" 1568) 8,
+           .alloca "%w" (.struct "StkBn" 776) 8])
+      | _ => false
+  | _ => false
+
+-- Where a declared layout and the module disagree, the text is refused by name
+-- rather than one side silently winning.
+#guard
+  match parseModuleWith [("Stk", 1)] (structDefsSrc ++ structBodySrc) with
+  | .error e => mentions e "Stk" && mentions e "1"
+  | .ok _ => false
+
+-- The header rule is a shape rule: a line the parser has no reading for is still
+-- refused, and so is a header construct whose shape is wrong.
+#guard refusedWith "source_filename = stage2.c\n" ["source_filename"]
+
+#guard refusedWith "module asm \"nop\"\n" ["module asm"]
+
+#guard refusedWith "%struct.Bad = type { i32 }\nfoo = type i32\n" ["expected a module declaration"]
+
+#guard refusedWith "%struct.Cycle = type { %struct.Cycle }\n" ["contains itself"]
+
+#guard refusedWith "target datalayout = \"e-v33:33\"\n" ["v33:33"]
+
+#guard refusedWith "attributes #0 = { nounwind\n" ["attribute group"]
 
 /-! ### Pointer comparison
 
