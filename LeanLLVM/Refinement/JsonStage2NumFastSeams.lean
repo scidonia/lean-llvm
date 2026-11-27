@@ -1256,6 +1256,7 @@ theorem stage2NumFastCalls_lifetime_end (epow : Int → Option EPow) (args : Lis
     if_neg (by decide : ¬ ("llvm.lifetime.end.p0" = "num_d8_el1")),
     if_neg (by decide : ¬ ("llvm.lifetime.end.p0" = "num_el_el1")),
     if_neg (by decide : ¬ ("llvm.lifetime.end.p0" = "stk_mul_u64")),
+    if_neg (by decide : ¬ ("llvm.lifetime.end.p0" = "__memcpy_chk")),
     s2HelperCalls, JsonStage2IR.stage2Calls]
 
 /-- `cleanup.thread` from the preheader: the index is the dispatch's, the count

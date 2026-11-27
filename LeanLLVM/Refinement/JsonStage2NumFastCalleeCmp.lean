@@ -1,11 +1,18 @@
 /-
-`stk_cmp`'s emitted body, and the fifth symbol it needs before the epilogue's
-loop can be stated at its callee.
+`stk_cmp`'s emitted body, and the fifth symbol that stands between it and the
+epilogue's loop.
 
 `JsonStage2NumFastEpilogueLoop` proved that the release selection leaves the
 rounding loop's comparison unanswered, and named the callee half's fourth entry
 `FbStkCmpAnswered`.  This module captures the body that entry would have to be
-answered with, and finds that the body is not a closed unit either.
+answered with — 104 blocks, 757 instructions — and finds that the body is not a
+closed unit on its own: it calls `__memcpy_chk`, the fortified `memcpy` the
+compiler line's hardening emits in place of `stk_copy`'s variable-length copy.
+That is a fifth symbol, and the tree's selection now answers it:
+`JsonStage2NumFastCalls.numMemcpyChkAnswer` is the library function's contract
+and `stage2NumFastCalls` carries it, so `NumFastCalleesAnswered calls epow` —
+still one equality, still proved by `rfl` — delivers the copy's answer through
+`numFastCalleesAnswered_memcpyChk`.
 
 **The body is large because the comparison's helpers were inlined.**  The
 emission at the measured compiler line inlines `stk_copy`, `stk_shl` and
@@ -19,40 +26,65 @@ line, as the capture's transform marks it.
 copies `(size_t)s->n * sizeof s->w[0]` bytes to a 776-byte object, and the
 compiler line's hardening replaces the library call with `__memcpy_chk(dst,
 src, n, 776)`.  That is a symbol of the C library rather than of `stage2.c`, and
-no selection in this tree answers it: `stage2NumFastCalls` answers the three
-conversion callees, `s2HelperCalls` the lifetime markers, `memset` and the trap,
-and delegates the rest to `noCalls`.  So the fourth callee's body needs a fifth
-answer, and the epilogue's loop is `ub` at that body's first copy — the copy is
-on every path that carries a nonzero significand, and the loop's own `%v->m`
-count is positive — so the loop is undefined before its first comparison.
+before this binding no selection in the tree answered it: `stage2NumFastCalls`
+answered the three conversion callees, `s2HelperCalls` the lifetime markers,
+`memset` and the trap, and delegated the rest to `noCalls`.  The copy is on
+every path that carries a nonzero significand, so the body's run was `ub` at its
+first copy and the epilogue's loop undefined before its first comparison.
+
+**The destination-size check, and its status: a hypothesis, not a theorem.**
+`__memcpy_chk(dst, src, n, destlen)` copies `n` bytes when they fit `destlen` and
+calls `__chk_fail` otherwise.  At each of this body's three copies `destlen` is
+the constant `776`, and `n` is `(size_t)v->n * 8` — `numCmpCopyLen_eq` proves the
+count is `8 * v->n` and `numCmpCopyLen_le` that it is at most `768 ≤ 776` for
+every count up to `96`, which is what the source object (`uint64_t w[96]`) holds.
+**The tree carries no such bound.**  The comparator's `%v` is a pointer read from
+the caller's state and nothing in the model of `Stk`/`StkBn` constrains the count
+cell — the same boundary `JsonStage2NumFastCalleeMul` records for `stk_mul_u64`
+("Why the count is bounded by 96").  So the check's non-firing is stated as a
+hypothesis of the copy's contract (`numMemcpyChkAnswer_copy`, and `hfit` on the
+runs below) rather than proved unreachable.  It is not a defensive hypothesis:
+`numMemcpyChkAnswer_fires_at_98` exhibits a count of `98` — one limb more than
+the object holds — at this very `776`-byte destination, whose length `784` the
+model answers with `none`.  Closing it needs an invariant on the bignum the
+epilogue's loop is handed, and that invariant belongs to the producer of `%v`,
+not to `stk_cmp`'s body.
 
 **What this module establishes.**
 
 * the pin — `numCmpSrc` is the fixture, `firstFunctionWith numCmpLayout` of it is
   `numCmpBody` block by block, with a mutated-text control and the parsed shape
   the inventory records (104 blocks, 757 instructions, 3 parameters);
-* the entry's run and the two steps after it — `numCmp_entry_denote`,
-  `numCmp_ifThen_denote` and `numCmp_ifThenI_denote_none`: from the entry state
-  the first block allocates, marks its two ranges live, reads the sticky flag and
-  branches, the second copies the count and branches, and the third's copy is
-  undefined when `__memcpy_chk` is unanswered (`numCmp_run_ub`: `runFuel` at
-  three steps is `some .ub`);
-* the environment — `numCmpCalls` answers the body's own callees: the lifetime
-  markers and `memset` through the walk's staging, `stk_mul_u64` through
-  `numStkMulAnswer`, and everything else — `__memcpy_chk` included — to the base;
-  `numCmpBodyCalls` is a selection with `stk_cmp` answered by this body's run;
-* the arm, negatively — `numCmpBodyCalls_none`: at any base that leaves
-  `__memcpy_chk` unanswered, the answered `stk_cmp` answers *nothing* at the
-  state the epilogue's loop passes, so this body cannot replace the site's `ub`
-  with the model.  `numCmpBodyCalls_stage2_none` is that fact at the
-  release selection: adding `stk_cmp` to the callee half does not close it;
-* the restated boundary — `FbMemcpyAnswered` is the fifth answer,
-  `FbEpilogueAnsweredMem` is `FbEpilogueAnswered` with it, `fb_tail_answeredMem`
-  is the fallback's tail there, and `fbEpilogueAnsweredMem_not_release` is the
-  release selection failing it.  What the answered boundary still carries is
-  named too: `FbLoopEntry` is the entry state the loop is stated at, whose word
-  and cells are read from the digits array and the staged window, and
-  `fb_loopEntry_tail` is the tail at such a state.
+* the copy's count and its contract — `numCmpCopyLen` is the byte count the body
+  passes, `numCmpCopyLen_eq` its value at a count that
+  fits the object (`8 * v->n`) and `numCmpCopyLen_le` its bound there (`768`);
+  `FbMemcpyAnswered` is the fifth answer's clause, `numCmpCalls_memcpy` the
+  body's delegation of the symbol to the base, and
+  `stage2NumFastCalls_memcpyAnswered` the release selection satisfying it;
+* the run through the copy — `numCmp_ifThenI_denote_copy` is `if.then.i` at an
+  answered copy: the block's four instructions and the state it jumps from, with
+  the destination holding the source's bytes; `numCmp_run_copy` is the
+  three-step run from the entry state to `stk_copy.exit`, with the copy's
+  answer; `numCmp_copy_span` and `numCmp_copy_count` are what the comparator
+  relies on after it — the destination reads back the copied bytes, and the
+  count cell `if.then` wrote at `b + 768` lies outside the copy's range, so the
+  multiply that follows reads the count and limbs it expects;
+* the entry's run and the two steps after it — `numCmp_entry_denote` and
+  `numCmp_ifThen_denote`: from the entry state the first block allocates, marks
+  its two ranges live, reads the sticky flag and branches, and the second copies
+  the count and branches;
+* the arm, negatively — `numCmp_ifThenI_denote_none`, `numCmp_run_ub`,
+  `numCmpRunAnswer_none` and `numCmpBodyCalls_none`: at any base that leaves
+  `__memcpy_chk` unanswered the copy's block is `ub`, the three-step run is
+  `some .ub`, and an answered `stk_cmp` answers nothing at the loop's state.
+  These are the record of why the fifth binding is needed; they say nothing
+  about the release selection, which now answers the symbol;
+* the boundary — `FbEpilogueAnsweredMem` is `FbEpilogueAnswered` with the fifth
+  answer, `fb_tail_answeredMem` the fallback's tail there,
+  `fbEpilogueAnsweredMem_stage2` discharges the copy clause at the release
+  selection (leaving only the comparison's), and `fb_loopEntry_tail_stage2` is
+  the tail there from `FbLoopEntry`, the entry state the loop is stated at,
+  whose word and cells are read from the digits array and the staged window.
 
 **The layout the fixture is parsed at.**  The body's two allocations name
 `%struct.StkBn`, which is `uint64_t w[96]` and the `int` count — 776 bytes —
@@ -1466,10 +1498,11 @@ theorem numCmp_findBlock_ifThenI :
 /-! ### The environment the body runs in
 
 The body's own callees are the lifetime markers and `memset` (the walk's
-staging), `stk_mul_u64` (its model), and the fortified copy — which nothing in
-this tree answers.  `numCmpCalls base` is the first three and the base's answer
-for the fourth; `numCmpBodyCalls` below is a selection that answers `stk_cmp`
-with a run in that environment. -/
+staging), `stk_mul_u64` (its model), and the fortified copy, which the selection
+answers through `numMemcpyChkAnswer`.  `numCmpCalls base` is the first two and
+the base's answer for the others, so the copy arrives from whatever base the
+selection is; `numCmpBodyCalls` below is a selection that answers `stk_cmp` with
+a run in that environment. -/
 
 /-- The multiply answered by its model, and every other symbol to the base. -/
 def numMulCalls (base : Calls) : Calls :=
@@ -1492,12 +1525,121 @@ theorem numCmpCalls_memcpy (base : Calls) (vs : List Value) (mem : Mem) (next : 
     numCmpCalls base "__memcpy_chk" vs mem next = base "__memcpy_chk" vs mem next := by
   simp [numCmpCalls, numMulCalls, JsonStage2IR.stage2Calls]
 
+/-- **The fifth answer, as a clause.**  The selection answers the fortified copy
+wherever the copy's own contract holds: a length that fits the destination's
+declared extent and a source range that reads.  The firing arm is not asked for —
+it is not a value (`numMemcpyChkAnswer_fires`) — so this is a clause about the
+arm the comparator's copies use, not a claim that the check cannot fire. -/
+def FbMemcpyAnswered (calls : Calls) : Prop :=
+  ∀ (dst src : Nat) (n destlen : BitVec 64) (mem : Mem) (next : Nat) (bs : List UInt8),
+    n.toNat ≤ destlen.toNat → readBytes mem src n.toNat = some bs →
+      calls "__memcpy_chk" [.ptr dst, .ptr src, .int 64 n, .int 64 destlen] mem next =
+        some { ret := .ptr dst, mem := writeBytes mem dst bs, next := next }
+
+/-- **The release selection answers the fortified copy.**  The binding is in
+`stage2NumFastCalls`, so the fifth answer is the model's and the clause holds by
+`numMemcpyChkAnswer_copy`. -/
+theorem stage2NumFastCalls_memcpyAnswered (epow : Int → Option EPow) :
+    FbMemcpyAnswered (stage2NumFastCalls epow) := by
+  intro dst src n destlen mem next bs hfit hread
+  rw [stage2NumFastCalls_memcpy_chk]
+  exact numMemcpyChkAnswer_copy hfit hread
+
+/-! ### The copy's byte count
+
+`stk_copy` passes `(size_t)s->n * sizeof s->w[0]`: the count is `%1`, an `int`
+sign-extended to `i64` and shifted left three bits.  At a count that fits the
+source's 96-limb array the sign extension is zero extension, the shift does not
+wrap, and the count is `8 * v->n ≤ 768`, which the destination's declared `776`
+bytes cover.  That is the whole of the check's non-firing condition at this
+body's copies, and it is a hypothesis below because the tree has no invariant
+that supplies `v->n ≤ 96`. -/
+
+/-- The byte count the comparator's copies pass, as a `Nat`: the length the copy
+takes.  It is the `.toNat` of the `i64` the block binds, whose shift amount is
+the instruction's `(3#64).toNat`; that is definitionally a bare `3` (`(3#64)`
+is `BitVec.ofNat 64 3`), which is what `numCmpCopyLen_eq` reduces with. -/
+def numCmpCopyLen (nw : BitVec 32) : Nat :=
+  ((BitVec.ofNat 64 (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat) <<< 3).toNat
+
+/-- A 32-bit value re-read at its own width is itself. -/
+theorem numCmp_ofNat_toNat_32 (nw : BitVec 32) : BitVec.ofNat 32 nw.toNat = nw := by
+  rw [BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+/-- A non-negative 32-bit count's sign extension is its zero extension. -/
+theorem numCmp_signExtend_toNat {nw : BitVec 32} (hmsb : nw.msb = false) :
+    (BitVec.signExtend 64 nw).toNat = nw.toNat := by
+  rw [BitVec.toNat_signExtend, hmsb]
+  simp only [Bool.false_eq_true, ite_false, Nat.add_zero]
+  rw [BitVec.toNat_setWidth, Nat.mod_eq_of_lt]
+  have := nw.isLt
+  omega
+
+/-- The count's top bit is clear at every count that fits the object. -/
+theorem numCmp_msb_of_le {nw : BitVec 32} (hn : nw.toNat ≤ 96) : nw.msb = false := by
+  rw [BitVec.msb_eq_decide, decide_eq_false_iff_not]
+  have := nw.isLt
+  omega
+
+/-- **The copy's length is eight bytes a limb.**  At a count up to `96`, the
+sign extension, the shift and the truncation are the arithmetic they look like:
+`n` bytes is `8 * v->n`. -/
+theorem numCmpCopyLen_eq {nw : BitVec 32} (hn : nw.toNat ≤ 96) :
+    numCmpCopyLen nw = 8 * nw.toNat := by
+  unfold numCmpCopyLen
+  rw [numCmp_ofNat_toNat_32]
+  have hsext := numCmp_signExtend_toNat (numCmp_msb_of_le hn)
+  rw [BitVec.toNat_shiftLeft]
+  have hof : (BitVec.ofNat 64 (BitVec.signExtend 64 nw).toNat).toNat = nw.toNat := by
+    rw [BitVec.toNat_ofNat, hsext]
+    have := nw.isLt
+    omega
+  rw [hof]
+  simp only [Nat.shiftLeft_eq]
+  have := nw.isLt
+  omega
+
+/-- **The count fits the destination.**  `96` limbs are `768` bytes, and the
+comparator's `StkBn` is declared `776`: a count that fits the source object's own
+array is a length the check passes.  This is the constant-sizes half of the
+non-firing argument; the count's own bound is not derivable here. -/
+theorem numCmpCopyLen_le {nw : BitVec 32} (hn : nw.toNat ≤ 96) :
+    numCmpCopyLen nw ≤ 776 := by
+  rw [numCmpCopyLen_eq hn]
+  omega
+
+/-- **What the comparator reads back after the copy.**  The destination's first
+`numCmpCopyLen` bytes are the source's: the copy is the identity on that span,
+which is what makes the limbs `stk_mul_u64` reads at `b` the ones `%v->pow`
+held. -/
+theorem numCmp_copy_span (mem : Mem) (b src : Nat) (bs : List UInt8) (nw : BitVec 32)
+    (hread : readBytes mem src (numCmpCopyLen nw) = some bs) :
+    readBytes (writeBytes mem b bs) b (numCmpCopyLen nw) = some bs := by
+  have hlen : bs.length = numCmpCopyLen nw := JsonEntrySteps.readBytes_length mem src _ hread
+  rw [← hlen]
+  exact readBytes_writeBytes_same mem bs (addr := b)
+
+/-- **The copy leaves the count cell alone.**  `if.then` writes the count at
+`b + 768`; the copy's range is `b … b + 8·n - 1`, and `8·n ≤ 768`, so the count
+`stk_mul_u64` reads is still the one the block above wrote.  At a count of `96`
+the copy ends one byte short of the cell. -/
+theorem numCmp_copy_count (mem : Mem) (b src : Nat) (bs : List UInt8) (nw : BitVec 32)
+    (hcount : nw.toNat ≤ 96)
+    (hread : readBytes mem src (numCmpCopyLen nw) = some bs) :
+    readBytes (writeBytes mem b bs) (b + 768) 4 = readBytes mem (b + 768) 4 := by
+  have hlen : bs.length = numCmpCopyLen nw := JsonEntrySteps.readBytes_length mem src _ hread
+  refine readBytes_writeBytes_span mem bs b (b + 768) 4 (Or.inr ?_)
+  rw [hlen, numCmpCopyLen_eq hcount]
+  omega
+
 /-! ### The step vocabulary this body needs
 
 Two instruction shapes the tree's chain steps do not already cover are stated
 here: the two-argument void call (the lifetime markers) and the 32-bit `sext`.
 The four-argument call that ends `if.then.i` is stated for *any* argument list at
-a callee that answers nothing, which is the only fact about it this module uses. -/
+a callee that answers nothing — the unanswered copy's arm — and the answered
+arm goes through the environment's own answer (`denoteCode_call_some`, in
+`JsonStage2NumFastCalls`). -/
 
 /-- A two-argument void call: the lifetime markers' shape. -/
 theorem denoteCode_callVoid2 (calls : Calls) (env : Env) (s : State) (callee : String)
@@ -1719,6 +1861,97 @@ theorem numCmp_ifThenI_denote_none {base : Calls} {env : Env} {s : State}
       exact hmem vs mem next)
     _
 
+/-- `if.then.i`'s cells after the copy: the dispatched call's result, the byte
+count, the sign extension, and the source pointer, in the order the block binds
+them. -/
+def numCmpIfThenIEnv (v J eB nxt b : Nat) (sw nw : BitVec 32) : Env :=
+  ("%call.i.i", .ptr b) ::
+  ("%mul.i", .int 64 (((BitVec.ofNat 64 (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat) <<< (3#64).toNat))) ::
+  ("%conv.i", .int 64 (BitVec.ofNat 64
+    (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat)) ::
+  ("%pow", .ptr (v + 776)) ::
+  numCmpIfThenEnv v J eB nxt sw nw
+
+/-- **`if.then.i` at an answered copy.**  The block forms the destination's byte
+count and calls `__memcpy_chk`; when the selection answers that call, the run
+continues to `stk_copy.exit` with the destination holding the source's `n` bytes
+and the allocator state unchanged.  The count's fit (`hfit`) and the source's
+readability (`hread`) are the copy contract's hypotheses: neither follows from
+the body, and `hfit` is where the destination-size check is carried. -/
+theorem numCmp_ifThenI_denote_copy {base : Calls} {env : Env} {s : State}
+    {b v : Nat} {nw : BitVec 32} {bs : List UInt8}
+    (hcopy : FbMemcpyAnswered base)
+    (hb : lookupName env "%b" = some (.ptr b))
+    (hv : lookupName env "%v" = some (.ptr v))
+    (h1 : lookupName env "%1" = some (.int 32 nw))
+    (hfit : numCmpCopyLen nw ≤ 776)
+    (hread : readBytes s.mem (v + 776) (numCmpCopyLen nw) = some bs) :
+    denoteCode (numCmpCalls base) numCmpIfThenIInstrs (stateAt env s) =
+      some (stateAt
+        (("%call.i.i", .ptr b) ::
+         ("%mul.i", .int 64 (((BitVec.ofNat 64 (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat) <<< (3#64).toNat))) ::
+         ("%conv.i", .int 64 (BitVec.ofNat 64
+           (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat)) ::
+         ("%pow", .ptr (v + 776)) :: env)
+        { s with mem := writeBytes s.mem b bs, next := s.next }) := by
+  unfold numCmpIfThenIInstrs
+  refine (denoteCode_gep8_imm (calls := numCmpCalls base)
+    (env := env) (s := s) (d := "%pow") (base := "%v") (c := 0x0000000000000308#64)
+    (hb := hv) (hc := by decide) _).trans ?_
+  refine (denoteCode_sext (calls := numCmpCalls base)
+    (env := ("%pow", .ptr (v + 776)) :: env) (s := s) (d := "%conv.i")
+    (v := "%1") (wIn := 32) (wOut := 64)
+    (hv := by
+      rw [show lookupName (("%pow", .ptr (v + 776)) :: env) "%1" = lookupName env "%1" from by
+        rw [lookupName_cons_ne _ _ (by decide)]]
+      exact h1) _).trans ?_
+  refine (denoteCode_shl_imm (calls := numCmpCalls base)
+    (env := ("%conv.i", .int 64 (BitVec.ofNat 64
+      (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat)) ::
+      ("%pow", .ptr (v + 776)) :: env)
+    (s := s) (d := "%mul.i") (a := "%conv.i") (c := 0x0000000000000003#64)
+    (ha := lookupName_cons_self _ _ _) _).trans ?_
+  refine (denoteCode_call_some (numCmpCalls base) _ s "%call.i.i" Ty.ptr
+    "__memcpy_chk"
+    [(Ty.ptr, Operand.reg "%b"), (Ty.ptr, Operand.reg "%pow"),
+     (Ty.int 64, Operand.reg "%mul.i"),
+     (Ty.int 64, Operand.imm (Const.int 64 0x0000000000000308#64))]
+    [.ptr b, .ptr (v + 776), .int 64 (((BitVec.ofNat 64 (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat) <<< (3#64).toNat)),
+     .int 64 (BitVec.ofNat 64 776)]
+    ⟨.ptr b, writeBytes s.mem b bs, s.next⟩ ?_ ?_ _).trans ?_
+  · -- the four operands read at the block's own cells
+    have hb' : lookupName
+        (("%mul.i", .int 64 (((BitVec.ofNat 64 (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat) <<< (3#64).toNat))) ::
+         ("%conv.i", .int 64 (BitVec.ofNat 64
+           (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat)) ::
+         ("%pow", .ptr (v + 776)) :: env) "%b" = some (.ptr b) := by
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide),
+        lookupName_cons_ne _ _ (by decide)]
+      exact hb
+    have hp' : lookupName
+        (("%mul.i", .int 64 (((BitVec.ofNat 64 (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat) <<< (3#64).toNat))) ::
+         ("%conv.i", .int 64 (BitVec.ofNat 64
+           (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat)) ::
+         ("%pow", .ptr (v + 776)) :: env) "%pow" = some (.ptr (v + 776)) := by
+      rw [lookupName_cons_ne _ _ (by decide), lookupName_cons_ne _ _ (by decide)]
+      exact lookupName_cons_self _ _ _
+    have hm' : lookupName
+        (("%mul.i", .int 64 (((BitVec.ofNat 64 (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat) <<< (3#64).toNat))) ::
+         ("%conv.i", .int 64 (BitVec.ofNat 64
+           (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat)) ::
+         ("%pow", .ptr (v + 776)) :: env) "%mul.i"
+        = some (.int 64 (((BitVec.ofNat 64 (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat) <<< (3#64).toNat))) :=
+      lookupName_cons_self _ _ _
+    simp only [evalOperands, evalOperand, stateAt, Const.toValue, hb', hp', hm']
+  · -- the copy's answer, from the fifth clause
+    rw [numCmpCalls_memcpy]
+    refine hcopy b (v + 776) (((BitVec.ofNat 64 (BitVec.signExtend 64 (BitVec.ofNat 32 nw.toNat)).toNat) <<< (3#64).toNat)) (BitVec.ofNat 64 776)
+      s.mem s.next bs ?_ hread
+    show numCmpCopyLen nw ≤ (BitVec.ofNat 64 776).toNat
+    rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by decide : 776 < 2 ^ 64)]
+    exact hfit
+  · rfl
+
 /-! ### The step at a pinned block -/
 
 /-- A block whose run ends undefined, at its own pin. -/
@@ -1840,12 +2073,151 @@ theorem numCmp_run_ub (base : Calls) (v J eB : Nat) (mem : Mem) (next : Nat)
   rw [show (2 : Nat) = 1 + 1 from rfl, numCmp_runFuel_jump h2 1]
   rw [show (1 : Nat) = 0 + 1 from rfl, runFuel.eq_2, h3]
 
-/-! ### The body's answer, and why it is not the arm
+/-- **The run passes through the copy.**  With the fifth answer supplied, the
+three control steps that led to `some .ub` at an unanswered base lead instead to
+`stk_copy.exit`, and the run has the destination holding the source's bytes:
+`runFuel` at `3 + k` steps is `runFuel` at `k` from that state.  The hypotheses
+on the count and the source range are the copy's contract — `hfit` is the
+destination-size check, carried rather than discharged. -/
+theorem numCmp_run_copy (base : Calls) (hcopy : FbMemcpyAnswered base)
+    (v J eB : Nat) (mem : Mem) (next : Nat) (sw nw : BitVec 32) (bs : List UInt8)
+    (hsw : readBytes mem (v + 1560) 4 = some (natToBytes sw.toNat 4))
+    (hnw : readBytes mem (v + 1544) 4 = some (natToBytes nw.toNat 4))
+    (hsw0 : evalICmp .eq sw 0 = 0) (hnw0 : evalICmp .eq nw 0 = 0)
+    (hfit : numCmpCopyLen nw ≤ 776)
+    (hread : readBytes (writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4))
+      (v + 776) (numCmpCopyLen nw) = some bs) :
+    ∀ k,
+      runFuel (numCmpCalls base) (3 + k) numCmpBody (numCmpEntryState v J eB mem next) =
+        runFuel (numCmpCalls base) k numCmpBody
+          (stateAt (numCmpIfThenIEnv v J eB next (next + 776) sw nw)
+            { numCmpRaw mem next with
+              next := next + 776 + 776,
+              mem := writeBytes (writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4))
+                (next + 776) bs,
+              pc := "stk_copy.exit", pre := some "if.then.i" }) := by
+  intro k
+  have hpc0 : (numCmpEntryState v J eB mem next).pc = "entry" := rfl
+  have hcode0 : denoteCode (numCmpCalls base) numCmpEntryInstrs
+      (numCmpEntryState v J eB mem next) =
+      some (stateAt (numCmpAfterEntryEnv v J eB next sw)
+        { numCmpRaw mem next with next := next + 776 + 776 }) := by
+    have hst : numCmpEntryState v J eB mem next =
+        stateAt (numCmpEntryEnv v J eB) { numCmpRaw mem next with next := next } := rfl
+    rw [hst]
+    exact numCmp_entry_denote base v J eB (numCmpRaw mem next) next sw hsw
+  have hbit0 : evalOperand
+      (stateAt (numCmpAfterEntryEnv v J eB next sw)
+        { numCmpRaw mem next with next := next + 776 + 776 }) (.reg "%tobool.not") =
+      some (.int 1 (evalICmp .eq sw 0)) :=
+    evalOperand_reg_of _ _ _ _ (by simp [numCmpAfterEntryEnv])
+  have h1 : step (numCmpCalls base) numCmpBody (numCmpEntryState v J eB mem next) =
+      .jump (stateAt (numCmpAfterEntryEnv v J eB next sw)
+        { numCmpRaw mem next with
+          next := next + 776 + 776, pc := "if.then", pre := some "entry" }) := by
+    unfold step execTerm
+    rw [hpc0, numCmp_findBlock_entry]
+    simp only [hcode0, hbit0, hsw0]
+    rfl
+  have hcode1 : denoteCode (numCmpCalls base) numCmpIfThenInstrs
+      (stateAt (numCmpAfterEntryEnv v J eB next sw)
+        { numCmpRaw mem next with
+          next := next + 776 + 776, pc := "if.then", pre := some "entry" }) =
+      some (stateAt (numCmpIfThenEnv v J eB next sw nw)
+        { numCmpRaw mem next with
+          next := next + 776 + 776,
+          mem := writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4),
+          pc := "if.then", pre := some "entry" }) := by
+    have h := numCmp_ifThen_denote base v J eB next
+      { numCmpRaw mem next with
+        next := next + 776 + 776, pc := "if.then", pre := some "entry" } sw nw hnw
+    simpa only [numCmpRaw] using h
+  have hbit1 : evalOperand
+      (stateAt (numCmpIfThenEnv v J eB next sw nw)
+        { numCmpRaw mem next with
+          next := next + 776 + 776,
+          mem := writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4),
+          pc := "if.then", pre := some "entry" }) (.reg "%tobool.not.i") =
+      some (.int 1 (evalICmp .eq nw 0)) :=
+    evalOperand_reg_of _ _ _ _ (by simp [numCmpIfThenEnv])
+  have h2 : step (numCmpCalls base) numCmpBody
+      (stateAt (numCmpAfterEntryEnv v J eB next sw)
+        { numCmpRaw mem next with
+          next := next + 776 + 776, pc := "if.then", pre := some "entry" }) =
+      .jump (stateAt (numCmpIfThenEnv v J eB next sw nw)
+        { numCmpRaw mem next with
+          next := next + 776 + 776,
+          mem := writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4),
+          pc := "if.then.i", pre := some "if.then" }) := by
+    have hpc1 : (stateAt (numCmpAfterEntryEnv v J eB next sw)
+        { numCmpRaw mem next with
+          next := next + 776 + 776, pc := "if.then", pre := some "entry" }).pc = "if.then" := rfl
+    unfold step execTerm
+    rw [hpc1, numCmp_findBlock_ifThen]
+    simp only [hcode1, hbit1, hnw0]
+    rfl
+  have hden3 := numCmp_ifThenI_denote_copy (base := base) (hcopy := hcopy)
+    (env := numCmpIfThenEnv v J eB next sw nw)
+    (s := { numCmpRaw mem next with
+      next := next + 776 + 776,
+      mem := writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4),
+      pc := "if.then.i", pre := some "if.then" })
+    (b := next + 776) (v := v) (nw := nw) (bs := bs)
+    (by simp only [numCmpIfThenEnv, numCmpAfterEntryEnv]; block_lk)
+    (by simp only [numCmpIfThenEnv, numCmpAfterEntryEnv, numCmpEntryEnv]; block_lk)
+    (by simp only [numCmpIfThenEnv]; block_lk)
+    hfit hread
+  have hpc2 : (stateAt (numCmpIfThenEnv v J eB next sw nw)
+      { numCmpRaw mem next with
+        next := next + 776 + 776,
+        mem := writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4),
+        pc := "if.then.i", pre := some "if.then" }).pc = "if.then.i" := rfl
+  have h3 : step (numCmpCalls base) numCmpBody
+      (stateAt (numCmpIfThenEnv v J eB next sw nw)
+        { numCmpRaw mem next with
+          next := next + 776 + 776,
+          mem := writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4),
+          pc := "if.then.i", pre := some "if.then" }) =
+      .jump (stateAt (numCmpIfThenIEnv v J eB next (next + 776) sw nw)
+        { numCmpRaw mem next with
+          next := next + 776 + 776,
+          mem := writeBytes (writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4))
+            (next + 776) bs,
+          pc := "stk_copy.exit", pre := some "if.then.i" }) := by
+    unfold step execTerm
+    rw [hpc2, numCmp_findBlock_ifThenI]
+    simp only [hden3]
+    rfl
+  rw [show (3 + k : Nat) = 1 + (2 + k) from by omega, numCmp_runFuel_jump h1 (2 + k)]
+  rw [show (2 + k : Nat) = 1 + (1 + k) from by omega, numCmp_runFuel_jump h2 (1 + k)]
+  exact numCmp_runFuel_jump h3 k
 
-`numCmpRunAnswer` is the body's answer at the arguments the walk passes; the
-first theorem below is that it is *nothing* wherever the fortified copy is
-unanswered, so a selection that adds `stk_cmp` to the callee half and nothing
-else does not close the loop's site. -/
+/-- **The answered copy leaves the run unfinished where the unanswered one
+stops.**  At three steps, `numCmp_run_ub` is `some .ub`; with the fifth answer
+the run instead wants more fuel at `stk_copy.exit` — `runFuel` at three steps is
+`none`, which is the fuel's exhaustion and not the body's answer. -/
+theorem numCmp_run_copy_unfinished (base : Calls) (hcopy : FbMemcpyAnswered base)
+    (v J eB : Nat) (mem : Mem) (next : Nat) (sw nw : BitVec 32) (bs : List UInt8)
+    (hsw : readBytes mem (v + 1560) 4 = some (natToBytes sw.toNat 4))
+    (hnw : readBytes mem (v + 1544) 4 = some (natToBytes nw.toNat 4))
+    (hsw0 : evalICmp .eq sw 0 = 0) (hnw0 : evalICmp .eq nw 0 = 0)
+    (hfit : numCmpCopyLen nw ≤ 776)
+    (hread : readBytes (writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4))
+      (v + 776) (numCmpCopyLen nw) = some bs) :
+    runFuel (numCmpCalls base) 3 numCmpBody (numCmpEntryState v J eB mem next) = none := by
+  rw [show (3 : Nat) = 3 + 0 from rfl,
+    numCmp_run_copy base hcopy v J eB mem next sw nw bs hsw hnw hsw0 hnw0 hfit hread 0]
+  rfl
+
+/-! ### The body's answer at an unanswered base
+
+`numCmpRunAnswer` is the body's answer at the arguments the walk passes.  The
+theorems below are the base-parametric ones: at a base that leaves the fortified
+copy unanswered the three-step run is `some .ub`, so an answered `stk_cmp`
+inherits the refusal.  They are the record of why the fifth binding exists.  At
+the release selection the copy *is* answered, and the run is
+`numCmp_run_copy_stage2`'s: three steps reach `stk_copy.exit` and the body's
+answer waits on the rest of its blocks. -/
 
 /-- A run's outcome as the call's answer. -/
 def numCmpOptionOutcome : Option Outcome → Nat → Option CallOutcome
@@ -1904,56 +2276,55 @@ theorem numCmpBodyCalls_none (base : Calls) (v : Nat) (J eB : BitVec 64)
   rw [if_pos rfl]
   exact numCmpRunAnswer_none base v J eB mem next sw nw hsw hnw hsw0 hnw0 hmem
 
-/-- The release selection leaves the fortified copy unanswered: it answers the
-conversion's three callees, the lifetime markers, `memset` and the trap, and
-every other symbol is `noCalls`'. -/
-theorem stage2NumFastCalls_memcpy (epow : Int → Option EPow) (vs : List Value)
-    (mem : Mem) (next : Nat) :
-    stage2NumFastCalls epow "__memcpy_chk" vs mem next = none := by
-  simp only [stage2NumFastCalls, numFastCalls, s2HelperCalls, JsonStage2IR.stage2Calls]
-  rfl
-
-/-- **The release selection still fails with `stk_cmp` answered.**  The body's
-answer is `none` there too, because the symbol it stops at is the fifth one. -/
-theorem numCmpBodyCalls_stage2_none (epow : Int → Option EPow) (v : Nat)
-    (J eB : BitVec 64) (mem : Mem) (next : Nat) (sw nw : BitVec 32)
+/-- **The release selection runs the body through its copy.**  `numCmp_run_copy`
+with the copy's clause discharged by `stage2NumFastCalls_memcpyAnswered`: the
+binding is what turns the three-step `ub` into the run at `stk_copy.exit`, and
+the destination holds the source's bytes there.  The count's fit and the source's
+range are still hypotheses — the check they satisfy is the one the tree cannot
+rule out. -/
+theorem numCmp_run_copy_stage2 (epow : Int → Option EPow) (v J eB : Nat)
+    (mem : Mem) (next : Nat) (sw nw : BitVec 32) (bs : List UInt8)
     (hsw : readBytes mem (v + 1560) 4 = some (natToBytes sw.toNat 4))
     (hnw : readBytes mem (v + 1544) 4 = some (natToBytes nw.toNat 4))
-    (hsw0 : evalICmp .eq sw 0 = 0) (hnw0 : evalICmp .eq nw 0 = 0) :
-    numCmpBodyCalls (stage2NumFastCalls epow) "stk_cmp"
-      [.ptr v, .int 64 J, .int 64 eB] mem next = none :=
-  numCmpBodyCalls_none (stage2NumFastCalls epow) v J eB mem next sw nw hsw hnw hsw0 hnw0
-    (fun vs m n => stage2NumFastCalls_memcpy epow vs m n)
+    (hsw0 : evalICmp .eq sw 0 = 0) (hnw0 : evalICmp .eq nw 0 = 0)
+    (hfit : numCmpCopyLen nw ≤ 776)
+    (hread : readBytes (writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4))
+      (v + 776) (numCmpCopyLen nw) = some bs) :
+    ∀ k,
+      runFuel (numCmpCalls (stage2NumFastCalls epow)) (3 + k) numCmpBody
+          (numCmpEntryState v J eB mem next) =
+        runFuel (numCmpCalls (stage2NumFastCalls epow)) k numCmpBody
+          (stateAt (numCmpIfThenIEnv v J eB next (next + 776) sw nw)
+            { numCmpRaw mem next with
+              next := next + 776 + 776,
+              mem := writeBytes (writeBytes mem (next + 776 + 768) (natToBytes nw.toNat 4))
+                (next + 776) bs,
+              pc := "stk_copy.exit", pre := some "if.then.i" }) :=
+  numCmp_run_copy (stage2NumFastCalls epow) (stage2NumFastCalls_memcpyAnswered epow)
+    v J eB mem next sw nw bs hsw hnw hsw0 hnw0 hfit hread
 
 /-! ### The restated boundary
 
-The epilogue's boundary now names the body's own first answer as well: the
-selection has to answer `stk_cmp` *and* the fortified copy.  What the answered
-boundary still carries is named at the end: the loop's entry state, whose word
-and cells are read from the digits array and the staged window. -/
-
-/-- The selection answers the fortified copy. -/
-def FbMemcpyAnswered (calls : Calls) : Prop :=
-  ∀ (vs : List Value) (mem : Mem) (next : Nat),
-    ∃ r : CallOutcome, calls "__memcpy_chk" vs mem next = some r
+The epilogue's boundary names the fifth answer as well: the selection has to
+answer `stk_cmp` and the fortified copy.  The copy's clause is now the release
+selection's own (`stage2NumFastCalls_memcpyAnswered`), so at
+`stage2NumFastCalls` the boundary reduces to `FbEpilogueAnswered`; what the
+answered boundary still carries is named at the end: the loop's entry state,
+whose word and cells are read from the digits array and the staged window. -/
 
 /-- The epilogue's boundary with the fifth answer added. -/
 def FbEpilogueAnsweredMem (calls : Calls) (d : Decimal) (digA out J : Nat) : Prop :=
   FbEpilogueAnswered calls d digA out J ∧ FbMemcpyAnswered calls
 
-/-- The release selection does not answer the fortified copy. -/
-theorem stage2NumFastCalls_not_memcpyAnswered (epow : Int → Option EPow) :
-    ¬ FbMemcpyAnswered (stage2NumFastCalls epow) := by
-  intro h
-  obtain ⟨r, hr⟩ := h [] [] 0
-  rw [stage2NumFastCalls_memcpy] at hr
-  cases hr
-
-/-- The release selection is not the boundary even with `stk_cmp` answered. -/
-theorem fbEpilogueAnsweredMem_not_release (epow : Int → Option EPow)
-    (d : Decimal) (digA out J : Nat) :
-    ¬ FbEpilogueAnsweredMem (stage2NumFastCalls epow) d digA out J :=
-  fun h => stage2NumFastCalls_not_memcpyAnswered epow h.2
+/-- **The release selection is the boundary as soon as the comparison is
+answered.**  The copy's half is the binding's, so this is where the fifth symbol
+stops being an obligation: `FbEpilogueAnswered` alone gives the boundary at
+`stage2NumFastCalls`. -/
+theorem fbEpilogueAnsweredMem_stage2 (epow : Int → Option EPow)
+    (d : Decimal) (digA out J : Nat)
+    (h : FbEpilogueAnswered (stage2NumFastCalls epow) d digA out J) :
+    FbEpilogueAnsweredMem (stage2NumFastCalls epow) d digA out J :=
+  ⟨h, stage2NumFastCalls_memcpyAnswered epow⟩
 
 /-- **The fallback's tail at the boundary with both answers.**  The conclusion is
 `fb_tail_at`'s, at the clause the loop can be stated at once the callee and the
@@ -2003,6 +2374,26 @@ theorem fb_loopEntry_tail {calls : Calls} {d : Decimal} {out err digA J : Nat}
     fb_tail_answeredMem hd hEpi hStart e hpc hword htie
   exact ⟨e, o, r, hpc, hrun, hret, hnext, hmem, hunch⟩
 
+/-- **The tail at the release selection, the copy's clause discharged.**  At
+`stage2NumFastCalls` the fifth answer is the tree's own, so the only clause the
+boundary still takes is the epilogue's: `FbEpilogueAnswered` is the hypothesis,
+and what is left is `FbLoopEntry`'s entry state. -/
+theorem fb_loopEntry_tail_stage2 {epow : Int → Option EPow} {d : Decimal}
+    {out err digA J : Nat}
+    (hd : d.wellFormed)
+    (hEpi : FbEpilogueAnswered (stage2NumFastCalls epow) d digA out J)
+    (hStart : NumFastFallback.FbStart291 (stage2NumFastCalls epow) digA)
+    (hEntry : FbLoopEntry d) :
+    ∃ (e : State) (o r : CallOutcome),
+      e.pc = "while.end253.i.i" ∧
+      runFuel (stage2NumFastCalls epow) (J + 2) numFastBody (stateAt e.env e) =
+        some (.ret (some o.ret) o.mem) ∧
+      o.ret = .int 32 1 ∧
+      o.next = r.next ∧
+      o.mem = writeBytes r.mem out (wordBytes 8 (strtodSpec d).toBits) ∧
+      UnchangedOutside r.mem o.mem [(out, 8), (err, 8)] :=
+  fb_loopEntry_tail hd (fbEpilogueAnsweredMem_stage2 epow d digA out J hEpi) hStart hEntry
+
 /-! ### Axiom footprints
 
 Pinned with `#guard_msgs` so the build checks the footprints rather than printing
@@ -2037,9 +2428,45 @@ prints `sorryAx` under the same command, which is the control the tree records. 
 #guard_msgs in
 #print axioms numCmpBodyCalls_none
 
-/-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.stage2NumFastCalls_memcpy' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms stage2NumFastCalls_memcpy
+/-- info: 'LeanLLVM.Refinement.numMemcpyChkAnswer_copy' depends on axioms: [propext] -/
+#guard_msgs (whitespace := lax) in
+#print axioms numMemcpyChkAnswer_copy
+
+/-- info: 'LeanLLVM.Refinement.numMemcpyChkAnswer_fires_at_98' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms numMemcpyChkAnswer_fires_at_98
+
+/-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.numCmpCopyLen_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms numCmpCopyLen_eq
+
+/-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.numCmp_copy_span' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms numCmp_copy_span
+
+/-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.numCmp_copy_count' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms numCmp_copy_count
+
+/-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.numCmp_ifThenI_denote_copy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms numCmp_ifThenI_denote_copy
+
+/-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.numCmp_run_copy' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms numCmp_run_copy
+
+/-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.numCmp_run_copy_stage2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms numCmp_run_copy_stage2
+
+/-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.stage2NumFastCalls_memcpyAnswered' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms stage2NumFastCalls_memcpyAnswered
+
+/-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.fb_loopEntry_tail_stage2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs (whitespace := lax) in
+#print axioms fb_loopEntry_tail_stage2
 
 /-- info: 'LeanLLVM.Refinement.NumFastCalleeCmp.fb_tail_answeredMem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

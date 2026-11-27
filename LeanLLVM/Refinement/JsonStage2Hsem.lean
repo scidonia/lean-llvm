@@ -82,8 +82,10 @@ boundary rather than a numeric defect:
 * a body-level proof therefore needs a `Calls` selection that answers the three
   callees and a staging that stages the two tables (`NUMF_EL1_P10`,
   `NUMF_EL1_POW10`).  Both are supplied now, in
-  `JsonStage2NumFastCalls`: `stage2NumFastCalls` answers the three callees (each
-  modelled from its measured C text), the three sites' steps are jumps at it
+  `JsonStage2NumFastCalls`: `stage2NumFastCalls` answers the four callees the
+  sites reach — three modelled from their measured C text, and the library's
+  bounds-checked copy modelled from its own contract rather than from C — the
+  sites' steps are jumps at it
   rather than `ub`, and `numFastTables_holds` is `NumFastTables` at a concrete
   staging.  What `NumFastBodyArm` still needs is the conversion's *run* — the
   three digit runs' arms, the inlined tier-1 arithmetic, and the tier-2

@@ -26,14 +26,20 @@ callee half, and has no segmentation field either.
 `Calls` selection is the tree's model of the three out-of-line functions:
 `num_d8_el1` (`kernel/json/measured/numf_el1.h`, modelled as `numD8Answer`),
 `num_el_el1` (`numel_el.h`, modelled as `numElAnswer epow`) and `stk_mul_u64`
-(`kernel/json/stage2.c`, modelled as `numStkMulAnswer`).  `stage2NumFastCalls epow`
-is that model: `numFastCalls` answers the three symbols and delegates the rest to
+(`kernel/json/stage2.c`, modelled as `numStkMulAnswer`), and the fortified
+`__memcpy_chk` that hardening emits in place of `stk_copy`'s variable-length
+`memcpy` (modelled as `numMemcpyChkAnswer`, from the library function's contract
+rather than from the C text).  `stage2NumFastCalls epow`
+is that model: `numFastCalls` answers the four symbols and delegates the rest to
 the walk's `s2HelperCalls`.  The field says the release theorem's selection is
 this value; the content that the compiled bodies behave as their measured C text
 is the trust statement the structure names, and is what the discharge path below
 would replace with refined bodies.  At `s2HelperCalls` the three sites are `ub`
 (`JsonStage2NumFastArm.numFast_step_ifEnd268_ub` and its siblings), which is why
-the arm takes `calls` as a parameter at all.
+the arm takes `calls` as a parameter at all.  The copy's model is the one place
+the equality has an arm the equality itself does not vouch for: the
+destination-size check is a hypothesis of `numMemcpyChkAnswer_copy`, so a caller
+of `numFastCalleesAnswered_memcpyChk` supplies the fit.
 
 **The segmentation half — proved, for all four shapes.**  `JsonNumberSegmentation`
 proves the reader's cut of the lexeme in the seams' shape: `intRun_of_reader` at
@@ -157,10 +163,16 @@ the reader's own cut reaches the integer run, the fraction run that ends the
 token, and the fraction run that an exponent stops inside. -/
 
 /-- **The callee half.**  The conversion's `Calls` selection is the tree's model
-of the three out-of-line functions: `numFastCalls` answers `num_d8_el1`,
-`num_el_el1` and `stk_mul_u64` from the measured C text and delegates the rest to
-the walk's helpers.  The content that the compiled bodies behave as that text is
-the trust statement, not an equality this module proves. -/
+of the functions the compiled body calls out of line: `numFastCalls` answers
+`num_d8_el1`, `num_el_el1` and `stk_mul_u64` from the measured C text, and the
+fortified `__memcpy_chk` that the compiler line's hardening emits in place of
+`stk_copy`'s variable-length `memcpy` from the library function's own contract,
+then delegates the rest to the walk's helpers.  The content that the compiled
+bodies behave as that text is the trust statement, not an equality this module
+proves.  The copy is the one symbol whose model has a hypothesis rather than a
+read-off text: its destination-size check is the caller's obligation, carried by
+`numMemcpyChkAnswer_copy`, and `numFastCalleesAnswered_memcpyChk` is that arm as
+this equality delivers it. -/
 def NumFastCalleesAnswered (calls : Calls) (epow : Int → Option EPow) : Prop :=
   calls = stage2NumFastCalls epow
 
@@ -228,10 +240,26 @@ structure JsonNumFastSegAssumed (calls : Calls) (epow : Int → Option EPow)
   exponent : d.ex ≠ none
 
 /-- **The callee half is inhabited by the tree's model.**  The selection the tree
-already supplies answers the three symbols by construction; what the assumption
+already supplies answers the four symbols by construction; what the assumption
 adds is that the compiled bodies agree with that model. -/
 theorem numFastCalleesAnswered_model (epow : Int → Option EPow) :
     NumFastCalleesAnswered (stage2NumFastCalls epow) epow := rfl
+
+/-- **The equality delivers the fortified copy.**  At a length that fits the
+destination's declared extent and a source range that reads, one rewrite by the
+callee half is the whole of the copy's answer: the selection's entry for
+`__memcpy_chk` is `numMemcpyChkAnswer`, and its contract is
+`numMemcpyChkAnswer_copy`.  The fit is a hypothesis here rather than a
+consequence of the equality — the model answers nothing over the extent — and
+that is the shape the callers carry. -/
+theorem numFastCalleesAnswered_memcpyChk {calls : Calls} {epow : Int → Option EPow}
+    (h : NumFastCalleesAnswered calls epow) {dst src : Nat} {n destlen : BitVec 64}
+    {mem : Mem} {next : Nat} {bs : List UInt8}
+    (hfit : n.toNat ≤ destlen.toNat) (hread : readBytes mem src n.toNat = some bs) :
+    calls "__memcpy_chk" [.ptr dst, .ptr src, .int 64 n, .int 64 destlen] mem next =
+      some { ret := .ptr dst, mem := writeBytes mem dst bs, next := next } := by
+  rw [h, stage2NumFastCalls_memcpy_chk]
+  exact numMemcpyChkAnswer_copy hfit hread
 
 /-! ### The covered shapes' segmentation, proved
 

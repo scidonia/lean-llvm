@@ -1,5 +1,6 @@
 /-
-`num_fast_el1`'s three out-of-line callees, answered, and the two tables staged.
+`num_fast_el1`'s three out-of-line callees and the hardened copy, answered, and
+the two tables staged.
 
 `JsonStage2NumFastArm` states the conversion arm's boundary as an environment's
 gap: `s2HelperCalls` answers none of `num_d8_el1`, `num_el_el1`, `stk_mul_u64`,
@@ -33,12 +34,21 @@ by a `uint64`).  Each is modelled here from that text:
   `numElWindowAddr` is the one `JsonStage2NumFastCalleeEl.numElGlobals` elects;
 * `numStkMulAnswer` reads a `StkBn` (96 `uint64` limbs and the `int` count at
   offset 768), multiplies it by the second argument with `stk_mul_add`'s
-  carry chain, and writes the count and limbs back.
+  carry chain, and writes the count and limbs back;
+* `numMemcpyChkAnswer` is `__memcpy_chk`, which is not a symbol of the measured
+  C at all: the compiler line's hardening turns `stk_copy`'s variable-length
+  `memcpy` into it, with the destination's own extent as the fourth argument.
+  The model is the library function's contract — copy `n` bytes when they fit
+  that extent and the source reads — and its firing arm is `none`, the answer
+  `llvm.trap` gets, because the real arm aborts.  The module does not claim the
+  arm is unreachable; `numMemcpyChkAnswer_copy` carries the fit as a hypothesis
+  and `numMemcpyChkAnswer_fires_at_98` shows the arm is inhabited at the
+  comparator's own `776`-byte destination.
 
-**The environment.**  `numFastCalls base epow` answers those three symbols and
+**The environment.**  `numFastCalls base epow` answers those four symbols and
 delegates every other symbol to `base`; `stage2NumFastCalls` is the composition
 with the walk's `s2HelperCalls`, so the lifetime markers, `memset` and the trap
-keep their answers and only the conversion's three callees change.
+keep their answers and only the conversion's callees change.
 
 **The tables.**  `NumFastTables` fixes the two tables' addresses through the
 environment and their contents through the memory.  `numFastTableEnv` and
@@ -214,6 +224,75 @@ def numStkMulAnswer (args : List Value) (mem : Mem) (next : Nat) : Option CallOu
           | none => some { ret := .int 1 0, mem := mem, next := next }
       | none => some { ret := .int 1 0, mem := mem, next := next }
   | _ => none
+
+/-! ### `__memcpy_chk`: the fortified copy
+
+`stk_copy` copies `(size_t)s->n * sizeof s->w[0]` bytes; at the measured compiler
+line the hardening replaces the library `memcpy` with `__memcpy_chk(dst, src, n,
+destlen)`, whose fourth argument is the destination's own declared extent — `776`
+for the comparator's local `StkBn`.  The model is the library function's
+contract: when `n` fits `destlen` and the source range reads, it copies `n` bytes
+and returns `dst`; the copy allocates nothing.
+
+**The check's arm.**  When `n` does not fit, `__memcpy_chk` calls `__chk_fail`,
+which aborts.  This semantics has no abort outcome — `llvm.trap` answers `none`
+for exactly that reason — so the firing arm is `none`: no value, no memory, no
+allocator state.  The model is therefore total, and it does *not* claim the check
+cannot fire.  Whether it can is the caller's obligation, and it is a hypothesis
+of `numMemcpyChkAnswer_copy`, the arm every caller uses.  `numMemcpyChkAnswer_fires`
+pins the other arm so the hypothesis is not vacuous. -/
+
+/-- `__memcpy_chk(dst, src, n, destlen)`: copy `n` bytes from `src` to `dst` when
+they fit the destination's declared extent, returning `dst`; the source range
+must read.  The firing arm — `n` over the extent — is `none`, the same answer
+`llvm.trap` gets: the real function aborts, and an abort is not a value here. -/
+def numMemcpyChkAnswer (args : List Value) (mem : Mem) (next : Nat) : Option CallOutcome :=
+  match args with
+  | [.ptr dst, .ptr src, .int 64 n, .int 64 destlen] =>
+      if n.toNat ≤ destlen.toNat then
+        match readBytes mem src n.toNat with
+        | some bs => some { ret := .ptr dst, mem := writeBytes mem dst bs, next := next }
+        | none => none
+      else none
+  | _ => none
+
+/-- **The copy's contract.**  At a length that fits the destination and a source
+range that reads, the answer copies exactly `n` bytes and returns the
+destination.  This is the arm every caller of the symbol uses;
+`numMemcpyChkAnswer_fires` is the arm this theorem does not cover. -/
+theorem numMemcpyChkAnswer_copy {dst src : Nat} {n destlen : BitVec 64} {mem : Mem}
+    {next : Nat} {bs : List UInt8}
+    (hfit : n.toNat ≤ destlen.toNat) (hread : readBytes mem src n.toNat = some bs) :
+    numMemcpyChkAnswer [.ptr dst, .ptr src, .int 64 n, .int 64 destlen] mem next =
+      some { ret := .ptr dst, mem := writeBytes mem dst bs, next := next } := by
+  simp [numMemcpyChkAnswer, hfit, hread]
+
+/-- **The check fires.**  A length over the destination's extent has no answer:
+`__memcpy_chk`'s `__chk_fail`.  The model answers `none` there rather than a
+copy, so a caller that cannot show its length fits has a run that stops, not one
+that copies out of bounds. -/
+theorem numMemcpyChkAnswer_fires {dst src : Nat} {n destlen : BitVec 64} {mem : Mem}
+    {next : Nat} (hfire : destlen.toNat < n.toNat) :
+    numMemcpyChkAnswer [.ptr dst, .ptr src, .int 64 n, .int 64 destlen] mem next = none := by
+  simp only [numMemcpyChkAnswer]
+  rw [if_neg (by omega)]
+
+/-- **The check's arm is inhabited, not defensive.**  At the comparator's own
+destination extent (`776`) a count of `98` limbs — one more than `StkBn` holds —
+is a length of `784` bytes, and the model answers nothing.  So the non-firing
+hypothesis of `numMemcpyChkAnswer_copy` is a real obligation on the caller: the
+count that fits the object is what rules the arm out, and nothing in the
+`StkBn` layout forces it. -/
+theorem numMemcpyChkAnswer_fires_at_98 :
+    numMemcpyChkAnswer
+      [.ptr 0, .ptr 0, .int 64 (BitVec.ofNat 64 (8 * 98)), .int 64 (BitVec.ofNat 64 776)]
+      [] 0 = none := by
+  refine numMemcpyChkAnswer_fires (n := BitVec.ofNat 64 (8 * 98))
+    (destlen := BitVec.ofNat 64 776) ?_
+  rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt (by decide : 776 < 2 ^ 64),
+    Nat.mod_eq_of_lt (by decide : 8 * 98 < 2 ^ 64)]
+  omega
 
 /-! ### `num_el_el1`: the deferred Eisel-Lemire kernel
 
@@ -520,19 +599,22 @@ theorem numElAnswer_counter_written {epow : Int → Option EPow} {w q : BitVec 6
 
 /-! ### The environment
 
-`numFastCalls` answers the three symbols and delegates everything else, so
-composing it with `s2HelperCalls` keeps the lifetime markers, `memset` and the
-trap. -/
+`numFastCalls` answers the three conversion symbols and the fortified copy, and
+delegates everything else, so composing it with `s2HelperCalls` keeps the
+lifetime markers, `memset` and the trap. -/
 
-/-- The conversion's three callees answered; every other symbol to `base`. -/
+/-- The conversion's callees answered — `num_d8_el1`, `num_el_el1`,
+`stk_mul_u64` and the fortified copy the hardened `stk_copy` calls — and every
+other symbol to `base`. -/
 def numFastCalls (base : Calls) (epow : Int → Option EPow) : Calls :=
   fun callee args mem next =>
     if callee = "num_d8_el1" then numD8Answer args mem next
     else if callee = "num_el_el1" then numElAnswer epow args mem next
     else if callee = "stk_mul_u64" then numStkMulAnswer args mem next
+    else if callee = "__memcpy_chk" then numMemcpyChkAnswer args mem next
     else base callee args mem next
 
-/-- The walk's environment with the conversion's three callees answered. -/
+/-- The walk's environment with the conversion's callees answered. -/
 def stage2NumFastCalls (epow : Int → Option EPow) : Calls :=
   numFastCalls s2HelperCalls epow
 
@@ -559,6 +641,16 @@ theorem stage2NumFastCalls_stk_mul (epow : Int → Option EPow) (args : List Val
     if_neg (by decide : ¬ ("stk_mul_u64" = "num_d8_el1")),
     if_neg (by decide : ¬ ("stk_mul_u64" = "num_el_el1")), if_true]
 
+/-- The fortified copy is answered, by the library model. -/
+theorem stage2NumFastCalls_memcpy_chk (epow : Int → Option EPow) (args : List Value)
+    (mem : Mem) (next : Nat) :
+    stage2NumFastCalls epow "__memcpy_chk" args mem next =
+      numMemcpyChkAnswer args mem next := by
+  simp only [stage2NumFastCalls, numFastCalls,
+    if_neg (by decide : ¬ ("__memcpy_chk" = "num_d8_el1")),
+    if_neg (by decide : ¬ ("__memcpy_chk" = "num_el_el1")),
+    if_neg (by decide : ¬ ("__memcpy_chk" = "stk_mul_u64")), if_true]
+
 /-- The lifetime marker keeps the walk's answer. -/
 theorem stage2NumFastCalls_lifetime (epow : Int → Option EPow) (args : List Value)
     (mem : Mem) (next : Nat) :
@@ -568,6 +660,7 @@ theorem stage2NumFastCalls_lifetime (epow : Int → Option EPow) (args : List Va
     if_neg (by decide : ¬ ("llvm.lifetime.start.p0" = "num_d8_el1")),
     if_neg (by decide : ¬ ("llvm.lifetime.start.p0" = "num_el_el1")),
     if_neg (by decide : ¬ ("llvm.lifetime.start.p0" = "stk_mul_u64")),
+    if_neg (by decide : ¬ ("llvm.lifetime.start.p0" = "__memcpy_chk")),
     s2HelperCalls_lifetime_start]
 
 /-! ### A `call` the environment answers

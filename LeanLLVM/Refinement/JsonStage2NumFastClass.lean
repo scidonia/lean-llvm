@@ -431,6 +431,7 @@ theorem stage2NumFastCalls_lifetime_end (epow : Int → Option EPow)
     ite_eq_right (by decide : ¬ ("llvm.lifetime.end.p0" = "num_d8_el1")),
     ite_eq_right (by decide : ¬ ("llvm.lifetime.end.p0" = "num_el_el1")),
     ite_eq_right (by decide : ¬ ("llvm.lifetime.end.p0" = "stk_mul_u64")),
+    ite_eq_right (by decide : ¬ ("llvm.lifetime.end.p0" = "__memcpy_chk")),
     s2HelperCalls, JsonStage2IR.stage2Calls]
 
 /-- The accepting block's last instruction: the kernel buffer's lifetime ends. -/

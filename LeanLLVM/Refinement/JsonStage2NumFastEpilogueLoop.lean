@@ -732,6 +732,7 @@ theorem stage2NumFastCalls_stk_cmp (epow : Int → Option EPow) (args : List Val
     if_neg (by decide : ¬ ("stk_cmp" = "num_d8_el1")),
     if_neg (by decide : ¬ ("stk_cmp" = "num_el_el1")),
     if_neg (by decide : ¬ ("stk_cmp" = "stk_mul_u64")),
+    if_neg (by decide : ¬ ("stk_cmp" = "__memcpy_chk")),
     s2HelperCalls_stk_cmp]
 
 theorem stage2NumFastCalls_lifetime_end (epow : Int → Option EPow)
@@ -742,6 +743,7 @@ theorem stage2NumFastCalls_lifetime_end (epow : Int → Option EPow)
     if_neg (by decide : ¬ ("llvm.lifetime.end.p0" = "num_d8_el1")),
     if_neg (by decide : ¬ ("llvm.lifetime.end.p0" = "num_el_el1")),
     if_neg (by decide : ¬ ("llvm.lifetime.end.p0" = "stk_mul_u64")),
+    if_neg (by decide : ¬ ("llvm.lifetime.end.p0" = "__memcpy_chk")),
     s2HelperCalls_lifetime_end]
 
 /-- **The epilogue's clause is false at the release selection.** -/
