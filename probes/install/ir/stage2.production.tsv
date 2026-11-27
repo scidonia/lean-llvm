@@ -1,0 +1,22 @@
+# The production stage-2 emission and what reads it.
+source	kernel/json/stage2.c
+emit	clang -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -I kernel/json -S -emit-llvm kernel/json/stage2.c -o probes/install/ir/stage2.production.ll
+opt	-O2
+triple	x86_64-unknown-linux-gnu
+datalayout	e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128
+struct_extents	%struct.EPow=24 %struct.Stk=1568 %struct.StkBn=776
+sha256	9e8975a41d466126136575102f5b5bb660eb6cf9e04427eedc612203677e51f4
+named_flag	-fno-discard-value-names: sha256 8b443feb25bbe7b524c48a387b3d7dc4c4eb70e789c93aff300a4b70082ffc52 (changes names only: the two emissions compile to the same object)
+bytes	201868
+lines	4770
+defines	4
+declares	10
+functions	leanllvm_json_stage2,num_scan,stk_mul_u64,stk_cmp
+verify	opt -passes=verify: ok
+parser_layout	parseModule (empty Layout): named structs in an alloca or getelementptr need a declared byte extent the driver does not supply
+import	exit 1: expected 'define' or 'declare', got 'source_filename = "kernel/json/stage2.c"'
+object	clang -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -c -Xclang -disable-llvm-passes probes/install/ir/stage2.production.ll -o stage2.o
+object_sha256	045448b820ad01fe4727a4839c21ac6cc5361cc524494f0d5b45bd3ce487f168
+object_bytes	25264
+source_object_sha256	8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85
+object_dataset	the same flags build 8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85 from kernel/json/stage2.c: the text-derived object is not that object; the bitcode route (-c -emit-llvm, then -Xclang -disable-llvm-passes) reproduces it byte for byte

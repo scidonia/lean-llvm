@@ -41,9 +41,23 @@ fi
 
 printf 'flags: kernel=%s adapter=-O2 timing=%s\n' "$opt" "$timing"
 
-for f in pipeline s1_block entry escape utf8 stage2; do
+for f in pipeline s1_block entry escape utf8; do
   clang "${kflags[@]}" -c "$repo/kernel/json/$f.c" -o "$build/$f.o"
 done
+
+# The certified stage-2 unit's object.  It is compiled from the identified
+# production IR when `STAGE2_IR` names that artifact, and from the source
+# otherwise; either way the object the route links carries the ABI wrapper and
+# the walk the certificate is about.  The IR path disables the middle end, so
+# the object is the backend's compilation of those bytes rather than a second
+# optimisation of them; the flags above still supply the codegen level and the
+# alignment the artifact was emitted under.
+if [ -n "${STAGE2_IR:-}" ]; then
+  [ -f "$STAGE2_IR" ] || { printf 'missing STAGE2_IR: %s\n' "$STAGE2_IR" >&2; exit 3; }
+  clang "${kflags[@]}" -c -Xclang -disable-llvm-passes "$STAGE2_IR" -o "$build/stage2.o"
+else
+  clang "${kflags[@]}" -c "$repo/kernel/json/stage2.c" -o "$build/stage2.o"
+fi
 
 # The no-event arm's two units, at the same kernel flags.  They are additive:
 # `stage2_noevent.c` includes `stage2.c` under a rename of the certified entry,

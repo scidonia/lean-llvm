@@ -56,13 +56,16 @@
 #
 # --- Why the helpers are out of line, and what that costs -----------------
 #
-# As emitted, `@leanllvm_json_stage2` is 1754 lines in 233 blocks and carries
-# **binary64**: `od_scalar_value` (`stage2.c:929`) and `num_fast_el1`
-# (`:379`) are `__attribute__((always_inline))`, so the number path's
-# `alloca double`, `uitofp`, `fmul`, `fdiv`, `fneg`, `select double` and
-# `phi double` are inlined into the only function this unit has.  `Ty` and
-# `Semantics` have no floating point, so no strip reaches a parseable fixture of
-# that text: the FP is semantic, not surface.
+# As emitted, `@leanllvm_json_stage2` inlines the number path: `od_scalar_value`
+# (`stage2.c:929`) and `num_fast_el1` (`:379`) are
+# `__attribute__((always_inline))`, so the path's `alloca double`, `uitofp`,
+# `fmul`, `fdiv`, `fneg`, `select double` and `phi double` are body text.  The
+# parser has since gained selected binary64 operations, fixed arrays and named
+# structs resolved from a declared layout, so the fused text is worth measuring
+# rather than dismissing; `capture-stage2-production.sh` records that
+# measurement.  The fixture keeps the helpers out of line because their contracts
+# are what the refinement proves; their call composition is the interface the
+# fixture states, not a claim that no parse of the fused text was attempted.
 #
 # The derivation therefore compiles a *transform of the source* in which the
 # `always_inline` attribute is replaced by `noinline` on every helper except
