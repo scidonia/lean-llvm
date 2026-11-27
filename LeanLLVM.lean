@@ -402,3 +402,4 @@ import LeanLLVM.Refinement.JsonStage2NumFastIngestAppend
 import LeanLLVM.Refinement.JsonEventCallerResult
 import LeanLLVM.Refinement.JsonStage2NumFastPowAppend
 import LeanLLVM.Refinement.JsonStage2NumFastFoldAppend
+import LeanLLVM.Refinement.JsonStage2WalkMergeCond

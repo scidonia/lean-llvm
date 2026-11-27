@@ -314,6 +314,13 @@ structure WalkCarry {m0 : Mem} (G : WalkGeom m0) where
   `%sp.i.0248`'s value at the loop head's `phi`; the merge at `cleanup478.i` is
   the edge that moves it. -/
   sp : Nat
+  /-- **The depth the merge's `%sp.i.1` takes**, which is the word the exit's
+  depth-zero test reads.  The merge's `phi` selects a different register per arm:
+  `%inc33.i` (`sp + 1`) on the opener's route, `%sp.i.0248` (`sp`) on the scalar
+  and string routes, `%sub.i` (`sp - 1`) on the closer's.  It is a field rather
+  than a reading of `sp` because the test is about the *selected* value, and it is
+  what makes `if.then485.i`'s branch a consequence of the carry at the merge. -/
+  spm : Nat
   /-- **The written mark of the two container stacks.**  `if.end24.i` stores at
   the register's depth `sp`, not at the mark the stack already reached, so a push
   after a pop writes below the previous mark and the mark is the largest index
@@ -327,6 +334,13 @@ structure WalkCarry {m0 : Mem} (G : WalkGeom m0) where
   stMap : Nat → UInt8
   /-- The adapter's staging of the walk's own objects, fixed for the run. -/
   stage : WalkStage G
+  /-- **The root-done slot's four-byte word** (`%root_done.i`, at `G.next0 + 8`).
+  The initialisation stores `0` and `s2_after_value`'s depth-zero arm stores `1`;
+  the scalar and closer merges both run that call, at the depth their `phi`
+  selects, so the word the exit's `if.end490.i` tests is the arm's own write.  It
+  is carried for `spm`'s reason: the accept route branches on the *word*, and the
+  read is a consequence of the carry rather than a hypothesis beside it. -/
+  root : Nat
 
 /-! ### The walk's three region lists
 

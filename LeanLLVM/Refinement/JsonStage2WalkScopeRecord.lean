@@ -621,10 +621,12 @@ def walkSeed {m0 : Mem} (G : WalkGeom m0) (S : WalkStage G) : WalkCarry G where
   block := "NodeBlock21"
   inner := walkInnerCap G
   sp := 0
+  spm := 0
   wlen := 0
   tyMap := fun _ => 0
   stMap := fun _ => 0
   stage := S
+  root := 0
 
 /-- The state the initialisation hands the loop: the header's block after its two
 `phi`s selected the first entry position and the empty nesting, the two cursors

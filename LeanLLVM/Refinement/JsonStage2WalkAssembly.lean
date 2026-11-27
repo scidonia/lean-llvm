@@ -1570,10 +1570,12 @@ def walkCarryZero {m0 : Mem} (G : WalkGeom m0) (stage : WalkStage G) : WalkCarry
   block := walkLoopHead
   inner := 0
   sp := 0
+  spm := 0
   wlen := 0
   tyMap := fun _ => 0
   stMap := fun _ => 0
   stage := stage
+  root := 0
 
 /-- **The zero carry's numeric clauses.**  Every invariant clause about the count, the
 trace, the arena cursor, the extents, the record in flight, the offsets, the caps and the
