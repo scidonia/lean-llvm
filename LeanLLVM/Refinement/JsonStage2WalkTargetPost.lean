@@ -984,6 +984,7 @@ exit's `1` arm: the two cursor words at `%ndst`/`%nev`, the verdict `1`, and the
 boundary at that memory. -/
 theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s : State)
     (hInv : WalkInv G C s)
+    -- the pinned route: the verdict and the memory are named, not existential
     (hblk : C.block = "cleanup478.i")
     (hregs : WalkRegs G C s.env) (hptrs : WalkPtrs G C s.env)
     (henv : WalkFinalEnv G C s.env)
@@ -1000,10 +1001,12 @@ theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
     (hsp0 : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1)
     {rv : BitVec 32} (hrootRead : readBytes s.mem (G.next0 + 8) 4 = some (natToBytes rv.toNat 4))
     (hroot0 : evalICmp .eq rv (BitVec.ofNat 32 0) = 0) :
-    ∃ (q : Nat) (v : BitVec 64) (m : Mem), q + 2 ≤ 27 ∧
+    ∃ (q : Nat), q + 2 ≤ 27 ∧
       runFuel (stage2Calls stage2SubCalls) (q + 2) stage2Body s =
-        some (.ret (some (.int 64 v)) m) ∧
-      Stage2BoundaryAt G C.stage (walkFinishArgs G) m0 G.next0 m (.int 64 v) := by
+        some (.ret (some (.int 64 1))
+          (walkFinishMemAccept G s.mem a C.evlen)) ∧
+      Stage2BoundaryAt G C.stage (walkFinishArgs G) m0 G.next0
+        (walkFinishMemAccept G s.mem a C.evlen) (.int 64 1) := by
   have henv0 : WalkFinalEnv G C s.env := henv
   obtain ⟨he, hz, hs, hc, hnd, hnv, her⟩ := henv0
   -- the merge's step
@@ -1144,7 +1147,7 @@ theorem walkFinishPost_accept {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s 
   have hmem₅ : s₅.mem = walkFinishMemAccept G s.mem a C.evlen := by
     dsimp only [s₅, s₄]
     rw [stateAt_mem, walkExitBlockState_mem, walkFinishMemAccept, hAtoNat, hLtoNat, hsm₃]
-  refine ⟨3, 1, walkFinishMemAccept G s.mem a C.evlen, by omega, ?_,
+  refine ⟨3, by omega, ?_,
     stage2BoundaryAt_of_accept G C hInv hge hle⟩
   rw [show (3 + 2 : Nat) = 1 + (1 + (1 + (1 + (1 + 0)))) from by omega]
   rw [runFuel_jump_prefix (f := stage2Body) hstep₁ (1 + (1 + (1 + (1 + 0))))]
@@ -1738,9 +1741,10 @@ theorem walkFinishPost_merge {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G) (s :
   obtain ⟨a, hge, hle, hlog⟩ := hw.log
   by_cases hsp0 : evalICmp .eq (BitVec.ofNat 32 spv) (BitVec.ofNat 32 0) = 1
   · by_cases hroot0 : evalICmp .eq rv (BitVec.ofNat 32 0) = 0
-    · exact walkFinishPost_accept G C s hInv hblk hInv.regs hInv.ptrs
-        (walkFinalEnv_of_regs hInv.regs) hge hle hlog hpre
+    · obtain ⟨q, hq, hrun, hbnd⟩ := walkFinishPost_accept G C s hInv hblk
+        hInv.regs hInv.ptrs (walkFinalEnv_of_regs hInv.regs) hge hle hlog hpre
         hsp hspv hk hkv hnp hterm hsp0 hroot hroot0
+      exact ⟨q, 1, walkFinishMemAccept G s.mem a C.evlen, hq, hrun, hbnd⟩
     · exact walkFinishPost_refuse G C s hInv hblk (walkFinalEnv_of_regs hInv.regs)
         hge hle hlog hpre
         hsp hspv hk hkv
