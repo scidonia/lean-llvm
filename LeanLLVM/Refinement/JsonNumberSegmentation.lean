@@ -10,8 +10,11 @@ lexeme as three hypotheses.  `t1_intRun_tie` takes
 and `t1_fracRun_tie`/`t1_fracCount_tie` take `hintF : fracDigits d = d0 + (n - i0)`
 with the same `hshape` at the fraction's bytes.  Their `d` is
 `StrtodReader.reader lex`'s output, and `i0`, `d0`, `n` are the emitted loops'
-counters over the token `bs`.  The three hypotheses therefore say where the
-*reader* cut a lexeme, and `StrtodReader` proves that cut: they are theorems
+counters over the token `bs`.  The same pairs hold at an interior stop: the
+integer run's (`t1_headTie`, `hint`/`hshape` at `i1`) and the fraction's
+(`hintF`/`hshape` at `i1`, the exponent marker's index when a marker follows the
+run).  The three hypotheses therefore say where the *reader* cut a lexeme, and
+`StrtodReader` proves that cut: they are theorems
 about the reading, not facts about the machine.  This module states the reader's
 segmentation in the shape the seams consume and proves it, then discharges the
 hypotheses at the counters the emitted scan enters its digit runs with.
@@ -51,11 +54,16 @@ reader's own offsets into those counters:
 
 `intHead_of_reader` is the general integer case: the run stops at an in-lexeme
 non-digit (`t1_headTie`'s `i1 = negIndex b + intDigits d`), so no end-of-token
-shape is used.  `intRun_of_reader` is `t1_intRun_tie`'s `hint`/`hshape` at the
-lexeme's end, and `fracRun_of_reader` is `t1_fracRun_tie`'s/`t1_fracCount_tie`'s
-`hintF`/`hshape` at the fraction's end.  Each returns the conjunction the seam
-takes, so a caller holding `reader lex = some d` supplies the hypotheses instead
-of assuming them.  The seams' remaining side conditions are not reader facts:
+shape is used.  `fracHead_of_reader` is its fraction analog: the reader's
+fraction slice is the same at a prefix cut as at the end, so the run's stop
+inside the lexeme, at `i1 = signLen + intDigits d + 1 + fracDigits d` (the
+exponent marker's index), is `hintF`/`hshape` at the head indices too, and no
+end-of-token shape is used.  `intRun_of_reader` is `t1_intRun_tie`'s
+`hint`/`hshape` at the lexeme's end, and `fracRun_of_reader` is
+`t1_fracRun_tie`'s/`t1_fracCount_tie`'s `hintF`/`hshape` at the fraction's end.
+Each returns the conjunction the seam takes, so a caller holding
+`reader lex = some d` supplies the hypotheses instead of assuming them.  The
+seams' remaining side conditions are not reader facts:
 `i0 ≤ n` follows by `omega` from the same length equation, and `d0 + n < 2 ^ 64`
 is the token's word bound, which the caller has from its `readBytes`.
 
@@ -496,9 +504,10 @@ theorem signBytes_length_eq_negIndex {lex : Bytes} {d : Decimal}
 
 /-! ### The seams' hypotheses at the emitted counters
 
-The three wrappers return exactly the conjunctions the ties take, at
+The wrappers return exactly the conjunctions the ties take, at
 `i0 = negIndex b + 1`, `d0 = 1` for the integer run and `i0 = fracStart`,
-`d0 = 0` for the fraction's. -/
+`d0 = 0` for the fraction's.  The two head forms state them at an interior stop
+`i1`; the two end forms at the token's length `n`. -/
 
 /-- **The integer run's segmentation at the head.**  `t1_headTie`'s `hint` and
 `hshape` at the scan's entry counters and the run's stop `i1 = negIndex b +
@@ -522,6 +531,32 @@ theorem intHead_of_reader {lex : Bytes} {d : Decimal} {bs : List UInt8} {b : UIn
     omega
   · rw [hi0, hd0, hi1, hidx, hlen, hbs, ← hsl]
     exact reader_int_segment hread
+
+/-- **The fraction run's segmentation at the head.**  `t1_fracRun_tie`'s/
+`t1_fracCount_tie`'s `hintF` and `hshape` at the run's start
+`i0 = signLen + intDigits d + 1` (the byte after the `.`), its count `d0`, and
+its stop `i1 = signLen + intDigits d + 1 + fracDigits d` — the exponent marker's
+index, inside the lexeme.  The reader cuts the fraction's digits at the same
+place whether or not a marker follows, so no end-of-token shape is used: the
+reader's maximal digit run *is* the stop. -/
+theorem fracHead_of_reader {lex : Bytes} {d : Decimal} {bs : List UInt8} {fs : Bytes}
+    {i0 d0 i1 : Nat}
+    (hread : StrtodReader.reader lex = some d) (hfr : d.fr = some fs)
+    (hbs : bs = lex.data.toList)
+    (hi0 : i0 = (Decimal.signBytes d.neg).length + intDigits d + 1)
+    (hd0 : d0 = 0)
+    (hi1 : i1 = (Decimal.signBytes d.neg).length + intDigits d + 1 + fracDigits d) :
+    fracDigits d = d0 + (i1 - i0) ∧
+      fs.data.toList = (bs.drop (i0 - d0)).take (d0 + (i1 - i0)) := by
+  have hidx : i0 - d0 = (Decimal.signBytes d.neg).length + intDigits d + 1 := by
+    rw [hi0, hd0]
+    omega
+  have hlen : d0 + (i1 - i0) = fracDigits d := by
+    rw [hd0, hi1, hi0]
+    omega
+  refine ⟨hlen.symm, ?_⟩
+  rw [hbs, hidx, hlen]
+  exact reader_fr_segment hread hfr
 
 /-- **The integer run's segmentation at the lexeme's end.**  `t1_intRun_tie`'s
 `hint` and `hshape` at `i0 = negIndex b + 1`, `d0 = 1`, `n = bs.length`: with no
@@ -595,6 +630,7 @@ theorem fracRun_of_reader {lex : Bytes} {d : Decimal} {bs : List UInt8} {fs : By
 #print axioms intDigits_pos_of_reader
 #print axioms signBytes_length_eq_negIndex
 #print axioms intHead_of_reader
+#print axioms fracHead_of_reader
 #print axioms intRun_of_reader
 #print axioms fracRun_of_reader
 

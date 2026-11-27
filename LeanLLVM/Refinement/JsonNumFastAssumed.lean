@@ -7,19 +7,20 @@ arm and named the two obstructions: the scanner's token extent (Premise 1, the
 `NumberTokenExtentAt` lane) and the emitted accumulators' agreement with the
 reader's decimal (Premise 2, this lane).  The release theorem does not discharge
 either; it carries them.  This module states the second as named structures,
-`JsonNumFastAssumed` and its one assumed-shape sibling `JsonNumFastSegAssumed`, so
-the assumption list cites one value per number token instead of prose, and proves
-that the value is exactly what the body arm consumes.  `JsonNumberSegmentation`
-proves the reader's own cut of the lexeme, so the segmentation is a field only for
-the one shape — a fraction whose run an exponent follows — that the cut does not
-reach.
+`JsonNumFastAssumed` and its one remaining shape's sibling `JsonNumFastSegAssumed`,
+so the assumption list cites one value per number token instead of prose, and
+proves that the value is exactly what the body arm consumes.
+`JsonNumberSegmentation` proves the reader's own cut of the lexeme at the token's
+end and at either run's stop inside it, so the segmentation is nowhere a field;
+`JsonNumFastSegAssumed` remains as the name of the one shape whose run stops
+inside the token, a fraction an exponent follows.
 
 ## The assumption
 
-The assumption is the callee half plus the one segmentation shape the reader's
-own cut does not reach.  `JsonNumFastAssumed calls epow bs d i0 d0 n` states it for
-the shapes that cut reaches and has one field; `JsonNumFastSegAssumed` states the
-remaining shape and adds its segmentation.
+The assumption is the callee half.  `JsonNumFastAssumed calls epow bs d i0 d0 n`
+states it for the shapes whose run reaches the token's end and has one field;
+`JsonNumFastSegAssumed` names the remaining shape by its reader facts beside the
+callee half, and has no segmentation field either.
 
 **The callee half — `NumFastCalleesAnswered calls epow`.**  The conversion's
 `Calls` selection is the tree's model of the three out-of-line functions:
@@ -34,24 +35,20 @@ would replace with refined bodies.  At `s2HelperCalls` the three sites are `ub`
 (`JsonStage2NumFastArm.numFast_step_ifEnd268_ub` and its siblings), which is why
 the arm takes `calls` as a parameter at all.
 
-**The segmentation half — proved for the integer run and the end-form fraction
-run, assumed for a fraction followed by an exponent.**  `JsonNumberSegmentation`
+**The segmentation half — proved, for all four shapes.**  `JsonNumberSegmentation`
 proves the reader's cut of the lexeme in the seams' shape: `intRun_of_reader` at
 the integer run reaching the token's end (`t1_intRun_tie`'s `hint`/`hshape`),
-`intHead_of_reader` at an in-lexeme stop (`t1_headTie`'s), and `fracRun_of_reader`
-at the fraction run reaching the token's end (`t1_fracRun_tie`'s/
-`t1_fracCount_tie`'s `hintF`/`hshape`).  For those shapes the assumption carries
-no segmentation: `numFastScanSegmentation_of_reader` and
-`numFastFracSegmentation_of_reader` state the two end-form conjunctions as
-theorems, and the consumers take them where a seam needs the hypotheses.  The one
-shape the cut does not reach is a fraction whose run is followed by the exponent
-marker: the run stops inside the token, so the end-form `fracRun_of_reader` does
-not apply, and `JsonNumFastSegAssumed` keeps `NumFastFracHeadSegmentation` — the
-run's count and bytes at its stop `i1` — as its field.  A `fracHead_of_reader`
-wrapper in `JsonNumberSegmentation`, the fraction analog of `intHead_of_reader`,
-would remove it.  The eight-digit fast path is not a segmentation shape: it is
-`num_d8_el1`, one of the callee half's three.  Tier 3's `to_double` window is the
-region after the merge and lies outside both values.
+`intHead_of_reader` at an in-lexeme stop (`t1_headTie`'s), `fracRun_of_reader` at
+the fraction run reaching the token's end (`t1_fracRun_tie`'s/
+`t1_fracCount_tie`'s `hintF`/`hshape`), and `fracHead_of_reader` at the fraction
+run's stop inside the token — the same `hintF`/`hshape` at its stop `i1`, the
+exponent marker's index.  The assumption therefore carries no segmentation:
+`numFastScanSegmentation_of_reader`, `numFastFracSegmentation_of_reader` and
+`numFastFracHeadSegmentation_of_reader` state the three conjunctions as theorems,
+and the consumers take them where a seam needs the hypotheses.  The eight-digit
+fast path is not a segmentation shape: it is `num_d8_el1`, one of the callee
+half's three.  Tier 3's `to_double` window is the region after the merge and lies
+outside both values.
 
 ## Its consumer, and the chain
 
@@ -95,12 +92,14 @@ The chain, each link proved here or in `JsonNumberPremises`:
   module per callee) stating `numD8Answer`/`numElAnswer`/`numStkMulAnswer` against
   the captured bodies, in the shape `JsonStage2NumFastCalls` already uses for the
   site denotations.
-* **The segmentation half, now mostly proved.**  `JsonNumberSegmentation` derives
-  the integer run's cut and the end-form fraction run's cut from
-  `StrtodReader.reader`; what remains is the fraction run at an interior stop —
-  the `fracExp` shape `JsonNumFastSegAssumed` carries.  A `fracHead_of_reader`
-  wrapper in `JsonNumberSegmentation`, the fraction analog of `intHead_of_reader`,
-  together with the head-form fraction seam it would feed, removes that field.
+* **The segmentation half, proved.**  `JsonNumberSegmentation` derives all four
+  cuts from `StrtodReader.reader`: the integer run at the token's end
+  (`intRun_of_reader`) and at its interior stop (`intHead_of_reader`), and the
+  fraction run at the token's end (`fracRun_of_reader`) and at its stop inside it
+  (`fracHead_of_reader`, the fraction analog of the integer head wrapper).  What
+  remains for the `fracExp` shape is the seam, not a reader fact: a head-form
+  fraction tie that reads `hintF`/`hshape` at the stop `i1` and carries the run's
+  cells into the exponent route, beside `t1_headTie`'s role for the integer run.
   The eight-digit fast path (`num_d8_el1`, `JsonStage2NumFastScanFast.lean`) is
   one of the three callees and belongs to the callee half above.
 * **Tier 3.**  The remaining blocks of the fallback region, from
@@ -120,8 +119,8 @@ selection is that model.  It is not a refinement of the three callees: no LLVM
 body of `num_d8_el1`, `num_el_el1` or `stk_mul_u64` is modelled or proved, which
 is exactly the gap the discharge path names.  It is not the token-extent premise:
 `JsonNumberPremises.NumberTokenExtentAt` is the other half, and holds the span's
-bytes; these values take those bytes (`bs`) as given, and only
-`JsonNumFastSegAssumed` still holds a split of them into parts.  And it does not
+bytes; these values take those bytes (`bs`) as given, and no field of either
+structure splits them into parts.  And it does not
 weaken or restate any existing definition or theorem:
 `NumFastBodyArm`, `numFastAccumulatorAgreement_intRun`, `t1_intRun_tie` and the
 site denotations keep their statements, and this module only names what they
@@ -147,9 +146,9 @@ open ByteString
 
 /-! ### The assumption's parts
 
-The callee half is the selection.  The segmentation is a theorem for the shapes
-the reader's own cut reaches, and a field only for the fraction run that an
-exponent follows. -/
+The callee half is the selection.  The segmentation is a theorem for every shape:
+the reader's own cut reaches the integer run, the fraction run that ends the
+token, and the fraction run that an exponent stops inside. -/
 
 /-- **The callee half.**  The conversion's `Calls` selection is the tree's model
 of the three out-of-line functions: `numFastCalls` answers `num_d8_el1`,
@@ -182,8 +181,8 @@ def NumFastFracSegmentation (bs : List UInt8) (fs : Bytes) (d : Decimal)
 /-- **The fraction run's segmentation at an interior stop.**  When an exponent
 follows the fraction's run, the run stops at `i1`, inside the token, so the
 end-form `NumFastFracSegmentation` does not apply: the count and bytes are the
-slice up to `i1`.  This is the one shape the reader's derivation does not reach,
-and the field `JsonNumFastSegAssumed` carries. -/
+slice up to `i1`.  `fracHead_of_reader` derives it from the reader's cut at the
+head indices, where the end form uses the token's length. -/
 def NumFastFracHeadSegmentation (bs : List UInt8) (fs : Bytes) (d : Decimal)
     (i0 d0 i1 : Nat) : Prop :=
   fracDigits d = d0 + (i1 - i0) ∧
@@ -194,33 +193,33 @@ reader's own cut reaches.**  One value per number token, cited beside the compil
 and ABI steps: the conversion's three out-of-line callees are the tree's model of
 their measured C text.  The emitted scan's segmentation is not a field here —
 `JsonNumberSegmentation` proves it from `StrtodReader.reader` at the integer run's
-end (`intRun_of_reader`), at an in-lexeme integer stop (`intHead_of_reader`) and at
-the fraction run's end (`fracRun_of_reader`), and the consumers below take those
-theorems where a seam needs `hint`/`hshape`.  The token-extent premise is the other
-lane (`JsonNumberPremises.NumberTokenExtentAt`) and is not repeated here. -/
+end (`intRun_of_reader`), at an in-lexeme integer stop (`intHead_of_reader`), at
+the fraction run's end (`fracRun_of_reader`) and at a fraction run that an
+exponent stops inside the token (`fracHead_of_reader`), and the consumers below
+take those theorems where a seam needs `hint`/`hshape`/`hintF`.  The token-extent
+premise is the other lane (`JsonNumberPremises.NumberTokenExtentAt`) and is not
+repeated here. -/
 structure JsonNumFastAssumed (calls : Calls) (epow : Int → Option EPow)
     (bs : List UInt8) (d : Decimal) (i0 d0 n : Nat) : Prop where
   /-- The selection is the model of the three out-of-line callees. -/
   callees : NumFastCalleesAnswered calls epow
 
-/-- **The one segmentation shape still assumed: a fraction followed by an
-exponent.**  The fraction run stops at the exponent marker, inside the token, so
-the reader's end-form cut (`fracRun_of_reader`) does not apply and the run's
-slicing at its stop `i1` is the assumption.  A `fracHead_of_reader` wrapper in
-`JsonNumberSegmentation` — the fraction analog of `intHead_of_reader` — with the
-head-form fraction seam it would feed, removes this field.  The eight-digit fast
-path is not here: it is `num_d8_el1`, one of the callee half's three.  Tier 3's
+/-- **The one shape whose run stops inside the token: a fraction followed by an
+exponent.**  The fraction run stops at the exponent marker, so the end-form
+`fracRun_of_reader` does not apply and the run's slicing at its stop `i1` is
+`numFastFracHeadSegmentation_of_reader`'s, not a field.  The structure names the
+shape by its reader facts beside the callee half; its parameters are the token's
+counters and the run's stop, as in `JsonNumFastAssumed`.  The eight-digit fast path
+is not here: it is `num_d8_el1`, one of the callee half's three.  Tier 3's
 `to_double` window is the region after the merge and is outside both values. -/
 structure JsonNumFastSegAssumed (calls : Calls) (epow : Int → Option EPow)
     (bs : List UInt8) (d : Decimal) (fs : Bytes) (i0 d0 i1 : Nat) : Prop where
   /-- The selection is the model of the three out-of-line callees. -/
   callees : NumFastCalleesAnswered calls epow
-  /-- The lexeme has a fraction, whose run is the one the field slices. -/
+  /-- The lexeme has a fraction, whose run is the one the theorem slices. -/
   fraction : d.fr = some fs
   /-- The lexeme has an exponent, which is why the run stops before the end. -/
   exponent : d.ex ≠ none
-  /-- The fraction run's count and bytes at its stop. -/
-  segmentation : NumFastFracHeadSegmentation bs fs d i0 d0 i1
 
 /-- **The callee half is inhabited by the tree's model.**  The selection the tree
 already supplies answers the three symbols by construction; what the assumption
@@ -258,6 +257,22 @@ theorem numFastFracSegmentation_of_reader {lex : Bytes} {d : Decimal}
     (hd0 : d0 = 0) (hn : n = bs.length) :
     NumFastFracSegmentation bs fs d i0 d0 n :=
   fracRun_of_reader hread hfr hex hbs hi0 hd0 hn
+
+/-- **The fraction run's segmentation at its stop inside the token, from the
+reader's own cut.**  This is `JsonNumberSegmentation.fracHead_of_reader` at
+`i0 = signLen + intDigits d + 1`, `d0 = 0` and `i1` the exponent marker's index
+`signLen + intDigits d + 1 + fracDigits d`, in the shape a fraction run's head
+seam takes: `hintF`/`hshape` at `i1`.  The end form above used the token's length,
+which an exponent makes longer than the run; here the stop is the run's own. -/
+theorem numFastFracHeadSegmentation_of_reader {lex : Bytes} {d : Decimal}
+    {bs : List UInt8} {fs : Bytes} {i0 d0 i1 : Nat}
+    (hread : StrtodReader.reader lex = some d) (hfr : d.fr = some fs)
+    (hbs : bs = lex.data.toList)
+    (hi0 : i0 = (Decimal.signBytes d.neg).length + intDigits d + 1)
+    (hd0 : d0 = 0)
+    (hi1 : i1 = (Decimal.signBytes d.neg).length + intDigits d + 1 + fracDigits d) :
+    NumFastFracHeadSegmentation bs fs d i0 d0 i1 :=
+  fracHead_of_reader hread hfr hbs hi0 hd0 hi1
 
 /-! ### The callee half at its three sites
 
@@ -439,6 +454,7 @@ theorem numFastBodyArm_answer_of_assumed {calls : Calls} {epow : Int → Option 
 #print axioms numFastCalleesAnswered_model
 #print axioms numFastScanSegmentation_of_reader
 #print axioms numFastFracSegmentation_of_reader
+#print axioms numFastFracHeadSegmentation_of_reader
 #print axioms numFast_ifEnd268_denote_of_assumed
 #print axioms numFast_whileBodyPreheader_denote_of_assumed
 #print axioms numFast_ifThen178_denote_of_assumed
