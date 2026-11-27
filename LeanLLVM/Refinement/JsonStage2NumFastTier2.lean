@@ -120,6 +120,79 @@ theorem epowAt_hi_lt (q : Int) (t : LeanLLVM.ElGuardRefine.EPow)
     simpa using hrow
   · simp at h
 
+/-! ### The table's exponents fit the kernel's slot
+
+`num_el_el1` loads a row's exponent with a `load i32` and hands it to `el_pack`,
+which adds it to a shift before testing the binary64 exponent range; the emitted
+`epow_table.h` stores it in an `int32_t`, so every row's `e` lies in that word.
+The sweep below is the table's own statement of that bound, and it is what the
+model's `elPack` argument needs where the body's `i32` is read back as an `Int`
+(`numElI32ToInt_epowEWord`): the lookup is a parameter, but no row it can return
+leaves the slot. -/
+
+/-- **The table's exponents.**  Every row of the emitted table has
+`-(2 ^ 31) ≤ e < 2 ^ 31`: the `decide` sweep of the ninety-one `epow` rows. -/
+theorem epow_rows_e_bounds :
+    LeanLLVM.ElGuardRefine.epow.toList.all
+      (fun r => decide (-(2 ^ 31 : Int) ≤ r.e ∧ r.e < 2 ^ 31)) = true := by
+  decide
+
+/-- **The table's exponents, as a membership.**  Every `t ∈ epow` has
+`-(2 ^ 31) ≤ t.e ∧ t.e < 2 ^ 31`. -/
+theorem epow_e_bounds (t : LeanLLVM.ElGuardRefine.EPow)
+    (h : t ∈ LeanLLVM.ElGuardRefine.epow) :
+    -(2 ^ 31 : Int) ≤ t.e ∧ t.e < 2 ^ 31 := by
+  have hmem : t ∈ LeanLLVM.ElGuardRefine.epow.toList := Array.mem_toList_iff.mpr h
+  exact of_decide_eq_true ((List.all_eq_true.mp epow_rows_e_bounds) t hmem)
+
+/-- **Every row `epowAt` returns carries the bound.** -/
+theorem epowAt_e_bounds (q : Int) (t : LeanLLVM.ElGuardRefine.EPow)
+    (h : LeanLLVM.ElGuardRefine.epowAt q = some t) :
+    -(2 ^ 31 : Int) ≤ t.e ∧ t.e < 2 ^ 31 := by
+  unfold LeanLLVM.ElGuardRefine.epowAt at h
+  split at h
+  · rw [Array.getElem?_eq_some_iff] at h
+    obtain ⟨hi, rfl⟩ := h
+    exact epow_e_bounds _ (Array.getElem_mem hi)
+  · simp at h
+
+/-- **The model's table carries the bound.**  `guardTable` is the guard's rows
+under the model's field names, so a row it returns is a row of the emitted table
+and the sweep covers it. -/
+theorem guardTable_e_bounds {q : Int} {t : EPow} (h : guardTable q = some t) :
+    -(2 ^ 31 : Int) ≤ t.e ∧ t.e < 2 ^ 31 := by
+  unfold guardTable at h
+  cases hg : LeanLLVM.ElGuardRefine.epowAt q with
+  | none => simp [hg] at h
+  | some g =>
+      simp only [hg, Option.map_some, Option.some.injEq] at h
+      obtain rfl : t = EPow.ofGuard g := h.symm
+      unfold EPow.ofGuard
+      exact epowAt_e_bounds q g hg
+
+/-- **The model's table's rows are sixty-four-bit.**  `guardTable` returns the
+guard's rows, so `epowAt_hi_lt` carries to the model's `hi`. -/
+theorem guardTable_hi_lt {q : Int} {t : EPow} (h : guardTable q = some t) :
+    t.hi < 2 ^ 64 := by
+  unfold guardTable at h
+  cases hg : LeanLLVM.ElGuardRefine.epowAt q with
+  | none => simp [hg] at h
+  | some g =>
+      simp only [hg, Option.map_some, Option.some.injEq] at h
+      obtain rfl : t = EPow.ofGuard g := h.symm
+      unfold EPow.ofGuard
+      exact epowAt_hi_lt q g hg
+
+/-- **A row the model's table returns is inside the range gate.**  `epowAt`
+answers `none` outside `[-45, 45]`, so a lookup that returns a row names an
+exponent the guard's gate admits. -/
+theorem guardTable_range {q : Int} {t : EPow} (h : guardTable q = some t) :
+    -45 ≤ q ∧ q ≤ 45 := by
+  by_contra hr
+  unfold guardTable LeanLLVM.ElGuardRefine.epowAt at h
+  rw [if_neg hr] at h
+  simp at h
+
 /-- Inside the range gate the table has a row. -/
 theorem epowAt_some_of_range {q : Int} (h : -45 ≤ q ∧ q ≤ 45) :
     ∃ t, LeanLLVM.ElGuardRefine.epowAt q = some t := by
