@@ -17,9 +17,10 @@ the number's revolution closes through `walkRevolutionMergeSegScalar`.
 
 What a caller supplies is the entry's staging and the document: the layout
 (`routePre`), the staged event cursor, the seed's invariant with the entry block's
-memory, `[1]`'s bytes and entry stream, and the refusal record's address bound
-`S.e < 2 ^ 64`.  No segment, carry equation, token word, window or numeral record
-is assumed.
+memory, and `[1]`'s bytes and entry stream.  The refusal record's address width is
+the staging's own clause (`WalkStage.eLt`), so the cursor record's error word
+decodes from `natToBytes8_readWord` without a bound beside it.  No segment, carry
+equation, token word, window or numeral record is assumed.
 
 The five segments are counted `9 + 2 + 16 + 2 + 11`: the opener's nine links, the
 header's two, the numeral's revolution at its high leaf (`8 + 4 + 3 + 1`), the
@@ -110,8 +111,8 @@ theorem evb_caller_result_staged {m0 : Mem} {G : WalkGeom m0} {S : WalkStage G}
     (hnev0 : G.nev0 = 0)
     -- (2) the staged entry: the seed's invariant and the entry block's memory
     (hInv₀ : WalkInv G (walkSeed G S) s₀) (hmem : s₀.mem = walkEntryMem G S)
-    -- (3) the document, its entry stream, and the record's address bound
-    (hbs : G.bs = evbDoc) (hent : G.ent = [0, 1, 2]) (he64 : S.e < 2 ^ 64) :
+    -- (3) the document and its entry stream
+    (hbs : G.bs = evbDoc) (hent : G.ent = [0, 1, 2]) :
     ∃ (q : Nat) (m : Mem) (nev' : Nat),
       q + 2 ≤ 27 ∧
       runFuel (stage2Calls stage2SubCalls) (9 + 2 + 16 + 2 + 11 + (q + 2)) stage2Body s₀ =
@@ -320,13 +321,9 @@ theorem evb_caller_result_staged {m0 : Mem} {G : WalkGeom m0} {S : WalkStage G}
     rw [bytesToNat_wordBytes8 G.bLt]
   have herrK : stage2ReadWord (seamKindStore Cs seam (BitVec.ofNat 32 7))
       (Cs.stage.c + 1112) 8 = some S.e := by
-    have hread : readBytes (seamKindStore Cs seam (BitVec.ofNat 32 7))
-        (Cs.stage.c + 1112) 8 = some (wordBytes 8 S.e) := by
-      rw [← hmemSeam]
-      exact evbSeamErr (G := G) (H₁ := H₁) (sh := sh₁) herrH
-    rw [stage2ReadWord, hread]
-    show some (bytesToNat (wordBytes 8 S.e)) = some S.e
-    rw [bytesToNat_wordBytes8 he64]
+    refine natToBytes8_readWord ?_ S.eLt
+    rw [← hmemSeam]
+    exact evbSeamErr (G := G) (H₁ := H₁) (sh := sh₁) herrH
   have hposK : stage2ReadWord (seamKindStore Cs seam (BitVec.ofNat 32 7))
       Cs.stage.tok 8 = some 1 := by
     rw [← hmemSeam]
