@@ -885,6 +885,71 @@ example {α : Type} {l : List α} {i : Nat} (h : l.length ≤ i) : l[i]? = none 
 #guard_msgs in
 #print axioms LeanLLVM.evalInstr_insertelement_out_of_range
 
+-- A vector literal with a `poison` lane is the per-lane form, so the lane's
+-- position is in the AST.  The two spellings below are the poison-lane literal
+-- and the same literal with poison in another lane: they differ, so a reader that
+-- dropped the poison lane or read it as zero is not the same AST.
+#guard
+  match parseModule "define i64 @pl() {
+entry:
+  %v = insertelement <2 x i64> <i64 poison, i64 0>, i64 7, i32 0
+  ret i64 0
+}
+" with
+  | .ok ⟨_, f :: _⟩ =>
+      (f.blocks.map (·.instrs)).head? =
+        some [.insertelement "%v" 2 64
+          (.imm (.vectorPoison 64 [none, some 0])) (.imm (.int 64 7)) (.imm (.int 32 0))]
+  | _ => false
+
+/-- A lane write over the sole poison lane gives the fully defined vector, lane
+`k` from the element and the other lanes from the literal. -/
+example {calls : Calls} {s : State} {d : String} {n w : Nat}
+    {lanes : List (Option (BitVec w))} {elt idx : Operand} {ev : Value}
+    {wi x : Nat} {k : BitVec wi}
+    (he : evalOperand s elt = some ev) (hx : ev.intToNat w = some x)
+    (hi : evalOperand s idx = some (.int wi k))
+    (hk : lanes[k.toNat]? = some none) (hlen : lanes.length = n)
+    (hall : (lanes.set k.toNat (some (BitVec.ofNat w x))).all
+      (fun l => l.isSome) = true) :
+    evalInstr calls s
+        (.insertelement d n w (.imm (.vectorPoison w lanes)) elt idx) =
+      some (s.bind d (.vec n w
+        ((lanes.map (fun l => l.getD 0)).set k.toNat (BitVec.ofNat w x)))) :=
+  evalInstr_insertelement_poison_lane he hx hi hk hlen hall
+
+/-- A write that leaves a poison lane uncovered is `ub`, the pair's other side. -/
+example {calls : Calls} {s : State} {d : String} {n w : Nat}
+    {lanes : List (Option (BitVec w))} {elt idx : Operand} {ev : Value}
+    {wi x : Nat} {k : BitVec wi}
+    (he : evalOperand s elt = some ev) (hx : ev.intToNat w = some x)
+    (hi : evalOperand s idx = some (.int wi k))
+    (hk : lanes[k.toNat]? = some none) (hlen : lanes.length = n)
+    (hall : (lanes.set k.toNat (some (BitVec.ofNat w x))).all
+      (fun l => l.isSome) = false) :
+    evalInstr calls s
+        (.insertelement d n w (.imm (.vectorPoison w lanes)) elt idx) = none :=
+  evalInstr_insertelement_poison_lane_survives he hx hi hk hlen hall
+
+/-- A read of a literal carrying a poison lane is `ub`: there is no value to read. -/
+example {calls : Calls} {s : State} {d : String} {n w : Nat}
+    {lanes : List (Option (BitVec w))} {idx : Operand} :
+    evalInstr calls s (.extractelement d n w (.imm (.vectorPoison w lanes)) idx) =
+      none :=
+  evalInstr_extractelement_poison_lane
+
+/-- info: 'LeanLLVM.evalInstr_insertelement_poison_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_insertelement_poison_lane
+
+/-- info: 'LeanLLVM.evalInstr_insertelement_poison_lane_survives' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_insertelement_poison_lane_survives
+
+/-- info: 'LeanLLVM.evalInstr_extractelement_poison_lane' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms LeanLLVM.evalInstr_extractelement_poison_lane
+
 /-- info: 'LeanLLVM.laneList_getElem?_eq_none' depends on axioms: [propext] -/
 #guard_msgs in
 #print axioms LeanLLVM.laneList_getElem?_eq_none
@@ -1342,6 +1407,50 @@ entry:
 #guard refusedWith (returnAttrSrc "nofpclass(nan) ") ["nofpclass", "return attribute"]
 #guard refusedWith (returnAttrSrc "cold ") ["cold", "return attribute"]
 #guard refusedWith (returnAttrSrc "range(i32 1) ") ["range"]
+
+/-- A definition's parameter, with the attributes in front of its name.  A
+parameter attribute is a caller obligation, not a constraint on a result: the
+reader drops the closed set whose violation the model already reads — `noundef`
+is discharged by the value domain and by `evalOperand_ne_poison`, the ABI and
+capture tokens are claims about the emitted body rather than caller obligations
+— and refuses the obligations that change definedness, naming the obligation. -/
+def paramAttrSrc (ty attrs : String) : String :=
+"define i64 @paramattr(" ++ ty ++ " " ++ attrs ++ "%x) {
+entry:
+  ret i64 0
+}
+"
+
+-- The dropped set leaves no field behind: every spelling parses to the AST the
+-- attribute-free spelling does.
+#guard sameFunction (paramAttrSrc "i64" "noundef ") (paramAttrSrc "i64" "")
+#guard sameFunction (paramAttrSrc "i8" "signext inreg noundef ") (paramAttrSrc "i8" "")
+#guard sameFunction (paramAttrSrc "i32" "zeroext ") (paramAttrSrc "i32" "")
+#guard sameFunction (paramAttrSrc "ptr" "noundef readonly captures(none) ")
+  (paramAttrSrc "ptr" "")
+#guard sameFunction (paramAttrSrc "ptr" "writeonly nocapture nofree captures(address) ")
+  (paramAttrSrc "ptr" "")
+#guard sameFunction (paramAttrSrc "ptr" "readnone ") (paramAttrSrc "ptr" "")
+#guard sameFunction (paramAttrSrc "i64" "returned ") (paramAttrSrc "i64" "")
+
+-- And the run is the same answer: the attributes left nothing behind.
+#guard runOf noCalls (paramAttrSrc "i64" "noundef ") [.int 64 (BitVec.ofNat 64 41)] =
+  some (some (.ret (some (.int 64 (BitVec.ofNat 64 0))) []))
+
+-- The boundary: a caller obligation that changes definedness is refused by name,
+-- with the obligation stated, rather than dropped on a wider argument set.
+#guard refusedWith (paramAttrSrc "ptr" "nonnull ") ["nonnull", "caller obligation"]
+#guard refusedWith (paramAttrSrc "ptr" "align 8 ") ["align 8", "caller obligation"]
+#guard refusedWith (paramAttrSrc "ptr" "dereferenceable(8) ")
+  ["dereferenceable", "caller obligation"]
+#guard refusedWith (paramAttrSrc "i64" "range(i64 0, 2) ") ["range", "caller obligation"]
+#guard refusedWith (paramAttrSrc "ptr" "noalias ") ["noalias", "caller obligation"]
+
+-- The shape checks and the unmodelled-ABI refusals: an unknown `captures`
+-- argument, a hidden argument, and a token the reader does not know at all.
+#guard refusedWith (paramAttrSrc "ptr" "captures(foo) ") ["captures(foo)"]
+#guard refusedWith (paramAttrSrc "ptr" "sret ") ["sret", "not modelled"]
+#guard refusedWith (paramAttrSrc "i64" "cold ") ["cold"]
 
 /-- A function whose entry block carries no label, beside the same program with
 the label the parser synthesizes written out. -/

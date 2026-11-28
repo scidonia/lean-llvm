@@ -412,6 +412,7 @@ theorem arenaB_phiSel_reg {s : State} {p : String} {inc : List (String × Operan
   | int w x => rfl
   | ptr a => rfl
   | vec n w l => rfl
+  | vecPoison n w l => rfl
   | float b => rfl
 
 /-- **An integer literal's `phi` selection.** -/

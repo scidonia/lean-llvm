@@ -51,6 +51,7 @@ def constOperand (σ : Subst) : Operand → Option Const
           | .poison => none
           | .splat _ _ _ => none
           | .vector _ _ => none
+          | .vectorPoison _ _ => none
           | _ => some c
       | none => none
   | .global _ => none
@@ -60,6 +61,7 @@ def constOperand (σ : Subst) : Operand → Option Const
       | .poison => none
       | .splat _ _ _ => none
       | .vector _ _ => none
+      | .vectorPoison _ _ => none
       | _ => some c
 
 /-- Substitute an operand.  A register the substitution mentions becomes the
@@ -243,7 +245,7 @@ theorem evalOperand_reg_eq_imm {s : State} {n : String} {c : Const}
     (h : lookupName s.env n = Const.toValue c) :
     evalOperand s (.reg n) = evalOperand s (.imm c) := by
   simp only [evalOperand, h]
-  cases c <;> rfl
+  cases c <;> first | rfl | simp [Const.toValue]
 
 theorem evalOperand_subst {σ : Subst} {s : State} (h : EnvEmbeds s.env σ) (o : Operand) :
     evalOperand s (substOperand σ o) = evalOperand s o := by
@@ -335,6 +337,7 @@ theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
           | poison => simp at hc
           | splat _ _ _ => simp at hc
           | vector _ _ => simp at hc
+          | vectorPoison _ _ => simp at hc
   | global n => simp only [constOperand] at hc; cases hc
   | imm k =>
       simp only [constOperand] at hc
@@ -346,6 +349,7 @@ theorem evalOperand_const {σ : Subst} {s : State} {o : Operand} {c : Const}
       | poison => simp at hc
       | splat _ _ _ => simp at hc
       | vector _ _ => simp at hc
+      | vectorPoison _ _ => simp at hc
 
 /-- A store does not touch the register environment. -/
 theorem storeValue_env {s s' : State} {ty : Ty} {v : Value} {addr : Nat}
@@ -373,6 +377,7 @@ theorem constOperand_toValue {σ : Subst} {o : Operand} {c : Const}
           | poison => simp at h
           | splat _ _ _ => simp at h
           | vector _ _ => simp at h
+          | vectorPoison _ _ => simp at h
   | global n => simp only [constOperand] at h; cases h
   | imm k =>
       simp only [constOperand] at h
@@ -384,6 +389,7 @@ theorem constOperand_toValue {σ : Subst} {o : Operand} {c : Const}
       | poison => simp at h
       | splat _ _ _ => simp at h
       | vector _ _ => simp at h
+      | vectorPoison _ _ => simp at h
 
 /-- A `phi` binds exactly its destination. -/
 theorem evalInstr_phi_env {calls : Calls} {s s' : State} {d : String} {ty : Ty}
@@ -473,11 +479,13 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
             | poison => simp [foldBinop] at hf
             | splat _ _ _ => simp [foldBinop] at hf
             | vector _ _ => simp [foldBinop] at hf
+            | vectorPoison _ _ => simp [foldBinop] at hf
           | null => simp [foldBinop] at hf
           | undef => simp [foldBinop] at hf
           | poison => simp [foldBinop] at hf
           | splat _ _ _ => simp [foldBinop] at hf
           | vector _ _ => simp [foldBinop] at hf
+          | vectorPoison _ _ => simp [foldBinop] at hf
   | icmp d pred w a b =>
       simp only [foldInstr] at hf
       cases hca : constOperand σ a with
@@ -512,11 +520,13 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
             | poison => simp [foldICmp] at hf
             | splat _ _ _ => simp [foldICmp] at hf
             | vector _ _ => simp [foldICmp] at hf
+            | vectorPoison _ _ => simp [foldICmp] at hf
           | null => simp [foldICmp] at hf
           | undef => simp [foldICmp] at hf
           | poison => simp [foldICmp] at hf
           | splat _ _ _ => simp [foldICmp] at hf
           | vector _ _ => simp [foldICmp] at hf
+          | vectorPoison _ _ => simp [foldICmp] at hf
   | ptrtoint d v => simp [foldInstr] at hf
   | inttoptr d v => simp [foldInstr] at hf
   | uitofp d wIn v => simp [foldInstr] at hf
@@ -578,6 +588,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | poison => simp [hcc] at hf
         | splat _ _ _ => simp [hcc] at hf
         | vector _ _ => simp [hcc] at hf
+        | vectorPoison _ _ => simp [hcc] at hf
   | trunc d wIn wOut v =>
       simp only [foldInstr] at hf
       cases hcv : constOperand σ v with
@@ -600,6 +611,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | poison => simp at hf
         | splat _ _ _ => simp at hf
         | vector _ _ => simp at hf
+        | vectorPoison _ _ => simp at hf
   | zext d wIn wOut v =>
       simp only [foldInstr] at hf
       cases hcv : constOperand σ v with
@@ -622,6 +634,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | poison => simp at hf
         | splat _ _ _ => simp at hf
         | vector _ _ => simp at hf
+        | vectorPoison _ _ => simp at hf
   | sext d wIn wOut v =>
       simp only [foldInstr] at hf
       cases hcv : constOperand σ v with
@@ -645,6 +658,7 @@ theorem evalInstr_fold {σ : Subst} {s : State} {i : Instr} {c : Const}
         | poison => simp at hf
         | splat _ _ _ => simp at hf
         | vector _ _ => simp at hf
+        | vectorPoison _ _ => simp at hf
   | alloca d ty align => simp [foldInstr] at hf
   | load d ty p => simp [foldInstr] at hf
   | store ty v p => simp [foldInstr] at hf

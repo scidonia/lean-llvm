@@ -436,12 +436,17 @@ source -> clang -S -emit-llvm -> .ll -> leanllvm -> .ll -> opt/llc -> object
 ```
 
 The driver rejects the constructs it knows it does not model -- instructions,
-block structure, a function header's return and function attributes, and a
+block structure, a function header's return and function attributes, a
+definition's parameter attributes whose violation changes definedness, and a
 declaration's parameter attributes and post-parameter tokens -- so the invariant
 "every function that reaches the pipeline has a defined meaning" holds for
 those, and a `Decl` that reaches the pipeline likewise carries only what the
-model reads.  The emitted text is canonical IR, checked with `llvm-as` in the
-verification runs.
+model reads.  A definition's parameter-attribute reader drops `noundef` and the
+ABI and callee-promise tokens, and refuses `nonnull`, `align`, `dereferenceable`,
+`range`, `nofpclass` and `noalias` with the caller obligation named in the
+message: the model has no field to carry that obligation, so the imported body
+is not claimed over an argument set the source leaves undefined.  The emitted
+text is canonical IR, checked with `llvm-as` in the verification runs.
 
 ## Next milestones
 

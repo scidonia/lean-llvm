@@ -26,8 +26,10 @@ width is a whole number of bytes (the mask store's `<n x i1>` rule at `w = 1`),
 the lane-wise `icmp`, the lane-wise `or`/`and`/`xor`/`add`/`sub`, the mask
 `bitcast`, the lane accesses `extractelement` and `insertelement`, and both
 literal forms a vector constant takes: the `splat` and the lane list
-`<i32 1, i32 2>`, with `zeroinitializer` read as the splat of zero — and the rest
-of the vector grammar is refused by name.  A `store`'s value operand is compared
+`<i32 1, i32 2>`, with `zeroinitializer` read as the splat of zero, and a lane
+list `poison` lane kept in place as the per-lane `vectorPoison` form (a lane
+write over it recovers a value; any other use is `ub`) — and the rest of the
+vector grammar is refused by name.  A `store`'s value operand is compared
 with the written type once the function's register table is known, so a defined
 register of another type is refused by name while an undefined one stays
 accepted and is `ub` when read.  A lane access's index is read as an unsigned
@@ -48,13 +50,20 @@ types — so a constraint dropped from it would leave the interface claiming mor
 than the text does.  The two headers therefore differ on this one attribute,
 deliberately: the asymmetry is recorded rather than closed, and
 `LeanLLVMTest/Core.lean` pins both sides.  A function attribute or attribute
-group reference after the parameter list, and, on a declaration, a parameter
-attribute are refused by name too.  A definition's parameter list is read
-positionally, so an attribute there fails the name check; a declaration's
-parameters are read as types, with a parameter name dropped because `Decl`
-carries none.  A declaration's variable argument list is refused by name.
-Linkage, visibility and a calling convention before the return type are accepted
-and dropped on both, because the model has none of their semantics.
+group reference after a definition's parameter list, and, on a declaration, a
+parameter attribute, are refused by name too.  A definition's parameter list is
+read as a type, the attributes in front of the name, and the name: an attribute
+here is a *caller* obligation rather than a constraint on a result, and the
+compiler may have optimised the body on it, so `parseParamAttrs` drops only the
+closed set whose obligation the model already reads or whose members are claims
+about the emitted body rather than caller obligations, and refuses the caller
+obligations it cannot carry
+(`nonnull`, `align`, `dereferenceable`, `range`, `nofpclass`, `noalias`), naming
+the obligation.  That split, with its reasons, is at `parseParamAttrs`; a
+declaration's parameters are read as types, with a parameter name dropped
+because `Decl` carries none.  A declaration's variable argument list is refused
+by name.  Linkage, visibility and a calling convention before the return type
+are accepted and dropped on both, because the model has none of their semantics.
 
 A module's header — `source_filename`, `target datalayout`, `target triple`,
 named `%name = type` definitions, globals, attribute groups and metadata nodes —
@@ -442,7 +451,9 @@ which is the all-zero vector — the splat of zero exactly, so it is read as one
 and the spelling is not kept.  `undef` and `poison` are literals no type
 parameter constrains: the constructor carries no type, and `Const.toValue`
 refuses both, so reading one at a vector type gives the model no value and is
-`ub`. -/
+`ub`.  A `poison` **lane** of a lane list is the separate `vectorPoison` form,
+which keeps the per-lane placement; a lane list with no poison lane is the
+`vector` form. -/
 def parseConst (ty : Ty) (t : String) : Except String Const :=
   match ty with
   | .int w =>
@@ -488,28 +499,63 @@ def parseSplatValue (w : Nat) (t : String) : Option (BitVec w) :=
   | .ok (.int w' v) => if h : w' = w then some (h ▸ v) else none
   | _ => none
 
+/-- A vector literal lane value: `none` for the token `poison`, `some v` for an
+integer literal of exactly width `w`.  `undef` and every other non-integer token
+are refused by name: the model has no nondeterministic value, and no lane write
+recovers an `undef` lane as it does a poison one. -/
+def parseVectorLane (w : Nat) (t : String) : Except String (Option (BitVec w)) :=
+  if t = "poison" then .ok none
+  else
+    match parseSplatValue w t with
+    | some v => .ok (some v)
+    | none =>
+        .error s!"a vector literal lane must be an integer literal or 'poison', got '{t}'"
+
 /-- The lanes of a literal vector constant `<i8 34, i8 92, …>`.  The tokens are
 the ones after the opening `<`; each lane is written with its element type and
-then its integer value, lanes are separated by `,`, and the list is closed by
-`>`.  The operand's vector type sizes the list: a lane written at another width
-is refused by name, and so is a list that does not write exactly the type's lane
-count.  A lane is an integer literal, so `undef` and `poison` in a lane position
-are refused by name rather than given a lane value.
+then its value, lanes are separated by `,`, and the list is closed by `>`.  The
+operand's vector type sizes the list: a lane written at another width is refused
+by name, and so is a list that does not write exactly the type's lane count.
+
+A lane value is an integer literal or the token `poison`, which is `none` in the
+returned list.  `undef` is refused by name: LLVM gives it a value the compiler
+may choose, and this model has no nondeterministic value, while `poison` is
+carried because a lane write can cover it (the production stage-2 body writes
+over the one poison lane immediately) and the model's lane rule is exactly that
+recovery.
+
+The surface admits a poison lane anywhere a vector constant is read, not only
+under `insertelement`.  The model gives the two uses different answers: a lane
+write that covers the poison lane produces a defined vector (the eight
+`insertelement` sites, `probes/install/ir/stage2.production.ll:527` and
+siblings), and every other use of the literal is `ub` (`Const.toValue` has no
+value-level poison).  The `ub` answer is LLVM's own reading of a poison value
+observed, and it is conservative: a path through such an operand proves less,
+never something false.  The module's remaining poison lanes are the operands of
+`llvm.x86.ssse3.pmadd.ub.sw.128` / `llvm.x86.sse2.pmadd.wd` in the fast decimal
+ingest (`:549-550`, `:561-562`, `:664-665`, `:676-677`, `:1201-1202`,
+`:1213-1214`, `:1315-1316`, `:1327-1328`, in blocks 316/326, 403/413, 771/781,
+857/867).  None of those blocks is reached by the `[1]` certificate: the fast
+path requires an eight-byte all-digit window and `[1]` has `]` at its second
+byte, so block 296 branches to the slow loop at 338; every pmadd block is
+downstream of a successful eight- or sixteen-digit test.  The `insertelement` at
+:527 in block 296 is on that path, and its poison lane is overwritten by the
+instruction before any read.
 
 The fuel is the number of tokens left, so a malformed list is refused instead of
 being recursed into; every step consumes at least one token. -/
-def vectorLanes (ty : Ty) (n w : Nat) : Nat → List (BitVec w) → List String →
-    Except String (List (BitVec w) × List String)
+def vectorLanes (ty : Ty) (n w : Nat) : Nat → List (Option (BitVec w)) → List String →
+    Except String (List (Option (BitVec w)) × List String)
   | 0, _, _ => .error "internal parser error: vector literal fuel exhausted"
   | _ + 1, _, [] => .error "unterminated vector literal: expected '>'"
   | f + 1, acc, elemTok :: litTok :: rest =>
       match parseTy elemTok with
       | .ok (.int w') =>
           if w' = w then
-            match parseSplatValue w litTok with
-            | none => .error s!"a vector literal lane must be an integer literal, got '{litTok}'"
-            | some v =>
-                let acc := v :: acc
+            match parseVectorLane w litTok with
+            | .error e => .error e
+            | .ok v? =>
+                let acc := v? :: acc
                 match rest with
                 | "," :: more => vectorLanes ty n w f acc more
                 | ">" :: more =>
@@ -535,7 +581,9 @@ from that position.
 
 A lane list `<i8 34, i8 92, …>` is read at a vector operand type too: it spans
 several tokens, so it is read here rather than by `parseConst`, and its lane
-count and lane width are checked against the operand's type. -/
+count and lane width are checked against the operand's type.  A list with no
+`poison` lane is the `vector` form; one with a poison lane is `vectorPoison`,
+which keeps the lane's position. -/
 def parseOperand (ty : Ty) : P Operand := do
   let t ← P.next
   if t.startsWith "%" then pure (.reg t)
@@ -586,7 +634,9 @@ def parseOperand (ty : Ty) : P Operand := do
           P.fail s!"a vector literal operand requires an integer-lane vector operand \
               type, got {ty.render}"
     let ls ← fun ts => vectorLanes ty n w (ts.length + 1) [] ts
-    pure (.imm (.vector w ls))
+    if ls.all (fun l => l.isSome) then
+      pure (.imm (.vector w (ls.map (fun l => l.getD 0))))
+    else pure (.imm (.vectorPoison w ls))
   else
     match parseConst ty t with
     | .ok c => pure (.imm c)
@@ -2096,28 +2146,167 @@ def findAt (prev : Option String) : List String → Option (Option String × Str
   | t :: rest =>
       if t.startsWith "@" then some (prev, t, rest) else findAt (some t) rest
 
-def parseParamsFrom (ts : List String) :
+/-! ### A definition's parameter attributes
+
+A parameter attribute is not a return attribute.  A return attribute can only
+*exclude* the values a function returns, and this model takes the returned value
+from the `Calls` environment, so dropping one widens the values the model admits
+without adding a run.  A parameter attribute instead states something the
+*caller* must guarantee, and the compiler may have used it to justify a
+transformation of this body: on an argument that violates it LLVM's behaviour is
+undefined, while this model executes the transformed body on that argument.
+Dropping such an attribute would therefore widen the argument set on which the
+imported body is claimed to implement its source, past the arguments the source
+defines — an unsound claim — so the reader splits the attributes three ways.
+
+* **Dropped, because the model already reads the obligation or there is none.**
+  `noundef` says the caller passes a defined value: `Value` has no undefined
+  constructor, no operand a modelled `call` passes evaluates to `Value.poison`
+  (`evalOperand_ne_poison`), and the one place an argument list is not a read —
+  the denotation entry `Beh`/`run` — takes its premise from the theorem, which is
+  recorded here as `∀ v ∈ args, v ≠ Value.poison`, rather than in `Function`,
+  which has no field for it.  The other dropped tokens are not caller
+  obligations: `zeroext`, `signext`, `noext` and `inreg` are ABI sign and register
+  properties, and the model's typed values have no upper bits for an extension to
+  occupy; `readonly`, `writeonly` and `readnone` state the callee's own memory
+  effect through the pointer; `captures`, `nocapture` and `nofree` are promises
+  the callee makes about capturing or freeing the pointer; and `returned` is a
+  promise about the callee's own result.  Each of those is a claim about the body
+  the compiler emitted — importing its text already takes that claim as true of
+  it — not a constraint whose violation makes the caller's argument undefined, so
+  none narrows or widens the argument list a theorem must quantify over.
+
+* **Refused, as a caller obligation that changes definedness.**  `nonnull`,
+  `align N`, `dereferenceable(N)`, `dereferenceable_or_null(N)`, `range(...)`,
+  `nofpclass(...)` and `noalias` each make a violating argument undefined
+  behaviour, and the model neither checks the attribute nor reproduces the
+  assumption: a `.ptr 0` is a value `icmp` may read, memory has no alignment
+  rule, a value's range is not a constraint the model reads, and nothing records
+  that the body was optimised on the strength of the attribute.  The module has
+  no field to carry the obligation as a hypothesis, so the definition is refused
+  by name with the obligation in the message, rather than imported on a wider
+  argument set.
+
+* **Refused, as a change to how the argument is passed.**  `sret`, `byval`,
+  `byref`, `inalloca`, `preallocated`, `elementtype`, `alignstack`, `allocalign`,
+  `allocptr`, `immarg`, `nest`, `swiftself` and `swiftasync` name a hidden
+  argument or a calling-convention detail the model has no field for; they are
+  refused as unmodelled, the reading a linkage or calling convention gets.
+
+Any other token is not an attribute the reader knows; the parameter-name check
+names it.  The same reading is also why a *declaration*'s parameter attribute
+stays refused even when a definition would drop it: `Decl` is the module's
+statement of a symbol's interface, and dropping a constraint from it would
+publish a wider interface than the text makes. -/
+
+/-- The parameter attributes a definition's header may carry that the reader
+checks the shape of and drops.  The reason each is droppable is in the section
+comment above; the set is closed, and a token outside it is not an attribute. -/
+def isDroppedParamAttr (t : String) : Bool :=
+  ["noundef", "zeroext", "signext", "noext", "inreg",
+   "readonly", "writeonly", "readnone",
+   "nocapture", "nofree", "returned"].contains t
+
+/-- The `captures` attribute's argument vocabulary: the five spellings LLVM 21
+accepts.  Each says which parts of the pointer the callee may capture; all are
+promises about the callee's own use, so the reader checks the spelling and drops
+it. -/
+def isCapturesArg (t : String) : Bool :=
+  ["none", "address", "address_is_null", "provenance", "read_provenance"].contains t
+
+/-- Parameter attributes whose violation is a caller obligation that changes
+definedness.  `align` is refused together with the number after it, so the
+message names the whole attribute; the rest are bare or parenthesised and are
+refused at the name. -/
+def isObligationParamAttr (t : String) : Bool :=
+  ["nonnull", "dereferenceable", "dereferenceable_or_null", "range",
+   "nofpclass", "noalias"].contains t
+
+/-- Parameter attributes that change the call's shape: a hidden argument (a
+return slot, a by-value copy, an allocator hint), a calling-convention detail, or
+a requirement on the argument's form (`immarg`).  The model has no calling
+convention and no field for any of them, so they are refused as unmodelled. -/
+def isCallShapeParamAttr (t : String) : Bool :=
+  ["sret", "byval", "byref", "inalloca", "preallocated", "elementtype",
+   "alignstack", "allocalign", "allocptr", "immarg", "nest", "swiftself",
+   "swiftasync"].contains t
+
+/-- The refusal an attribute in the caller-obligation group gets.  It names the
+attribute and the obligation rather than the parser's inability, because the
+definition is well formed and the model is the part that cannot carry it. -/
+def obligationRefusal (idx : Nat) (shown : String) : String :=
+  s!"parameter {idx} carries the attribute '{shown}', which is not modelled: \
+      it is a caller obligation whose violation is undefined behaviour, the compiled \
+      body may have been optimised on the assumption, and the module has no field to \
+      carry the obligation as a hypothesis"
+
+/-- Read the attributes in front of a definition parameter's name, checking each
+shape and either dropping it or refusing it for the reason the section comment
+gives.  The first token that is not an attribute is returned with the tokens
+after it; the caller requires it to be the parameter's `%`-name. -/
+def parseParamAttrs (idx : Nat) : List String → Except String (List String)
+  | [] => .error s!"parameter {idx} has no name: expected a parameter name after its type"
+  | t :: rest =>
+      if isDroppedParamAttr t then parseParamAttrs idx rest
+      else if t = "captures" then
+        match rest with
+        | "(" :: arg :: ")" :: rest' =>
+            if isCapturesArg arg then parseParamAttrs idx rest'
+            else .error s!"the parameter attribute 'captures({arg})' is not modelled: \
+                its argument is one of none, address, address_is_null, provenance or \
+                read_provenance"
+        | _ => .error "malformed parameter attribute 'captures': expected one \
+            parenthesised argument, as in 'captures(none)'"
+      else if t = "align" then
+        match rest with
+        | n :: _ => .error (obligationRefusal idx s!"align {n}")
+        | [] => .error s!"parameter {idx} carries the attribute 'align' without its alignment"
+      else if isObligationParamAttr t then .error (obligationRefusal idx t)
+      else if isCallShapeParamAttr t then
+        .error s!"parameter {idx} carries the attribute '{t}', which is not modelled: \
+            it changes the call's shape or the argument's form and the model has \
+            no field for it"
+      else .ok (t :: rest)
+
+/-- Read a definition's parameter list from the tokens between its parentheses,
+with a fuel budget and the 1-based position of the parameter being read.  A
+parameter is a type, the attributes the section above describes, and a
+`%`-name.  The budget is the list's length plus one: every parameter consumes at
+least its own tokens, and the `(` that opens the list consumes one before the
+first parameter. -/
+def parseParamsFrom (fuel : Nat) (idx : Nat) (ts : List String) :
     Except String (List (String × Ty) × List String) :=
-  match ts with
-  | ")" :: rest => .ok ([], rest)
-  | "(" :: rest => parseParamsFrom rest
-  | tyTok :: nameTok :: rest =>
-      match parseTy tyTok with
-      | .error e => .error e
-      | .ok ty =>
-          if nameTok.startsWith "%" then
-            match rest with
-            | "," :: rest' =>
-                match parseParamsFrom rest' with
-                | .error e => .error e
-                | .ok (ps, rest'') => .ok ((nameTok, ty) :: ps, rest'')
-            | ")" :: rest' => .ok ([(nameTok, ty)], rest')
-            | _ => .error "expected ',' or ')' after a parameter"
-          else .error s!"expected a parameter name, got '{nameTok}'"
-  | _ => .error "malformed parameter list"
+  match fuel with
+  | 0 => .error "internal parser error: parameter fuel exhausted"
+  | fuel + 1 =>
+    match ts with
+    | ")" :: rest => .ok ([], rest)
+    | "(" :: rest => parseParamsFrom fuel idx rest
+    | tyTok :: rest =>
+        match parseTy tyTok with
+        | .error e => .error e
+        | .ok ty =>
+            match parseParamAttrs idx rest with
+            | .error e => .error e
+            | .ok l =>
+                match l with
+                | nameTok :: rest' =>
+                    if nameTok.startsWith "%" then
+                      match rest' with
+                      | "," :: rest'' =>
+                          match parseParamsFrom fuel (idx + 1) rest'' with
+                          | .error e => .error e
+                          | .ok (ps, rest''') => .ok ((nameTok, ty) :: ps, rest''')
+                      | ")" :: rest'' => .ok ([(nameTok, ty)], rest'')
+                      | _ => .error s!"expected ',' or ')' after parameter {idx}"
+                    else .error s!"expected a parameter name, got '{nameTok}'"
+                | [] =>
+                    .error s!"parameter {idx} has no name: expected a parameter name \
+                        after its type"
+    | _ => .error "malformed parameter list"
 
 def parseParams : P (List (String × Ty)) := fun ts =>
-  match parseParamsFrom ts with
+  match parseParamsFrom (ts.length + 1) 1 ts with
   | .error e => .error e
   | .ok (ps, rest) => .ok (ps, rest)
 

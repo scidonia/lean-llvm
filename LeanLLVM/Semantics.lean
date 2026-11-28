@@ -173,6 +173,7 @@ theorem evalOperand_reg_of {s : State} {n : String} {v : Value}
   | int w x => rfl
   | ptr a => rfl
   | vec n w l => rfl
+  | vecPoison n w l => rfl
   | float b => rfl
 
 /-- No read yields the poison marker: `Value.poison` reaches a cell only from a
@@ -251,6 +252,7 @@ def Value.intToNat (w : Nat) : Value → Option Nat
   | .int w' v => if w' = w then some v.toNat else none
   | .ptr _ => none
   | .vec .. => none
+  | .vecPoison .. => none
   | .float _ => none
   | .poison => none
 
@@ -351,6 +353,53 @@ def Value.vecLanes (n w : Nat) : Value → Option (List (BitVec w))
         (if l.length = n ∧ n' = n then some (h ▸ l) else none)
       else none
   | _ => none
+
+/-- The two shapes a lane write reads from a vector value.  `plain` is a vector
+whose lanes are all defined, the list `vecLanes` also returns; `poison` is a
+vector carrying poison lanes, kept per lane so a covering write can rebuild a
+defined vector.  A single match on the value decides which, so the write reads
+the value once rather than trying one projection and then the other. -/
+inductive Value.LaneView (w : Nat) where
+  | plain (lanes : List (BitVec w))
+  | poison (lanes : List (Option (BitVec w)))
+
+/-- The lanes of a vector value at lane width `w` and count `n`, as a lane write
+reads them: `plain` when every lane is defined, `poison` when the value carries
+poison lanes, and `none` when the value is not a vector of exactly that shape.
+The lane count and width are checked here, so every `some` carries a list of
+the instruction's own shape. -/
+def Value.laneView (n w : Nat) : Value → Option (Value.LaneView w)
+  | .vec n' w' l =>
+      if h : w' = w then
+        (if l.length = n ∧ n' = n then some (.plain (h ▸ l)) else none)
+      else none
+  | .vecPoison n' w' l =>
+      if h : w' = w then
+        (if l.length = n ∧ n' = n then some (.poison (h ▸ l)) else none)
+      else none
+  | _ => none
+
+/-- A plain vector read through `vecLanes` has the `plain` lane view, with the
+same list: the two accessors agree on the values the read instructions accept. -/
+theorem Value.laneView_of_vecLanes {n w : Nat} {v : Value} {lanes : List (BitVec w)}
+    (h : v.vecLanes n w = some lanes) : v.laneView n w = some (.plain lanes) := by
+  cases v with
+  | vec n' w' l =>
+      simp only [Value.vecLanes] at h
+      split at h
+      · rename_i hw
+        split at h
+        · rename_i hs
+          obtain ⟨hl, hn⟩ := hs
+          cases hw
+          simp only [Option.some.injEq] at h
+          cases h
+          subst n'
+          simp [Value.laneView, hl]
+        · simp at h
+      · simp at h
+  | vecPoison n' w' l => simp [Value.vecLanes] at h
+  | _ => simp [Value.vecLanes] at h
 
 /-- Lane-wise selection: lane `j` of the result is `a[j]` when the condition's
 lane `j` is set and `b[j]` when it is clear.  The three lists are zipped in
@@ -727,13 +776,24 @@ def evalInstr (calls : Calls) (s : State) : Instr → Option State
       -- integer; the parser fixes both from the text, so a disagreement here is
       -- the hand-built-AST case and is undefined behaviour rather than a cell
       -- left alone.
+      --
+      -- A vector literal carrying poison lanes is the `vecPoison` value.  A
+      -- lane write reads the value once, through `laneView`: a plain vector
+      -- gives its lanes, and a vector carrying poison lanes gives the per-lane
+      -- list, where the written lane becomes the element and the result is a
+      -- value exactly when no poison lane survives.  Every other value keeps
+      -- the old answer, `ub`.
       match evalOperand s v, evalOperand s elt, evalOperand s idx with
       | some vv, some ev, some (.int _ k) =>
-          match vv.vecLanes n w, ev.intToNat w with
-          | some lanes, some x =>
+          match ev.intToNat w, vv.laneView n w with
+          | some x, some (.plain lanes) =>
               if k.toNat < lanes.length then
                 some (s.bind d (.vec n w (lanes.set k.toNat (BitVec.ofNat w x))))
               else none
+          | some x, some (.poison lanes) =>
+              match Const.poisonLaneInsert? w lanes k.toNat x with
+              | some ls => some (s.bind d (.vec n w ls))
+              | none => none
           | _, _ => none
       | _, _, _ => none
   | .shuffleVec d n w a b mask =>
@@ -911,6 +971,7 @@ theorem evalInstr_gep_none_of_base {calls : Calls} {s : State} {d : String}
   | ptr a => exact absurd rfl (hv a)
   | int w x => rfl
   | vec n w l => rfl
+  | vecPoison n w l => rfl
   | float b => rfl
   | poison => rfl
 
@@ -924,6 +985,7 @@ theorem evalInstr_gep_none_of_off {calls : Calls} {s : State} {d : String}
   | int w x => exact absurd rfl (hv w x)
   | ptr b => simp only [evalInstr, hb, ho]
   | vec n w l => simp only [evalInstr, hb, ho]
+  | vecPoison n w l => simp only [evalInstr, hb, ho]
   | float b => simp only [evalInstr, hb, ho]
   | poison => simp only [evalInstr, hb, ho]
 
@@ -1043,7 +1105,8 @@ theorem evalInstr_insertelement {calls : Calls} {s : State} {d : String}
     (hi : evalOperand s idx = some (.int wi k)) (hk : k.toNat < lanes.length) :
     evalInstr calls s (.insertelement d n w v elt idx) =
       some (s.bind d (.vec n w (lanes.set k.toNat (BitVec.ofNat w x)))) := by
-  simp [evalInstr, hv, hl, he, hx, hi, hk]
+  have hl' := Value.laneView_of_vecLanes hl
+  simp [evalInstr, hv, hl', he, hx, hi, hk]
 
 /-- A lane write at or past the lane count is undefined behaviour, the same rule
 as the lane read's. -/
@@ -1054,7 +1117,74 @@ theorem evalInstr_insertelement_out_of_range {calls : Calls} {s : State} {d : St
     (he : evalOperand s elt = some ev) (hx : ev.intToNat w = some x)
     (hi : evalOperand s idx = some (.int wi k)) (hge : lanes.length ≤ k.toNat) :
     evalInstr calls s (.insertelement d n w v elt idx) = none := by
-  simp [evalInstr, hv, hl, he, hx, hi, Nat.not_lt.mpr hge]
+  have hl' := Value.laneView_of_vecLanes hl
+  simp [evalInstr, hv, hl', he, hx, hi, Nat.not_lt.mpr hge]
+
+/-- **The poison-lane write.**  A vector literal carrying `poison` lanes is the
+`vecPoison` value; a lane write over its written lane supplies a defined value
+there and keeps the other lanes, so the result is the vector with that lane
+replaced.  The hypotheses are the literal's own shape and cover: the written
+lane is poison and every lane is defined after the write.  A body that writes
+its one poison lane immediately gets a fully defined vector, which is LLVM's
+reading of the same instruction. -/
+theorem evalInstr_insertelement_poison_lane {calls : Calls} {s : State} {d : String}
+    {n w : Nat} {lanes : List (Option (BitVec w))} {elt idx : Operand}
+    {ev : Value} {wi x : Nat} {k : BitVec wi}
+    (he : evalOperand s elt = some ev) (hx : ev.intToNat w = some x)
+    (hi : evalOperand s idx = some (.int wi k))
+    (hk : lanes[k.toNat]? = some none)
+    (hlen : lanes.length = n)
+    (hall : (lanes.set k.toNat (some (BitVec.ofNat w x))).all
+      (fun l => l.isSome) = true) :
+    evalInstr calls s
+        (.insertelement d n w (.imm (.vectorPoison w lanes)) elt idx) =
+      some (s.bind d (.vec n w
+        ((lanes.map (fun l => l.getD 0)).set k.toNat (BitVec.ofNat w x)))) := by
+  have hv : evalOperand s (.imm (.vectorPoison w lanes)) = some (.vecPoison n w lanes) := by
+    simp [evalOperand, Const.toValue, hlen]
+  have hl : Value.laneView n w (.vecPoison n w lanes) = some (.poison lanes) := by
+    simp [Value.laneView, hlen]
+  have hp := Const.poisonLaneInsert?_eq_some hk hall
+  simp [evalInstr, hv, he, hx, hi, hl, hp]
+
+/-- **The pair's other side.**  If the write leaves a poison lane uncovered, the
+literal's vector value is still refused and the write is undefined behaviour.
+The hypothesis is the negation of the previous theorem's cover condition, so the
+two statements partition the lane-write cases on the same literal. -/
+theorem evalInstr_insertelement_poison_lane_survives {calls : Calls} {s : State}
+    {d : String} {n w : Nat} {lanes : List (Option (BitVec w))} {elt idx : Operand}
+    {ev : Value} {wi x : Nat} {k : BitVec wi}
+    (he : evalOperand s elt = some ev) (hx : ev.intToNat w = some x)
+    (hi : evalOperand s idx = some (.int wi k))
+    (hk : lanes[k.toNat]? = some none)
+    (hlen : lanes.length = n)
+    (hall : (lanes.set k.toNat (some (BitVec.ofNat w x))).all
+      (fun l => l.isSome) = false) :
+    evalInstr calls s
+        (.insertelement d n w (.imm (.vectorPoison w lanes)) elt idx) = none := by
+  have hv : evalOperand s (.imm (.vectorPoison w lanes)) = some (.vecPoison n w lanes) := by
+    simp [evalOperand, Const.toValue, hlen]
+  have hl : Value.laneView n w (.vecPoison n w lanes) = some (.poison lanes) := by
+    simp [Value.laneView, hlen]
+  have hp := Const.poisonLaneInsert?_eq_none hk hall
+  simp [evalInstr, hv, he, hx, hi, hl, hp]
+
+/-- A lane read of a literal carrying a poison lane is undefined behaviour: the
+vector value refuses the read (`vecLanes`), so there is no lane to return.  The
+write above is the one use that recovers a value. -/
+theorem evalInstr_extractelement_poison_lane {calls : Calls} {s : State} {d : String}
+    {n w : Nat} {lanes : List (Option (BitVec w))} {idx : Operand} :
+    evalInstr calls s (.extractelement d n w (.imm (.vectorPoison w lanes)) idx) =
+      none := by
+  have hv : evalOperand s (.imm (.vectorPoison w lanes)) =
+      some (.vecPoison lanes.length w lanes) := by
+    simp [evalOperand, Const.toValue]
+  simp only [evalInstr, hv]
+  rcases hidx : evalOperand s idx with _ | iv
+  · simp [hidx]
+  · cases iv with
+    | int wi k => simp [hidx, Value.vecLanes]
+    | _ => simp [hidx]
 
 /-- A `phi` of a block's leading run: its destination, result type and incoming
 list.  The type is carried so a run's instructions can be named exactly as the
@@ -1171,6 +1301,7 @@ theorem phiSelect_eq {s : State} {p : String} {inc : List (String × Operand)}
       | undef => simpa only [evalOperand, Const.toValue] using hop
       | splat n w x => simpa only [evalOperand, Const.toValue] using hop
       | vector w l => simpa only [evalOperand, Const.toValue] using hop
+      | vectorPoison w l => simpa only [evalOperand, Const.toValue] using hop
       | float b => simpa only [evalOperand, Const.toValue] using hop
 
 /-- A block's leading `phi` run is one step: one snapshot in, all bindings out. -/
@@ -1695,6 +1826,8 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             cases evalOperand s b <;> dsimp only <;> rfl
         | vec n w l =>
             cases evalOperand s b <;> dsimp only <;> rfl
+        | vecPoison n w l =>
+            cases evalOperand s b <;> dsimp only <;> rfl
         | ptr addr =>
             cases evalOperand s b with
             | none => rfl
@@ -1704,6 +1837,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
               | float b => rfl
               | int w y => dsimp only; rfl
               | vec n w l => dsimp only; rfl
+              | vecPoison n w l => dsimp only; rfl
               | ptr addr2 =>
                 dsimp only
                 cases evalICmpPtr pred addr addr2 with
@@ -1747,6 +1881,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
                            rfl)
             | succ j => rfl
         | ptr a => rfl
+        | vecPoison n w l => rfl
         | vec n w l =>
           -- A vector condition selects lane by lane only at lane width 1; a
           -- wider or narrower condition value matches no arm and yields `none`,
@@ -1797,6 +1932,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             rfl
         | ptr a => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | zext d wIn wOut v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with
@@ -1815,6 +1951,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             rfl
         | ptr a => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | sext d wIn wOut v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with
@@ -1833,6 +1970,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             rfl
         | ptr a => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | ptrtoint d v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with
@@ -1850,6 +1988,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           · rw [ite_eq_right ha, ite_eq_right ha]
             rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
         | float b => rfl
   | inttoptr d v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
@@ -1865,6 +2004,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           all_goals rfl
         | ptr a => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
         | float b => rfl
   | uitofp d wIn v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
@@ -1883,6 +2023,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             rfl
         | ptr a => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
         | float b => rfl
   | fmul d a b =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
@@ -1904,9 +2045,11 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             | int w z => rfl
             | ptr p => rfl
             | vec n w l => rfl
+            | vecPoison n w l => rfl
         | int w z => rfl
         | ptr p => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | fdiv d a b =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s a with
@@ -1927,9 +2070,11 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             | int w z => rfl
             | ptr p => rfl
             | vec n w l => rfl
+            | vecPoison n w l => rfl
         | int w z => rfl
         | ptr p => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | fneg d v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with
@@ -1942,6 +2087,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
         | int w z => rfl
         | ptr p => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | fcmp d pred a b =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases pred with
@@ -1964,9 +2110,11 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
               | int w z => rfl
               | ptr p => rfl
               | vec n w l => rfl
+              | vecPoison n w l => rfl
           | int w z => rfl
           | ptr p => rfl
           | vec n w l => rfl
+          | vecPoison n w l => rfl
   | bitcastToInt d v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with
@@ -1979,6 +2127,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
         | int w z => rfl
         | ptr p => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | bitcastToDouble d v =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with
@@ -1994,6 +2143,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           all_goals rfl
         | ptr p => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | alloca d ty align =>
       simp only [evalInstr, State.setPre, Option.map_some]
   | load d ty ptr =>
@@ -2012,6 +2162,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           | none => rfl
           | some v => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | store ty val ptr =>
       simp only [evalInstr, evalOperand_setPre, storeValue_setPre]
       cases evalOperand s val with
@@ -2028,6 +2179,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
           | int w x => rfl
           | ptr addr => rfl
           | vec n w l => rfl
+          | vecPoison n w l => rfl
   | gep d elemTy base off =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s base with
@@ -2059,7 +2211,9 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
                   rfl
             | ptr b => rfl
             | vec n w l => rfl
+            | vecPoison n w l => rfl
         | vec n w l => rfl
+        | vecPoison n w l => rfl
   | icmpVec d pred n w a b =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s a with
@@ -2154,6 +2308,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
               try dsimp only
               simp only [Option.map_ite]
             | succ j => rfl
+        | vecPoison n w l => rfl
   | extractelement d n w v idx =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with
@@ -2178,6 +2333,7 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
               | some x => rfl
           | ptr a => rfl
           | vec n' w' l => rfl
+          | vecPoison n' w' l => rfl
   | insertelement d n w v elt idx =>
       simp only [evalInstr, evalOperand_setPre, State.bind_setPre]
       cases evalOperand s v with
@@ -2197,21 +2353,29 @@ theorem evalInstr_setPre {calls : Calls} (i : Instr) (hi : i.isPhi = false)
             | float b => rfl
             | int wi k =>
               try dsimp only
-              cases vv.vecLanes n w with
+              cases ev.intToNat w with
               | none => rfl
-              | some lanes =>
+              | some x =>
                 try dsimp only
-                cases ev.intToNat w with
+                cases vv.laneView n w with
                 | none => rfl
-                | some x =>
-                  try dsimp only
-                  by_cases hk : k.toNat < lanes.length
-                  · simp only [ite_eq_left hk]
-                    rfl
-                  · simp only [ite_eq_right hk]
-                    rfl
+                | some lv =>
+                  cases lv with
+                  | plain lanes =>
+                    try dsimp only
+                    by_cases hk : k.toNat < lanes.length
+                    · simp only [ite_eq_left hk]
+                      rfl
+                    · simp only [ite_eq_right hk]
+                      rfl
+                  | poison lanes =>
+                    try dsimp only
+                    simp only [Const.poisonLaneInsert?]
+                    repeat' split
+                    all_goals rfl
             | ptr a => rfl
             | vec n' w' l => rfl
+            | vecPoison n' w' l => rfl
   | call d retTy callee args =>
       simp only [evalInstr, evalOperands_setPre, State.setPre_mem, State.setPre_next,
         State.setPre_env, State.setPre_pc]
@@ -2705,6 +2869,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
         cases hs
     | ptr a => simp only [storeValue] at hs; cases hs
     | vec n' w' lanes => simp only [storeValue] at hs; cases hs
+    | vecPoison n' w' lanes => simp only [storeValue] at hs; cases hs
     | poison => simp only [storeValue] at hs; cases hs
   | ptr =>
     cases v with
@@ -2717,6 +2882,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
       simp only [storeValue, t']
     | int w x => simp only [storeValue] at hs; cases hs
     | vec n' w' lanes => simp only [storeValue] at hs; cases hs
+    | vecPoison n' w' lanes => simp only [storeValue] at hs; cases hs
     | poison => simp only [storeValue] at hs; cases hs
   | void => simp only [storeValue] at hs; cases hs
   | double =>
@@ -2730,6 +2896,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
     | int w x => simp only [storeValue] at hs; cases hs
     | ptr a => simp only [storeValue] at hs; cases hs
     | vec n' w' lanes => simp only [storeValue] at hs; cases hs
+    | vecPoison n' w' lanes => simp only [storeValue] at hs; cases hs
     | poison => simp only [storeValue] at hs; cases hs
   | array n elem => cases v <;> simp only [storeValue] at hs <;> cases hs
   | struct name bytes => cases v <;> simp only [storeValue] at hs <;> cases hs
@@ -2750,6 +2917,7 @@ theorem storeValue_agree {ns : List String} {s t s' : State} {ty : Ty} {v : Valu
           cases hs
       | int w' x => simp only [storeValue] at hs; cases hs
       | ptr a => simp only [storeValue] at hs; cases hs
+      | vecPoison n' w' lanes => simp only [storeValue] at hs; cases hs
       | poison => simp only [storeValue] at hs; cases hs
     | ptr => cases v <;> simp only [storeValue] at hs <;> cases hs
     | void => cases v <;> simp only [storeValue] at hs <;> cases hs
@@ -2859,6 +3027,7 @@ theorem select_int (calls : Calls) {ns : List String} {d : String} {wt : Nat}
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -2893,6 +3062,7 @@ theorem select_ptr (calls : Calls) {ns : List String} {d : String}
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -2927,6 +3097,7 @@ theorem select_void (calls : Calls) {ns : List String} {d : String}
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -2961,6 +3132,7 @@ theorem select_vecI (calls : Calls) {ns : List String} {d : String} {nv wi : Nat
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs => exact select_of_lanes calls h hc ha hb hcv hs
 
 /-- The `select` transport at a vector-of-pointer result type. -/
@@ -2989,6 +3161,7 @@ theorem select_vecP (calls : Calls) {ns : List String} {d : String} {nv : Nat}
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -3023,6 +3196,7 @@ theorem select_vecV (calls : Calls) {ns : List String} {d : String} {nv : Nat}
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -3057,6 +3231,7 @@ theorem select_vecVv (calls : Calls) {ns : List String} {d : String} {nv n2 : Na
     | float b => simp [evalInstr, hc, hcv] at hs
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -3091,6 +3266,7 @@ theorem select_double (calls : Calls) {ns : List String} {d : String}
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -3125,6 +3301,7 @@ theorem select_array (calls : Calls) {ns : List String} {d : String}
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -3159,6 +3336,7 @@ theorem select_struct (calls : Calls) {ns : List String} {d : String}
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -3193,6 +3371,7 @@ theorem select_vecD (calls : Calls) {ns : List String} {d : String}
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -3227,6 +3406,7 @@ theorem select_vecA (calls : Calls) {ns : List String} {d : String}
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -3261,6 +3441,7 @@ theorem select_vecS (calls : Calls) {ns : List String} {d : String}
     | int wc x => exact select_of_intBit calls h hc ha hb hcv hs
     | ptr a' => simp [evalInstr, hc, hcv] at hs
     | float c' => simp [evalInstr, hc, hcv] at hs
+    | vecPoison vn vw vs => simp [evalInstr, hc, hcv] at hs
     | vec vn vw vs =>
       simp only [evalInstr, hc, ha, hb, hcv] at hs
       rcases vw with _ | k
@@ -3355,9 +3536,11 @@ theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : St
               exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩
           | int w z => simp [hva, hvb] at hs
           | vec n w l => simp [hva, hvb] at hs
+          | vecPoison n w l => simp [hva, hvb] at hs
           | float z => simp [hva, hvb] at hs
         | int w z => simp [hva, hvb] at hs
         | vec n w l => simp [hva, hvb] at hs
+        | vecPoison n w l => simp [hva, hvb] at hs
         | float z => simp [hva, hvb] at hs
   | select d ty c a b =>
     exact select_agree calls h hread hs
@@ -3527,12 +3710,14 @@ theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : St
         | poison => simp [evalOperand_ne_poison] at hbv
         | int wb y => simp [hbv, hov] at hs
         | vec n w l => simp [hbv, hov] at hs
+        | vecPoison n w l => simp [hbv, hov] at hs
         | float z => simp [hbv, hov] at hs
         | ptr addr =>
           cases vo with
           | poison => simp [evalOperand_ne_poison] at hov
           | ptr z => simp [hbv, hov] at hs
           | vec n w l => simp [hbv, hov] at hs
+          | vecPoison n w l => simp [hbv, hov] at hs
           | float z => simp [hbv, hov] at hs
           | int wi n =>
             by_cases hpos : (BitVec.signExtend 64 n).toNat < 2 ^ 63
@@ -3599,12 +3784,34 @@ theorem evalInstr_agree (calls : Calls) {ns : List String} {i : Instr} {s t : St
     have hidx := evalOperand_agree_of_uses hl (op := idx) (by
       intro n' hn'; cases idx <;> simp_all [Instr.uses, Operand.regs])
     simp only [evalInstr, hv, helt, hidx] at hs
-    repeat (split at hs)
-    all_goals
-      first
-      | (cases hs
-         exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
-      | (cases hs)
+    rcases hvv : evalOperand t v with _ | vv
+    · simp [hvv] at hs
+    · rcases hev : evalOperand t elt with _ | ev
+      · simp [hvv, hev] at hs
+      · rcases hix : evalOperand t idx with _ | iv
+        · simp [hvv, hev, hix] at hs
+        · cases iv with
+          | int wi k =>
+            rcases hx : ev.intToNat w with _ | x
+            · simp [hvv, hev, hix, hx] at hs
+            · rcases hlv : vv.laneView n w with _ | lv
+              · simp [hvv, hev, hix, hx, hlv] at hs
+              · cases lv with
+                | plain lanes =>
+                  simp only [hvv, hev, hix, hx, hlv] at hs
+                  repeat (split at hs)
+                  all_goals
+                    first
+                    | (cases hs
+                       exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩)
+                    | (cases hs)
+                | poison lanes =>
+                  rcases hp : Const.poisonLaneInsert? w lanes k.toNat x with _ | ls
+                  · simp [hvv, hev, hix, hx, hlv, hp] at hs
+                  · simp only [hvv, hev, hix, hx, hlv, hp] at hs
+                    cases hs
+                    exact ⟨_, by simp [evalInstr, *], State.AgreeOn.bind h⟩
+          | _ => simp [hvv, hev, hix] at hs
   | shuffleVec d n w a b mask =>
     have ha := evalOperand_agree_of_uses hl (op := a) (by
       intro n' hn'; cases a <;> simp_all [Instr.uses, Operand.regs])

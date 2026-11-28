@@ -296,25 +296,33 @@ cannot certify changed bytes for any of the four units.
 
 `attributes=reject` records the attribute policy: the fixtures carry none, and
 the parser refuses an attribute it cannot read -- a definition's return attribute
-outside the set it checks, a function attribute or attribute group reference
-after a parameter list, and a declaration's return attribute, parameter attribute
-and post-parameter tokens -- rather than dropping it silently --
+outside the set it checks, a definition's parameter attribute whose violation
+changes definedness (`nonnull`, `align`, `dereferenceable`, `range`,
+`nofpclass`, `noalias`; the refusal names the caller obligation), a function
+attribute or attribute group reference after a parameter list, and a
+declaration's return attribute, parameter attribute and post-parameter tokens --
+rather than dropping it silently --
 `tests/m4-loop-emission.sh --return-attr`, `--function-attr`, `--declare-attr`
 and `--declare-param-attr` exercise that at the driver's command
 line.  A definition's return attribute whose shape the reader does read is
 dropped by design, with the widening recorded at the decision and the pair pinned
-in `LeanLLVMTest/Core.lean`.  The loop
+in `LeanLLVMTest/Core.lean`; a definition's `noundef`, ABI sign and callee-promise
+parameter attributes are dropped on the same terms, with the split recorded at
+`parseParamAttrs`.  The loop
 fixture needs no stripping: the printer writes the modelled AST, and the
 emitter refuses to print unless its own output parses back to the same
 function. For `baseline.ll` and `candidate.ll` `capture.sh` removes `noundef`
 and the other parameter attributes, `align`, `tbaa`, attribute groups and the
-module-level header lines the fixture does not need; the parser would refuse the
-unstripped text on its parameter attributes. That removal is justified
+module-level header lines the fixture does not need. The removal is now partly
+redundant: the parser would read the `noundef` parameters, and it would still
+refuse the unstripped `baseline.raw.ll` at the attribute group reference `#0`
+its header carries. That removal is justified
 per item in the script's comment and is an assertion about the value each
 retained instruction computes; it is not a proof that the stripped and original
 texts are semantically equivalent, and it does not undo assumptions an
 already-compiled caller may have drawn from those attributes. Declaration
-headers are checked the same way as definition headers: a return attribute, a
+headers are checked the same way as definition headers, except that no parameter
+attribute is dropped from a declaration: a return attribute, a
 parameter attribute other than a parameter name, a variable argument list, and
 any token after the closing parenthesis (a function attribute, an attribute
 group reference, `unnamed_addr`, an address space, a section, an alignment, a

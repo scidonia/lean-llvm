@@ -51,14 +51,31 @@ Measured 2026-11-27, with the driver carrying the module-header change
   with a written callee function type, 8 with a literal vector operand, 6 with an
   `extractelement` line, 6 with an `insertelement` line and 6 with a
   `zeroinitializer` operand.**
-- The census exits nonzero on this tree for a reason independent of that change:
-  the manifest predates 24 tracked `*.ll` files — the four `stage2.callee.*`
-  fixtures, the seven `stage2.helper.*` bodies, `stage2.candidate`,
-  `stage2-noevent.candidate`, `json-pipeline.candidate`,
-  `json-s1-blocks.candidate`, `marker_noevent`, the production fixture, and the
-  seven `tests/counterexamples/` bodies — and `repo-census.sh` reports them as
-  omitted.  The production fixture's row is added with the commit that carries
-  it.
+- That measurement's manifest still omitted 24 tracked `*.ll` files (the four
+  `stage2.callee.*` fixtures, the seven `stage2.helper.*` bodies,
+  `stage2.candidate`, `stage2-noevent.candidate`, `json-pipeline.candidate`,
+  `json-s1-blocks.candidate`, `marker_noevent` and the seven
+  `tests/counterexamples/` bodies); the 2026-11-28 measurement below adds them.
+
+Measured 2026-11-28, with the driver carrying the definition parameter-attribute
+change (`nix develop -c lake build leanllvm` and `nix develop -c lake build
+LeanLLVMTest`, both exit 0):
+
+- **The checked manifest covers the whole tracked corpus: 53 files (62
+  `define`s) — 46 parse, 7 are refused.**  The parameter reader now reads past
+  every definition header's parameter list, so the four header refusals moved to
+  the token after it: `baseline.o1.ll` and `stage2.production.ll` stop at
+  `local_unnamed_addr #0` (with `align 64` for the production fixture), and
+  `baseline.raw.ll` and `candidate.raw.ll` at the attribute group reference
+  `#0`.  The other three — `stage2.callee.num_el_el1.ll`,
+  `stage2.callee.stk_cmp.ll` and `stage2.helper.num_fast_el1.ll` — are partial
+  extracts that name a `%struct` type their own text does not define; that
+  refusal is unchanged and is not a header surface.
+- **Coverage: 0 files with an `icmp … ptr` line, 0 with a written callee
+  function type, 8 with a literal vector operand, 6 with an `extractelement`
+  line, 6 with an `insertelement` line and 6 with a `zeroinitializer`
+  operand.**  `probes/install/ir/stage2.production.import.tsv` records the
+  production fixture's new stopping point, and `repo-census.sh` exits 0.
 
 ## The stage-1 kernel
 

@@ -62,14 +62,22 @@ supplies it on re-parse.
 one by one.  It carries the lane width and the lanes and takes its lane count
 from their length, so there is no count field that could disagree with the list;
 the operand's `<n x iw>` type supplies the count on parse and the parser refuses
-a list of another length.  Lanes are integers, so a list with `undef` or `poison`
-in a lane position has no representation and the parser refuses one by name.  A
+a list of another length.  Lanes are integers, so a list with `undef` in a lane
+position has no representation and the parser refuses one by name; a `poison`
+lane is the separate `vectorPoison` form, which keeps the per-lane placement.  A
 hand-built list whose length disagrees with the operand type is not a value of
 that type: `Value.vecLanes` refuses it by shape, which the semantics reads as
 undefined behaviour.
 
 `float` is a binary64 literal as its bit pattern: LLVM writes it as a decimal or
-a `0x`-prefixed hexadecimal, and the pattern is what both spellings denote. -/
+a `0x`-prefixed hexadecimal, and the pattern is what both spellings denote.
+
+`vectorPoison` is a lane list with at least one `poison` lane, `<i64 poison, i64
+0>`.  LLVM gives the literal a per-lane value: the poison lanes are poison and
+the others are the values written.  `Const.toValue` keeps that placement as
+`Value.vecPoison`, whose every read as a vector is undefined behaviour; the one
+use that recovers a defined value is a lane write over every poison lane, which
+`Const.poisonLaneInsert?` states and `evalInstr` applies. -/
 inductive Const where
   | int (w : Nat) (v : BitVec w)
   | null
@@ -77,6 +85,8 @@ inductive Const where
   | poison
   | splat (n w : Nat) (v : BitVec w)
   | vector (w : Nat) (lanes : List (BitVec w))
+  /-- A lane list carrying a `poison` lane: `lanes[k] = none` is a poison lane. -/
+  | vectorPoison (w : Nat) (lanes : List (Option (BitVec w)))
   /-- A binary64 literal, as its bit pattern. -/
   | float (bits : BitVec 64)
   deriving DecidableEq, Repr
@@ -87,7 +97,11 @@ and lane width, and its lanes are a list of exactly that many lanes; a list of
 another length is a value the semantics does not produce, and `Value.vecLanes`
 rejects it by shape.  A binary64 value is its 64-bit pattern: the pattern is the
 value, so two spellings of a number that differ in bits (`+0` and `-0`) are
-distinct, and a NaN keeps its payload.  `poison` is not a value a use observes:
+distinct, and a NaN keeps its payload.  `vecPoison` is a vector carrying at least
+one poison lane, the value of the `vectorPoison` literal: `Value.vecLanes`
+refuses it, so every use that reads it as a vector is `ub`, and only the lane
+write that covers the poison lanes (`Const.poisonLaneInsert?`) produces a
+readable vector from it.  `poison` is not a value a use observes:
 a `phi` whose taken edge supplies a `poison` operand binds it into its
 destination, and a read of that destination is undefined behaviour (`ub`) —
 which is where `Const.toValue` already puts a `poison` immediate read directly.
@@ -97,6 +111,8 @@ inductive Value where
   | int (w : Nat) (v : BitVec w)
   | ptr (addr : Nat)
   | vec (n w : Nat) (lanes : List (BitVec w))
+  /-- A vector whose lane `k` is a poison lane when `lanes[k] = none`. -/
+  | vecPoison (n w : Nat) (lanes : List (Option (BitVec w)))
   /-- A binary64 value, as its 64-bit pattern. -/
   | float (bits : BitVec 64)
   /-- The value a `phi` binds from a `poison` incoming: present in the cell,
@@ -116,7 +132,9 @@ the read of that destination, and the literal stays `ub` when an instruction
 reads it directly.  A splat is the
 same value in every lane, and it is total: its element is an integer by
 construction.  A lane list is the vector it writes, with the list's length as the
-lane count. -/
+lane count.  A lane list carrying a poison lane is the `vecPoison` value: the
+per-lane placement is kept, every read of it as a vector is `ub`, and the one
+recovery is the lane write that covers the poison lane (`poisonLaneInsert?`). -/
 def Const.toValue : Const → Option Value
   | .int w v => some (.int w v)
   | .null => some (.ptr 0)
@@ -124,7 +142,47 @@ def Const.toValue : Const → Option Value
   | .poison => none
   | .splat n w v => some (.vec n w (List.replicate n v))
   | .vector w lanes => some (.vec lanes.length w lanes)
+  | .vectorPoison w lanes => some (.vecPoison lanes.length w lanes)
   | .float b => some (.float b)
+
+/-- The lanes a lane write produces from a vector literal carrying poison lanes.
+
+`k` is the written lane and `x` the defined value written there.  The write is
+modelled on the literal's per-lane reading: the written lane becomes `x` and
+every other lane keeps what the literal wrote.  The result is a value only when
+the written lane is a poison lane and no poison lane survives the write —
+`some lanes'` — and otherwise `none`, which the semantics reads as undefined
+behaviour.  That is LLVM's reading: overwriting the only poison lane gives a
+fully defined vector, while a poison lane the write does not cover makes the
+value poison, and this model has no poison value to return. -/
+def Const.poisonLaneInsert? (w : Nat) (lanes : List (Option (BitVec w))) (k x : Nat) :
+    Option (List (BitVec w)) :=
+  match lanes[k]? with
+  | some none =>
+      if (lanes.set k (some (BitVec.ofNat w x))).all (fun l => l.isSome) then
+        some ((lanes.map (fun l => l.getD 0)).set k (BitVec.ofNat w x))
+      else none
+  | _ => none
+
+/-- A lane write over a poison lane, with every lane defined after the write,
+rebuilds the vector. -/
+theorem Const.poisonLaneInsert?_eq_some {w : Nat} {lanes : List (Option (BitVec w))}
+    {k x : Nat} (hk : lanes[k]? = some none)
+    (hall : (lanes.set k (some (BitVec.ofNat w x))).all (fun l => l.isSome) = true) :
+    Const.poisonLaneInsert? w lanes k x =
+      some ((lanes.map (fun l => l.getD 0)).set k (BitVec.ofNat w x)) := by
+  unfold Const.poisonLaneInsert?
+  rw [hk]
+  simp [hall]
+
+/-- A lane write that leaves a poison lane uncovered has no value. -/
+theorem Const.poisonLaneInsert?_eq_none {w : Nat} {lanes : List (Option (BitVec w))}
+    {k x : Nat} (hk : lanes[k]? = some none)
+    (hall : (lanes.set k (some (BitVec.ofNat w x))).all (fun l => l.isSome) = false) :
+    Const.poisonLaneInsert? w lanes k x = none := by
+  unfold Const.poisonLaneInsert?
+  rw [hk]
+  simp [hall]
 
 /-- An instruction operand. -/
 inductive Operand where

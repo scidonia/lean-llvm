@@ -220,6 +220,8 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
               cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
           | vec n w l =>
               cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
+          | vecPoison n w l =>
+              cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
           | float z =>
               cases vb <;> simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
           | poison =>
@@ -228,6 +230,7 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
               cases vb with
               | int w y => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
               | vec n w l => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
+              | vecPoison n w l => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
               | float z => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
               | poison => simp [OptStateRel, SameApartFromNext, State.bind, henv, hmem, hpc, hpre]
               | ptr y =>
@@ -273,6 +276,7 @@ theorem evalInstr_next_irr {calls : Calls} (hcalls : CallsNextIrr calls)
           cases pv with
           | int w x => exact trivial
           | vec n w l => exact trivial
+          | vecPoison n w l => exact trivial
           | float b => exact trivial
           | poison => exact trivial
           | ptr addr => exact storeValue_next ⟨henv, hmem, hpc, hpre⟩ ty vv addr
@@ -437,6 +441,7 @@ theorem execTerm_next_irr {s t : State} (h : SameApartFromNext s t) (term : Term
               all_goals (simp [CtrlSameApartFromNext, SameApartFromNext, henv, hmem, hpc, hpre])
           | ptr a => simp [hc, CtrlSameApartFromNext]
           | vec n w l => simp [hc, CtrlSameApartFromNext]
+          | vecPoison n w l => simp [hc, CtrlSameApartFromNext]
           | float b => simp [hc, CtrlSameApartFromNext]
           | poison => simp [hc, CtrlSameApartFromNext]
   | unreachable => simp [execTerm, CtrlSameApartFromNext]

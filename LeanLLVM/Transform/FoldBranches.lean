@@ -73,6 +73,7 @@ theorem execTerm_foldTerm (s : State) (t : Term) :
           | poison => simp [truthValue]
           | splat _ _ _ => simp [truthValue]
           | vector _ _ => simp [truthValue]
+          | vectorPoison _ _ => simp [truthValue]
   | ret ty v => rfl
   | br d => rfl
   | unreachable => rfl

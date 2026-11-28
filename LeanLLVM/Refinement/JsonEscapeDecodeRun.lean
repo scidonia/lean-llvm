@@ -306,6 +306,7 @@ theorem evalOperand_reg_eq (env : Env) (s : State) (n : String) (v : Value)
   | int w x => rfl
   | ptr a => rfl
   | vec n w l => rfl
+  | vecPoison n w l => rfl
   | float b => rfl
 
 theorem latch_phi_operand_emitter :

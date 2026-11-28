@@ -5,10 +5,13 @@ This is the form the semantics and the certified passes work on.  It is
 deliberately smaller than the textual LLVM grammar.  The parser refuses what it
 knows it does not model rather than approximating it: instructions, block
 structure, a function definition's return attribute before the return type (read,
-checked and then dropped), a function attribute after the parameter list, and a
-declaration's return attribute, parameter attributes, post-parameter tokens and
-variable argument list are all checked, so a `Function` or `Decl` that reaches
-the driver has a defined meaning.
+checked and then dropped), a function definition's parameter attributes (read by
+`parseParamAttrs` and dropped when the model already reads their obligation,
+refused by name when a violation changes definedness the model does not
+reproduce), a function attribute after the parameter list, and a declaration's
+return attribute, parameter attributes, post-parameter tokens and variable
+argument list are all checked, so a `Function` or `Decl` that reaches the driver
+has a defined meaning.
 -/
 import LeanLLVM.Basic
 

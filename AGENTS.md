@@ -594,11 +594,28 @@ re-elaborating the delta.
   `--declare-attr`, `--declare-param-attr`).  A return attribute before a
   definition's return type is read and dropped (see below), and a token in that
   position the return-attribute reader has no rule for is refused by name.  Do
-  not silently approximate an unmodelled construct on those surfaces.  The only
+  not silently approximate an unmodelled construct on those surfaces.  The
   attribute-shaped tokens accepted and dropped are the closed linkage,
   visibility and calling-convention set `isHeaderSurface` names, on both
-  headers, and a definition's return attributes, because the model has none of
-  their semantics; a token outside those sets is refused rather than dropped.
+  headers; a definition's return attributes; and a definition's *parameter*
+  attributes, read by `parseParamAttrs` and split by what their violation does:
+  `noundef` is dropped because the value domain has no undefined constructor and
+  no operand a modelled `call` passes is `poison` (`evalOperand_ne_poison`), so
+  its residue is the `∀ v ∈ args, v ≠ Value.poison` premise at the denotation
+  entry `Beh`/`run`; the ABI sign tokens (`zeroext`, `signext`, `noext`,
+  `inreg`) and the callee's own capture, memory and lifetime promises
+  (`captures`, `nocapture`, `nofree`, `readonly`, `writeonly`, `readnone`,
+  `returned`) are claims about the body the compiler emitted rather than caller
+  obligations on the argument; and the caller obligations that
+  *do* change definedness — `nonnull`, `align N`, `dereferenceable(N)`,
+  `dereferenceable_or_null(N)`, `range(...)`, `nofpclass(...)`, `noalias` — are
+  refused by name with the obligation in the message, because the module has no
+  field to carry them as a hypothesis and dropping one would claim the imported
+  body correct on arguments the source leaves undefined.  The hidden-argument
+  and ABI tokens (`sret`, `byval`, `byref`, `inalloca`, `preallocated`,
+  `elementtype`, `alignstack`, `allocalign`, `allocptr`, `immarg`, `nest`,
+  `swiftself`, `swiftasync`) are refused as unmodelled, the reading linkage
+  gets.  A token outside those sets is refused rather than dropped.
 - The module header is accepted and dropped: `source_filename = "..."`, the two
   `target` lines, globals (`@name = ...`), attribute groups
   (`attributes #N = { ... }`) and metadata nodes (`!name = !...`) are read for

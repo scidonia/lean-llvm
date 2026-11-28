@@ -361,6 +361,11 @@ theorem handled_instrT_load (calls : Calls) (frame : Nat → Prop) (s : State) (
           rw [hub hE]
           simp only [instrT, hOp]
           exact handled_ubT calls frame s.mem
+      | vecPoison n w x =>
+          have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
+          rw [hub hE]
+          simp only [instrT, hOp]
+          exact handled_ubT calls frame s.mem
       | float b =>
           have hE : evalInstr calls s (.load d ty p) = none := by simp [evalInstr, hOp]
           rw [hub hE]
@@ -423,6 +428,12 @@ theorem handled_instrT_store (calls : Calls) (frame : Nat → Prop) (s : State) 
               simp only [instrT, hv, hp]
               exact handled_ubT calls frame s.mem
           | vec n w x =>
+              have hE : evalInstr calls s (.store ty v p) = none := by
+                simp [evalInstr, hv, hp]
+              rw [hub hE]
+              simp only [instrT, hv, hp]
+              exact handled_ubT calls frame s.mem
+          | vecPoison n w x =>
               have hE : evalInstr calls s (.store ty v p) = none := by
                 simp [evalInstr, hv, hp]
               rw [hub hE]

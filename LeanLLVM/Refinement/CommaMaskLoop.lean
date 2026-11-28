@@ -257,6 +257,7 @@ theorem evalInstr_mul_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | vecPoison n' w' lanes => simp [Value.intToNat]
     | poison => simp
 
 theorem evalInstr_lshr_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
@@ -287,9 +288,11 @@ theorem evalInstr_lshr_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
           · simp [Value.intToNat, hw]
         | ptr b => simp [Value.intToNat]
         | vec n' w' lanes => simp [Value.intToNat]
+        | vecPoison n' w' lanes => simp [Value.intToNat]
         | poison => simp
       | ptr a => cases v₂ <;> simp [Value.intToNat]
       | vec n' w' lanes => cases v₂ <;> simp [Value.intToNat]
+      | vecPoison n' w' lanes => cases v₂ <;> simp [Value.intToNat]
       | poison => cases v₂ <;> simp
 
 theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : BitVec 64) :
@@ -311,6 +314,7 @@ theorem evalInstr_shl_imm_reg (calls : Calls) (s : State) (d r : String) (a : Bi
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | vecPoison n' w' lanes => simp [Value.intToNat]
     | poison => simp
 
 theorem c_eight : c 8 = (BitVec.ofNat 64 8 : BitVec 64) := by decide
@@ -377,6 +381,7 @@ theorem evalInstr_icmp_ult_imm (calls : Calls) (s : State) (d r : String) (b : B
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | vecPoison n' w' lanes => simp [Value.intToNat]
     | poison => simp
 
 theorem lookup_bind_self (s : State) (d : String) (v : Value) :

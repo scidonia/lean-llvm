@@ -374,6 +374,42 @@ def declReturnAttrSrc : String :=
 #guard refusal declReturnAttrSrc =
   some "unsupported return attribute 'range ( i64 0 , 1 )' before the return type of @return_attr_decl"
 
+-- A definition's *parameter* attribute is the other kind of promise: it is a
+-- caller obligation, and the compiler may have optimised the body on it.  The
+-- reader drops only the closed set whose obligation the model already reads or
+-- whose members are claims about the emitted body — `noundef`, the ABI sign
+-- tokens and the callee's capture promises — and refuses the obligations it
+-- cannot carry,
+-- naming the obligation rather than claiming a wider correctness.
+def defParamAttrSrc : String :=
+"define i64 @param_attr(i64 noundef %x) {
+entry:
+  ret i64 %x
+}
+"
+
+def defParamAttrPlainSrc : String :=
+"define i64 @param_attr(i64 %x) {
+entry:
+  ret i64 %x
+}
+"
+
+-- The dropped attribute leaves no field behind, so both texts parse alike.
+#guard
+  match parseModule defParamAttrSrc, parseModule defParamAttrPlainSrc with
+  | .ok a, .ok b => decide (a = b)
+  | _, _ => false
+
+-- The obligation that changes definedness is refused, and the message states
+-- the obligation: the body may have been optimised on it and the module has no
+-- field to carry it as a hypothesis.
+#guard refusal "define i64 @f(ptr nonnull %p) {
+entry:
+  ret i64 0
+}
+" = some "in parameters of @f: parameter 1 carries the attribute 'nonnull', which is not modelled: it is a caller obligation whose violation is undefined behaviour, the compiled body may have been optimised on the assumption, and the module has no field to carry the obligation as a hypothesis"
+
 /-! ### The binary64 forms -/
 
 def stF (a b : BitVec 64) : State :=

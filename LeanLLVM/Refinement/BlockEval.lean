@@ -124,6 +124,7 @@ theorem evalOperand_reg_of (env : Env) (s : State) (n : String) (v : Value)
   | int w x => rfl
   | ptr a => rfl
   | vec n w l => rfl
+  | vecPoison n w l => rfl
   | float b => rfl
 
 /-- A literal integer operand reads to its value. -/

@@ -388,4 +388,112 @@ entry:
 
 #guard returnsInt (runSource chainRunSource []) 64 5
 
+/-! ### A vector literal with a `poison` lane -/
+
+-- The literal form the production stage-2 body writes: one poison lane, then a
+-- defined lane.  It parses to the per-lane form, keeping which lane is poison, so
+-- a lane write can cover it; the instruction is otherwise the same one the
+-- lane-list spelling produces.
+#guard
+  match instrsOf "  %q = insertelement <2 x i64> <i64 poison, i64 0>, i64 %k, i32 0" with
+  | some [i] =>
+      i = .insertelement "%q" 2 64
+            (.imm (.vectorPoison 64 [none, some 0])) (.reg "%k") (.imm (.int 32 0))
+  | _ => false
+
+-- The printed form writes `poison` at the lane and re-parses to the same
+-- instruction, so the literal survives a parse/print round trip.
+#guard reparses "  %q = insertelement <2 x i64> <i64 poison, i64 0>, i64 %k, i32 0"
+
+-- The poison lane can be any lane, not only the first: the placement is kept.
+#guard
+  match instrsOf "  %q = icmp eq <4 x i32> <i32 1, i32 poison, i32 3, i32 4>, %p" with
+  | some [i] =>
+      i = .icmpVec "%q" .eq 4 32
+            (.imm (.vectorPoison 32 [some 1, none, some 3, some 4])) (.reg "%p")
+  | _ => false
+
+-- `undef` in a lane position is still refused by name: the model has no
+-- nondeterministic value, and no use recovers it as a lane write does a poison
+-- lane.
+#guard refusedWith "  %q = icmp eq <4 x i32> %p, <i32 1, i32 undef, i32 3, i32 4>"
+  ["vector literal lane", "integer literal or 'poison'", "undef"]
+
+/-- A body of the production instruction's shape: write `%x` over lane 0 of a
+vector whose lane 0 is poison, then return the two lanes packed as
+`lane0 | lane1 << 8`.  Lane 1 is the literal's zero, so the answer says the write
+covered the poison lane and left the defined lane alone. -/
+def poisonWriteProgram : String :=
+"define i64 @poison_write(i64 %x) {
+entry:
+  %v = insertelement <2 x i64> <i64 poison, i64 0>, i64 %x, i32 0
+  %a = extractelement <2 x i64> %v, i32 0
+  %b = extractelement <2 x i64> %v, i32 1
+  %s = shl i64 %b, 8
+  %t = or i64 %a, %s
+  ret i64 %t
+}
+"
+
+-- 7 + 0 * 256 = 7.  A model that left the write out, or wrote another lane, gives
+-- a different answer; a model that refused the instruction is `ub`, not 7.
+#guard returnsInt (runSource poisonWriteProgram [.int 64 7]) 64 7
+
+/-- The same body with a defined placeholder in the lane the write overwrites.
+The literal is a different AST (the poison lane is kept), but the lane is dead:
+the write replaces it before any read, so the two programs agree. -/
+def deadLaneWriteProgram : String :=
+"define i64 @dead_lane_write(i64 %x) {
+entry:
+  %v = insertelement <2 x i64> <i64 0, i64 0>, i64 %x, i32 0
+  %a = extractelement <2 x i64> %v, i32 0
+  %b = extractelement <2 x i64> %v, i32 1
+  %s = shl i64 %b, 8
+  %t = or i64 %a, %s
+  ret i64 %t
+}
+"
+
+#guard runSource poisonWriteProgram [.int 64 7] =
+  runSource deadLaneWriteProgram [.int 64 7]
+
+/-- The same literal read before any write: LLVM's lane 1 is defined (zero), but
+the vector as a whole carries poison and this model has no poison value, so the
+read is `ub`.  This is the pair's other side: the value exists only when a lane
+write covers the poison lane. -/
+def poisonReadProgram : String :=
+"define i64 @poison_read() {
+entry:
+  %v = extractelement <2 x i64> <i64 poison, i64 0>, i32 1
+  ret i64 %v
+}
+"
+
+#guard isUb (runSource poisonReadProgram [])
+
+/-- A write over the *defined* lane leaves the poison lane in place.  LLVM's
+result is poison there; this model has no poison value, so the write is `ub` and
+the read below never sees a lane. -/
+def poisonSurvivesProgram : String :=
+"define i64 @poison_survives(i64 %x) {
+entry:
+  %v = insertelement <2 x i64> <i64 poison, i64 0>, i64 %x, i32 1
+  %a = extractelement <2 x i64> %v, i32 0
+  ret i64 %a
+}
+"
+
+#guard isUb (runSource poisonSurvivesProgram [.int 64 7])
+
+-- The production module's first such instruction, read through the parser: the
+-- literal is lane 0 poison and lane 1 zero, the element and index are the
+-- instruction's own, and the instruction is the lane write the body runs.
+#guard
+  match instrsOf
+      "  %299 = insertelement <2 x i64> <i64 poison, i64 0>, i64 %298, i64 0" with
+  | some [i] =>
+      i = .insertelement "%299" 2 64
+            (.imm (.vectorPoison 64 [none, some 0])) (.reg "%298") (.imm (.int 64 0))
+  | _ => false
+
 end VectorLanes

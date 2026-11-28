@@ -51,8 +51,10 @@ comes from the value itself.  A lane list is `<i8 34, i8 92>`, each lane written
 with its width the way LLVM prints a vector constant.  Every splat has a printed
 form, because a splat carries an integer.  A lane list with no lanes prints
 `<>`, which the parser does not read back: the parser requires at least one lane,
-so a zero-lane literal can only be built directly in an AST.  A binary64 literal
-is written as its 16-digit hexadecimal pattern, which is exact for every value. -/
+so a zero-lane literal can only be built directly in an AST.  A lane list with a
+`poison` lane writes `poison` at that position and the lane's value elsewhere, as
+LLVM does.  A binary64 literal is written as its 16-digit hexadecimal pattern,
+which is exact for every value. -/
 def Const.render : Const → String
   | .float b => hex16 b.toNat
   | .int _ v => toString v.toNat
@@ -62,6 +64,11 @@ def Const.render : Const → String
   | .splat _ w v => s!"splat (i{w} {v.toNat})"
   | .vector w lanes =>
       "<" ++ String.intercalate ", " (lanes.map fun v => s!"i{w} {v.toNat}") ++ ">"
+  | .vectorPoison w lanes =>
+      "<" ++ String.intercalate ", " (lanes.map fun l =>
+        match l with
+        | some v => s!"i{w} {v.toNat}"
+        | none => s!"i{w} poison") ++ ">"
 
 /-- Render an operand that carries no type prefix of its own. -/
 def Operand.token : Operand → String

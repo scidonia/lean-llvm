@@ -849,6 +849,7 @@ theorem lookupName_of_evalOperand_reg {s : State} {n : String} {v : Value}
       | int a b => simpa using h
       | ptr a => simpa using h
       | vec a b c => simpa using h
+      | vecPoison a b c => simpa using h
       | float a => simpa using h
 
 /-- Close a read against the binding that holds it, in whichever direction the

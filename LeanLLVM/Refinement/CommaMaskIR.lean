@@ -265,6 +265,7 @@ theorem evalInstr_and_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | vecPoison n' w' lanes => simp [Value.intToNat]
     | float b => simp [Value.intToNat]
     | poison => simp
 
@@ -285,6 +286,7 @@ theorem evalInstr_xor_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | vecPoison n' w' lanes => simp [Value.intToNat]
     | float b => simp [Value.intToNat]
     | poison => simp
 
@@ -305,6 +307,7 @@ theorem evalInstr_add_imm (calls : Calls) (s : State) (d r : String) (b : BitVec
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | vecPoison n' w' lanes => simp [Value.intToNat]
     | float b => simp [Value.intToNat]
     | poison => simp
 
@@ -325,6 +328,7 @@ theorem evalInstr_or_imm (calls : Calls) (s : State) (d r : String) (b : BitVec 
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | vecPoison n' w' lanes => simp [Value.intToNat]
     | float b => simp [Value.intToNat]
     | poison => simp
 
@@ -346,6 +350,7 @@ theorem evalInstr_lshr_imm (calls : Calls) (s : State) (d r : String) (b : BitVe
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | vecPoison n' w' lanes => simp [Value.intToNat]
     | float b => simp [Value.intToNat]
     | poison => simp
 
@@ -380,10 +385,12 @@ theorem evalInstr_or_reg (calls : Calls) (s : State) (d r₁ r₂ : String) :
           · simp [h₁, h₂, Value.intToNat, hw]
         | ptr b => simp [h₁, h₂, Value.intToNat]
         | vec n' w' lanes => simp [h₁, h₂, Value.intToNat]
+        | vecPoison n' w' lanes => simp [h₁, h₂, Value.intToNat]
         | float b => simp [h₁, h₂, Value.intToNat]
         | poison => exact absurd h₂ (evalOperand_ne_poison s (.reg r₂))
       | ptr a => simp [h₁, h₂, Value.intToNat]
       | vec n' w' lanes => simp [h₁, h₂, Value.intToNat]
+      | vecPoison n' w' lanes => simp [h₁, h₂, Value.intToNat]
       | float b => simp [h₁, h₂, Value.intToNat]
       | poison => exact absurd h₁ (evalOperand_ne_poison s (.reg r₁))
 
@@ -404,6 +411,7 @@ theorem evalInstr_icmp_eq_imm (calls : Calls) (s : State) (d r : String) (b : Bi
       · simp [Value.intToNat, hw]
     | ptr a => simp [Value.intToNat]
     | vec n' w' lanes => simp [Value.intToNat]
+    | vecPoison n' w' lanes => simp [Value.intToNat]
     | float b => simp [Value.intToNat]
     | poison => simp
 
@@ -422,6 +430,7 @@ theorem evalInstr_select_reg_imm (calls : Calls) (s : State) (d r r₁ : String)
       cases v with
       | int w c => by_cases hw : w = 1 <;> (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
       | vec n' w' l => by_cases hw : w' = 1 <;> (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
+      | vecPoison n' w' l => by_cases hw : w' = 1 <;> (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
       | ptr a => (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
       | float z => (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
       | poison => exact absurd h (evalOperand_ne_poison s (.reg r))
@@ -448,6 +457,11 @@ theorem evalInstr_select_reg_imm (calls : Calls) (s : State) (d r r₁ : String)
             · (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
             · have h0 : c = 0 := bv1_eq_zero_of_ne_one c hc
               (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
+          | vecPoison n' w' lanes =>
+            by_cases hc : c = (1 : BitVec 1)
+            · (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
+            · have h0 : c = 0 := bv1_eq_zero_of_ne_one c hc
+              (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
           | float z =>
             by_cases hc : c = (1 : BitVec 1)
             · (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
@@ -456,6 +470,7 @@ theorem evalInstr_select_reg_imm (calls : Calls) (s : State) (d r r₁ : String)
         · cases v₁ <;> (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
       | ptr a => cases v₁ <;> (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
       | vec n' w' lanes => cases v₁ <;> (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
+      | vecPoison n' w' lanes => cases v₁ <;> (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
       | float z => cases v₁ <;> (repeat' split <;> simp_all [Value.intToNat, evalOperand, Const.toValue]) <;> rfl
 
 theorem evalInstr_select_reg (calls : Calls) (s : State) (d r r₁ r₂ : String) :
@@ -479,6 +494,10 @@ theorem evalInstr_select_reg (calls : Calls) (s : State) (d r r₁ r₂ : String
         by_cases hw : w' = 1
         · subst hw; simp_all [Value.intToNat, evalOperand, Const.toValue]
         · simp_all [Value.intToNat, evalOperand, Const.toValue]
+      | vecPoison n' w' l =>
+        by_cases hw : w' = 1
+        · subst hw; simp_all [Value.intToNat, evalOperand, Const.toValue]
+        · simp_all [Value.intToNat, evalOperand, Const.toValue]
       | ptr a => simp_all [Value.intToNat, evalOperand, Const.toValue]
       | float z => simp_all [Value.intToNat, evalOperand, Const.toValue]
       | poison => exact absurd h (evalOperand_ne_poison s (.reg r))
@@ -496,6 +515,15 @@ theorem evalInstr_select_reg (calls : Calls) (s : State) (d r r₁ r₂ : String
               | exact absurd h₁ (evalOperand_ne_poison s (.reg r₁))
               | simp_all [Value.intToNat, evalOperand, Const.toValue]
         | vec n' w' l =>
+          by_cases hw : w' = 1
+          · subst hw
+            cases v₁ <;> first
+              | exact absurd h₁ (evalOperand_ne_poison s (.reg r₁))
+              | simp_all [Value.intToNat, evalOperand, Const.toValue]
+          · cases v₁ <;> first
+              | exact absurd h₁ (evalOperand_ne_poison s (.reg r₁))
+              | simp_all [Value.intToNat, evalOperand, Const.toValue]
+        | vecPoison n' w' l =>
           by_cases hw : w' = 1
           · subst hw
             cases v₁ <;> first
@@ -543,6 +571,19 @@ theorem evalInstr_select_reg (calls : Calls) (s : State) (d r r₁ r₂ : String
               | exact absurd h₂ (evalOperand_ne_poison s (.reg r₂))
               | simp_all [Value.intToNat, evalOperand, Const.toValue]
         | vec n' w' lanes =>
+          by_cases hw : w' = 1
+          · subst hw
+            cases v₁ <;> cases v₂ <;>
+              first
+                | exact absurd h₁ (evalOperand_ne_poison s (.reg r₁))
+                | exact absurd h₂ (evalOperand_ne_poison s (.reg r₂))
+                | simp_all [Value.intToNat, evalOperand, Const.toValue]
+          · cases v₁ <;> cases v₂ <;>
+              first
+                | exact absurd h₁ (evalOperand_ne_poison s (.reg r₁))
+                | exact absurd h₂ (evalOperand_ne_poison s (.reg r₂))
+                | simp_all [Value.intToNat, evalOperand, Const.toValue]
+        | vecPoison n' w' lanes =>
           by_cases hw : w' = 1
           · subst hw
             cases v₁ <;> cases v₂ <;>
@@ -1222,6 +1263,11 @@ theorem baseline_beh_other (calls : Calls) (a : Value) (rest : List Value)
       Function.findBlock, findBlockList, Function.entry?, initState, List.head?, Option.map,
       Option.getD, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, baselineInstrs, execTerm,
       evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
+  · refine Or.inl ⟨2, ?_⟩
+    simp [runFuel, step, baselineFunction, baselineEntry, baselineBody,
+      Function.findBlock, findBlockList, Function.entry?, initState, List.head?, Option.map,
+      Option.getD, List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, baselineInstrs, execTerm,
+      evalInstr, evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
 
 /-- The candidate refuses any other argument list in the same way. -/
 theorem candidate_beh_other (calls : Calls) (a : Value) (rest : List Value)
@@ -1237,6 +1283,11 @@ theorem candidate_beh_other (calls : Calls) (a : Value) (rest : List Value)
       findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
       List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, candidateInstrs, evalInstr,
       evalOperand, Const.toValue, Value.intToNat, lit, c, argName, hw]
+  · refine Or.inl ⟨1, ?_⟩
+    simp [runFuel, step, candidateFunction, candidateBody, Function.findBlock,
+      findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
+      List.map, List.zip, List.zipWith, denoteCode, denoteRun, State.bindAll, candidateInstrs, evalInstr,
+      evalOperand, Const.toValue, Value.intToNat, lit, c, argName]
   · refine Or.inl ⟨1, ?_⟩
     simp [runFuel, step, candidateFunction, candidateBody, Function.findBlock,
       findBlockList, Function.entry?, initState, List.head?, Option.map, Option.getD,
@@ -1304,6 +1355,11 @@ theorem IR_refines : ∀ calls, LeanLLVM.Refines calls candidateFunction baselin
       exact baseline_beh_other calls _ _ hne o
     | .vec n' w' lanes =>
       have hne : ∀ y, (Value.vec n' w' lanes : Value) ≠ .int 64 y := by
+        intro y hy
+        cases hy
+      exact baseline_beh_other calls _ _ hne o
+    | .vecPoison n' w' lanes =>
+      have hne : ∀ y, (Value.vecPoison n' w' lanes : Value) ≠ .int 64 y := by
         intro y hy
         cases hy
       exact baseline_beh_other calls _ _ hne o

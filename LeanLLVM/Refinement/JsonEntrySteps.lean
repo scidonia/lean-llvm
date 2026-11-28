@@ -204,6 +204,7 @@ theorem evalOperand_reg_of (env : Env) (s : State) (n : String) (v : Value)
   | int w x => rfl
   | ptr a => rfl
   | vec n w l => rfl
+  | vecPoison n w l => rfl
   | float b => rfl
 
 /-- The eight-lane vector `x` broadcast: the shape `insertelement` + `shufflevector`
