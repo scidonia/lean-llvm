@@ -69,6 +69,33 @@ fi
 [ "$status" -eq 0 ] ||
   reject "the switch check exited $status; rows in $record when it produced a table"
 
+
+# The correspondence needs every switch to have at least two distinct
+# successors: with one, the lowering emits a bare branch that never reads the
+# condition, which is defined where a switch on a poison condition is undefined.
+# That gap is invisible to the successor table, so the checker refuses the shape.
+# This is the negative fixture for that refusal.
+cat > "$work/single.ll" <<'IR'
+define i32 @single(i32 %x) {
+entry:
+  switch i32 %x, label %a [
+  ]
+a:
+  ret i32 1
+}
+IR
+opt -S -passes=lower-switch "$work/single.ll" -o "$work/single.lowered.ll" 2>/dev/null ||
+  fail "opt refused the single-successor fixture"
+set +e
+python3 "$here/check-switch-lowering.py" "$work/single.ll" "$work/single.lowered.ll" \
+  "$work/single.tsv" >/dev/null 2>"$work/single.err"
+single_status=$?
+set -e
+[ "$single_status" -ne 0 ] ||
+  reject "the checker accepted a single-successor switch; its premise is not enforced"
+grep -q 'single successor' "$work/single.err" ||
+  reject "the checker refused the single-successor fixture for the wrong reason: $(cat "$work/single.err")"
+
 nswitch=$(grep -c '^ *switch .*label ' "$module" || true)
 tested=$(awk -F'\t' '$1 != "summary" && $1 != "index" {n += $9} END {print n+0}' "$record")
 printf 'module\t%s\t%s\n' "$module" "$sha"

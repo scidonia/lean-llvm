@@ -445,6 +445,17 @@ def check(module_path, lowered_path):
         width = int(mty.group(1))
         cases = parse_cases(ty, case_lines)
         successors = {default} | {target for _, target in cases}
+        if len(successors) < 2:
+            # The row this check supports needs every switch to have at least
+            # two distinct successors: with one, the lowering emits a bare
+            # branch that never reads the condition, which is *defined* where a
+            # switch on a poison condition is undefined.  The successor table
+            # enumerates defined integers and cannot see that gap, so the check
+            # refuses the shape instead of reporting a correspondence for it.
+            raise CheckError(
+                "switch at %s has a single successor (%s): the lowering emits a bare "
+                "branch that does not read the condition, so this check's "
+                "correspondence does not cover it" % (block, ", ".join(sorted(successors))))
         region = chain_region(lowered, fn, block, successors)
         if width == 8:
             values, domain = domain_for(width, cases, set())

@@ -292,6 +292,18 @@ the equivalence of the two compiled objects.  It is a per-switch, IR-level
 correspondence for this emission, recorded under ledger row 5's basis rather
 than as a compiler-preservation theorem.
 
+**The check's observable is the destination block, and only that.**  Three
+controls fix its scope: reversing a comparison makes it fail, so a wrong
+destination is detected; a switch whose every case names the default passes the
+table but is outside the premise below, and the check now refuses that shape
+rather than reporting a correspondence for it; and changing one incoming `phi`
+value at a join from `7` to `8` *also* passes, because the table compares
+destinations and never values.  Nineteen of the twenty successors contain a
+`phi`, so if the release relies on the *result* surviving the lowering, the
+incoming value at the join is a separate obligation: either validate the
+predecessor-to-incoming mapping, or keep it as a compiler assumption.  This
+paragraph is the record that the table does not see it.
+
 **The correspondence has a premise, because the lowering is not neutral.**  A
 switch whose condition is poison is undefined behaviour, and so is a branch on a
 poison condition, so the `icmp`-plus-`br` form the pass emits for a switch with
