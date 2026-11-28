@@ -66,7 +66,8 @@ for path in "$route" "$model" "$corpus" "$manifest" "$fixture" \
   }
 done
 for path in "$here/build/pipeline.o" "$here/build/s1_block.o" "$here/build/entry.o" \
-            "$here/build/escape.o" "$here/build/utf8.o"; do
+            "$here/build/escape.o" "$here/build/utf8.o" \
+            "$here/build/stage2_noevent.o" "$here/build/pipeline_noevent.o"; do
   [ -e "$path" ] || { printf 'SETUP: absent: %s\n' "$path" >&2; exit 3; }
 done
 
@@ -290,6 +291,7 @@ else
   elif ! clang "${kflags[@]}" "$driver_src" \
         "$here/build/pipeline.o" "$here/build/s1_block.o" "$here/build/entry.o" \
         "$here/build/escape.o" "$here/build/utf8.o" "$work/stage2-tampered.o" \
+        "$here/build/stage2_noevent.o" "$here/build/pipeline_noevent.o" \
         -o "$work/driver-tampered" 2>"$work/tamper.link.err"; then
     fail "control tampered-object: the tampered driver did not link"
     cat "$work/tamper.link.err" >&2

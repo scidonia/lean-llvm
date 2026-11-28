@@ -161,3 +161,58 @@ Limits
   od_scalar_value remains unproved (docs/contract.md row e).  The differential
   is the evidence that the model now agrees with the object on every row it
   admits here; it is not a proof of that relation.
+
+Run on the nominated release object, 87ce26e
+
+  The run above is the model repair's own, against an object built from
+  kernel/json/stage2.c.  The release artifact is the textual-IR route instead:
+  probes/install/ir/stage2.production.ll, compiled to stage2.o by build.sh's
+  STAGE2_IR arm, with the object checked against
+  probes/install/ir/stage2.production.tsv by the build itself.
+
+  nix develop -c lake build leanllvm-json-pipeline-model
+    Build completed successfully (1413 jobs).  The target is declared in
+    lakefile.toml beside the other executable roots.
+
+  STAGE2_IR=probes/install/ir/stage2.production.ll nix develop -c bash probes/json/route/build.sh
+    Exit status 0; the stage2 binding line named input 9e8975a4… and object
+    045448b8…, the record's pair.
+
+  nix develop -c bash probes/json/route/model-differential.sh
+    Exit status 0; rows=139 compared=122 outside=17 mismatches=0.
+
+  Host Linux 7.0.0-43-generic x86_64, Intel(R) Core(TM) Ultra 7 268V, 8 CPUs.
+
+  Identities, read off that run
+
+    Object        probes/json/route/build/leanllvm-json-route
+                  sha256 d99bb10a6e4ac6b18bc1e4ddf6a3dbf648ee5d99353862cb3b5e675eaae67995
+    Release object  probes/json/route/build/stage2.o
+                  sha256 045448b820ad01fe4727a4839c21ac6cc5361cc524494f0d5b45bd3ce487f168
+    Release input   probes/install/ir/stage2.production.ll
+                  sha256 9e8975a41d466126136575102f5b5bb660eb6cf9e04427eedc612203677e51f4
+    Model         .lake/build/bin/leanllvm-json-pipeline-model
+                  sha256 f71d1878cc930e77fe8bdf110cb85d19b7c6f1417bc9df70fa80b8223b6a9630
+    Fixture       probes/install/ir/json-pipeline.candidate.ll
+                  sha256 63100fb5f93ea62ca0e7764c9a3bcc5c73ee741078bc6fb0272ec82e25695eac
+    Mutated fixture (control b, temporary copy)
+                  sha256 734784652d78a980171eaf50cf7c5c7b3f767cee167669888d3d524c6bf0fede
+    Tampered stage2.c (control c, temporary copy)
+                  sha256 7968de7715e1ec0d46da17eb0cc13acee5be62d2f7dbb4cba7c28a7bbda80b00
+    Tampered driver (control c)
+                  sha256 8570881439a4b2d2ea64dcfdd5535a1d445cc55f7305075ea8ba07ae2e5da5b4
+
+  Controls, as observed.  The uninitialised POS8 arm died by SIGILL (status
+  132).  On num-zero.json the object and the unmodified model print verdict=1,
+  the mutated body prints verdict=0, and the tampered object prints verdict=0.
+
+  The route executable's digest differs from the 14f8c780… recorded at
+  5a03fd3 because this binary was linked on another host; the release object
+  and input digests are the record's, and build.sh refuses to proceed when they
+  are not.
+
+  Two units were missing from control c's link line: driver.c calls
+  leanllvm_json_pipeline_noevent for its --noevent arm, which stage2_noevent.o
+  and pipeline_noevent.o provide, so the tampered driver failed to link and the
+  control failed rather than going red.  Both units are now named in the link
+  and in the setup presence check, as build.sh names them for the driver.
