@@ -1764,9 +1764,14 @@ objects were built at `5a03fd3` with these edits, `OPT=-O2`.
 | `nix develop -c bash probes/json/route/check.sh` | 0 | 122 default-profile rows; 107 fast-path rows agree with `driver.c` byte for byte (22 arena bytes over 9 rows, 1,138 event bytes over 70 rows); divergence 0; the two-phase admission agrees with `admission` on 265 rows |
 | `nix develop -c bash probes/json/route/value-bench.sh` | 0 | the five rows below; every `equal=1` |
 
-`value-bench.sh` refuses to print a row unless `build/stage2.o` and the input
-have the capture record's hashes, so the rows below belong to the named object
-and not to whatever object was last built.  Each row is `taskset -c 2`,
+`value-bench.sh` refuses to print a row unless the input, `build/stage2.o` and
+the executable it is about to run all carry the recorded digests: the input and
+the object against the capture record, the executable against the
+`build-manifest.tsv` the link step writes beside them.  So the rows below belong
+to the named object and to the binary that was linked from it, not to whatever
+object or binary was last left in the build directory.  (The run above predates
+that manifest: its build wrote none, and the executable it timed is the
+`14f8c780…` the build row names.)  Each row is `taskset -c 2`,
 `--value-bench`'s median over three repetitions at 1 MiB and five below it,
 with the digests taken outside the timed interval.
 

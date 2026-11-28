@@ -15,6 +15,11 @@
 # scan -- and that the executable defines each of them, including the no-event
 # units, so a build that silently lost a call is a failure rather than a pass.
 # The certified objects' flags and symbol assertions are unchanged.
+#
+# The link step also writes `build-manifest.tsv`: the stage-2 input, the object
+# compiled from it and the executable that links both, with their digests.  A
+# benchmark that reads it can refuse files that were not built together, which
+# a digest printed over whichever file is present cannot establish.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -315,5 +320,37 @@ clang "${kflags[@]}" "$here/guard_check.c" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
   "$build/escape.o" "$build/utf8.o" "$build/stage2.o" -o "$build/guard_check"
 
+# What this step built, as one record: the stage-2 input, the object compiled
+# from it, and the executable that links the object.  The capture record binds
+# the input and the object, but a measurement runs the executable, so the three
+# are named together here -- a benchmark that verified only two could time a
+# stale binary or a `ROUTE` override against a current object.  Paths are
+# repository-relative where they fall under the repository, so the manifest is
+# not tied to one checkout; the digests are of the files left in `$build`.
+manifest=$build/build-manifest.tsv
+relative() { # <path> -> repository-relative when under the repository
+  case $1 in
+    "$repo"/*) printf '%s\n' "${1#"$repo"/}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+{
+  printf '# The route link step: the stage-2 input, the object compiled from it, and the executable that links them.\n'
+  printf '# role\tpath\tsha256\n'
+  if [ -n "${STAGE2_IR:-}" ]; then
+    printf 'input_ir\t%s\t%s\n' "$(relative "$STAGE2_IR")" \
+      "$(sha256sum "$STAGE2_IR" | awk '{print $1}')"
+  else
+    src=$repo/kernel/json/stage2.c
+    printf 'input_source\t%s\t%s\n' "$(relative "$src")" \
+      "$(sha256sum "$src" | awk '{print $1}')"
+  fi
+  printf 'object\t%s\t%s\n' "$(relative "$build/stage2.o")" \
+    "$(sha256sum "$build/stage2.o" | awk '{print $1}')"
+  printf 'executable\t%s\t%s\n' "$(relative "$build/leanllvm-json-route")" \
+    "$(sha256sum "$build/leanllvm-json-route" | awk '{print $1}')"
+} > "$manifest"
+
 printf 'ok: %s (sha256 %s)\n' "$build/leanllvm-json-route" \
   "$(sha256sum "$build/leanllvm-json-route" | awk '{print $1}')"
+printf 'manifest: %s\n' "$manifest"

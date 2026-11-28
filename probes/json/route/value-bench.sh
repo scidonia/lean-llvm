@@ -8,9 +8,11 @@
 # The selection is the capture record's: the object compiled from
 # `probes/install/ir/stage2.production.ll` with the middle end disabled.  This
 # script refuses to report a row unless the route's `stage2.o`, the record's
-# `object_sha256` and the record's input `sha256` all agree, so every number it
-# prints belongs to one named artifact and not to whichever object happened to
-# be in the build directory.
+# input `sha256` and `object_sha256`, and the executable it is about to run all
+# agree -- the last through the `build-manifest.tsv` the route's link step wrote
+# beside them.  Every number it prints therefore belongs to one named artifact,
+# not to whichever object happened to be in the build directory or whichever
+# binary `ROUTE` happened to point at.
 #
 # Documents: the generator's fixed seed (`0x243F6A8885A308D3`), dense at 64 KiB
 # and 1 MiB, strings at 1 MiB, and the corpus's 23-byte `doc-nested` and 4-byte
@@ -28,6 +30,7 @@ repo=$(cd "$here/../../.." && pwd)
 build=${BUILD_DIR:-"$here/build"}
 route=${ROUTE:-"$build/leanllvm-json-route"}
 object=$build/stage2.o
+manifest=$build/build-manifest.tsv
 record=$repo/probes/install/ir/stage2.production.tsv
 input=$repo/probes/install/ir/stage2.production.ll
 gen=$build/gen
@@ -40,6 +43,8 @@ die() { printf 'SETUP: %s\n' "$*" >&2; exit 3; }
 
 [ -x "$route" ] || die "absent route '$route'; build it with STAGE2_IR=$input probes/json/route/build.sh"
 [ -f "$object" ] || die "absent '$object'; the route was not built against the release artifact"
+[ -f "$manifest" ] ||
+  die "absent '$manifest'; the link step's record of what it built is missing (rebuild the route)"
 [ -f "$record" ] || die "absent '$record'"
 [ -f "$input" ] || die "absent '$input'"
 command -v taskset >/dev/null 2>&1 || die "no taskset on PATH; run this under nix develop"
@@ -48,14 +53,31 @@ recorded_input=$(awk -F'\t' '$1=="sha256"{print $2}' "$record")
 recorded_object=$(awk -F'\t' '$1=="object_sha256"{print $2}' "$record")
 [ -n "$recorded_input" ] && [ -n "$recorded_object" ] ||
   die "'$record' does not name both hashes"
+
+manifest_input=$(awk -F'\t' '$1=="input_ir"{print $3; exit}' "$manifest")
+manifest_object=$(awk -F'\t' '$1=="object"{print $3; exit}' "$manifest")
+manifest_exe=$(awk -F'\t' '$1=="executable"{print $3; exit}' "$manifest")
+[ -n "$manifest_input" ] ||
+  die "'$manifest' names no input IR; the build did not compile the release artifact (rebuild with STAGE2_IR=$input)"
+[ -n "$manifest_object" ] && [ -n "$manifest_exe" ] ||
+  die "'$manifest' does not name both its object and its executable"
+
 input_sha=$(sha256sum "$input" | awk '{print $1}')
 object_sha=$(sha256sum "$object" | awk '{print $1}')
+binary_sha=$(sha256sum "$route" | awk '{print $1}')
+[ "$manifest_input" = "$recorded_input" ] ||
+  die "the build's input IR hashes $manifest_input, the record names $recorded_input"
 [ "$input_sha" = "$recorded_input" ] ||
   die "'$input' hashes $input_sha, the record names $recorded_input"
+[ "$manifest_object" = "$recorded_object" ] ||
+  die "the build's object hashes $manifest_object, not the recorded release object $recorded_object"
 [ "$object_sha" = "$recorded_object" ] ||
   die "'$object' hashes $object_sha, not the recorded release object $recorded_object"
-
-binary_sha=$(sha256sum "$route" | awk '{print $1}')
+# The executable is the third file, and the only one that runs.  Without this
+# check a stale binary or a `ROUTE` override would be timed beside a current
+# object and reported under the object's digest.
+[ "$binary_sha" = "$manifest_exe" ] ||
+  die "'$route' hashes $binary_sha, not the executable this build linked ($manifest_exe)"
 
 work=$(mktemp -d) || die "cannot create a work directory"
 trap 'rm -rf "$work"' EXIT
@@ -76,6 +98,7 @@ bad=$repo/tests/json/corpus/esc-bad.json
 [ -f "$nested" ] || die "absent '$nested'"
 [ -f "$bad" ] || die "absent '$bad'"
 
+printf 'build manifest: %s (input, object and executable agree)\n' "$manifest"
 printf 'release artifact: object %s sha256 %s\n' "$object" "$object_sha"
 printf 'release input: %s sha256 %s\n' "$input" "$input_sha"
 printf 'route binary: %s sha256 %s\n' "$route" "$binary_sha"
@@ -89,7 +112,8 @@ row() { # <path> <label> <reps>
   out=$(taskset -c "$cpu" timeout "$call_timeout" "$route" --value-bench "$path" "$reps" 2>&1)
   status=$?
   if [ "$status" -ne 0 ]; then
-    printf 'valuebench artifact_sha256=%s doc=%s status=%s\n' "$object_sha" "$label" "$status" >&2
+    printf 'valuebench artifact_sha256=%s route_sha256=%s doc=%s status=%s\n' \
+      "$object_sha" "$binary_sha" "$label" "$status" >&2
     printf '%s\n' "$out" >&2
     return 1
   fi
@@ -101,13 +125,15 @@ row() { # <path> <label> <reps>
   digest=$(printf '%s\n' "$out" | awk '/ arm=indexed /{for (i = 1; i <= NF; i++) if ($i ~ /^digest=/) print substr($i, 8)}')
   size=$(printf '%s\n' "$out" | sed -n 's/^valuebench doc=[^ ]* size=\([0-9]*\).*/\1/p' | head -1)
   [ -n "$indexed" ] && [ -n "$listed" ] && [ -n "$reference" ] ||
-    { printf 'valuebench artifact_sha256=%s doc=%s malformed-row\n' "$object_sha" "$label" >&2
+    { printf 'valuebench artifact_sha256=%s route_sha256=%s doc=%s malformed-row\n' \
+        "$object_sha" "$binary_sha" "$label" >&2
       printf '%s\n' "$out" >&2; return 1; }
   [ "$equal" = 1 ] ||
-    { printf 'valuebench artifact_sha256=%s doc=%s equal=%s\n' "$object_sha" "$label" "$equal" >&2
+    { printf 'valuebench artifact_sha256=%s route_sha256=%s doc=%s equal=%s\n' \
+        "$object_sha" "$binary_sha" "$label" "$equal" >&2
       printf '%s\n' "$out" >&2; return 1; }
-  printf 'valuebench artifact_sha256=%s doc=%s size=%s reps=%s indexed_ns=%s listed_ns=%s reference_ns=%s equal=%s digest=%s\n' \
-    "$object_sha" "$label" "${size:--}" "$reps" "$indexed" "$listed" "$reference" "$equal" "$digest"
+  printf 'valuebench artifact_sha256=%s route_sha256=%s doc=%s size=%s reps=%s indexed_ns=%s listed_ns=%s reference_ns=%s equal=%s digest=%s\n' \
+    "$object_sha" "$binary_sha" "$label" "${size:--}" "$reps" "$indexed" "$listed" "$reference" "$equal" "$digest"
 }
 
 status=0
