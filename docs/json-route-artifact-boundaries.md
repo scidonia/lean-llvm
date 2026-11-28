@@ -245,6 +245,60 @@ re-established”.  The entry fixture's table becomes its `%tab` parameter
 (`json-entry.table.tsv`), which is the rewrite the route's table identity rests
 on.
 
+## The production module's switches, and the lowering the import path applies
+
+The captured stage-2 emission (`probes/install/ir/stage2.production.ll`, sha256
+`9e8975a41d466126136575102f5b5bb660eb6cf9e04427eedc612203677e51f4`, 201,868
+bytes) carries twenty `switch` instructions: seventeen in
+`leanllvm_json_stage2` and three in `num_scan`.  The parser does not model
+`switch`, so the import descent's last row replaces each one with
+`opt -passes=lower-switch` before parsing
+(`probes/install/ir/stage2.production.import.tsv`).  That row is a
+transformation, not a parse, so it is only as strong as the pass's per-switch
+correspondence.
+
+`probes/install/ir/check-switch-lowering.sh` checks that correspondence on the
+emission's own bytes.  It pins the digest, lowers the module with
+`opt -S -passes=lower-switch`, verifies the result, and for each original
+switch compares the successor the switch names with the block the lowered
+control flow reaches for the same condition value.  It refuses a lowering it
+cannot read rather than sampling around it:
+
+- nineteen switches are on `i8`; the check interprets the lowered chain for
+  all 256 bit patterns, including the range tests the pass emits for clustered
+  cases (`%off = add i8 %cond, -base; icmp ule i8 %off, span`);
+- one switch is on `i32` (`%258`, cases 0 and 7); its lowered tree branches
+  only on `icmp` of the condition itself against constants, and the check
+  requires that form, then sweeps every tested constant and its neighbours and
+  the type's extremes.  A test of the form `icmp <pred> %cond, C` is constant
+  between consecutive tested constants, so those representatives cover every
+  equivalence class of the condition.
+
+The run at `e88ee2d` reports `summary ok switches=20 mismatched=0`, 4,874
+values tested, lowered sha256
+`b5b405ead669c55b310140bae1f7a23ee8f369df3b46a8eae43e530e78569d55`; the
+per-switch rows are `probes/install/ir/stage2.production.switch.tsv` and the
+record carries the same line as `switch_lowering`.  The lowered digest includes
+the module's `; ModuleID`, so the script lowers from the repository root with
+the repository-relative path to keep it stable.  The same check passes on the
+named emission the descent actually lowers (`8b443feb25bbe7b524c48a387b3d7dc4c4eb70e789c93aff300a4b70082ffc52`,
+the digest the record pins for `-fno-discard-value-names`): 20/20, lowered
+`2f6e882291f3700b653d9f253457e80916b296a6fef6e07f39efd77b71c763f4`.  Mutating one
+leaf's target in a copy makes the check fail at that switch (`value 7: switch
+%274, lowered %677`), so the table is sensitive to the property it reports.
+
+What this does not establish is the pass's behaviour on any other module, or
+the equivalence of the two compiled objects.  It is a per-switch, IR-level
+correspondence for this emission, recorded under ledger row 5's basis rather
+than as a compiler-preservation theorem.
+
+Past the switches, the descent's first refusal is the poison lane:
+`while.body.i140.preheader` line 638 carries
+`%vecinit1.i1901714 = insertelement <2 x i64> <i64 poison, i64 0>, i64 %35, i64 0`
+and the parser reports `a vector literal lane must be an integer literal, got
+'poison'`.  The row before it reports `unsupported instruction 'switch'` at
+`while.body.i:39`, so the lowering is what moves the descent past the switches.
+
 ## The caller's side: what the wrapper establishes, and how it decodes
 
 `LeanLLVM/JsonCallRoute.lean` states the wrapper's obligations in the record's

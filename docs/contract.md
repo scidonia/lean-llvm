@@ -216,7 +216,7 @@ footprint licenses row 1 and nothing below it.
 | 2 | Specification | `LeanLLVM/JSON/Spec.lean`'s inductive relations as the intended reading of RFC 8259 with RFC 3629, and `Policy` as the only narrowing of the language | assumed | §1.1's clause map is the audit, and it is prose: `RfcText` is a hand-transcribed relation, not derived from a machine-readable grammar. `accepted_is_rfc_text` concludes `RfcText` from acceptance alone; `rfc_text_accepted_on_policy` additionally hypothesises `Policy` and the resource limits, so no unconditional RFC 8259 §9 claim is made |
 | 3 | LLVM semantics | `LeanLLVM/Semantics.lean`'s fuel semantics and `Calls` environment as the intended LLVM behaviour of the modelled fragment | assumed | The fragment is enumerated in `docs/capabilities.md`, "Language and IR coverage", with the construct in the fixture that each form serves. `phi` has paired evidence (`tests/phi-fragment.lean`) and a differential observation (`tests/phi-differential.sh`, which records itself as an observation, not a proof). No conformance theorem exists, and every refinement theorem is stated under this semantics, not under LLVM's |
 | 4 | Intrinsics models | `LeanLLVM/Refinement/BitLanes.lean`'s lane definitions (eleven spellings, ten definitions) and the per-unit `Calls` environments (`s1Calls`, `entryCalls`, `utf8Calls`, `escapeCalls`, and `Pclmul.clmul` for `pclmulqdq`) as the meaning of the instructions a fixture calls | assumed | `Parser.checkIntrinsicShape` fixes each admitted shape; the bound set is compared with the fixture's measured call set by `tests/escape-intrinsics.lean` (with a negative control) for the escape unit only. Flags and poison are written at the arm: `cttz` deliberately differs from LLVM at `is_zero_poison=true` and is admissible only because no clause reads that lane. No model is proved equal to hardware, and target-feature lowering is recorded by the capture, not modelled |
-| 5 | Fixture normalisation | That reducing an emission or a printed body to the syntax the parser models leaves the computed value unchanged | outside the kernel's reach | Per-item records exist for six units: `json-{entry,escape,s1-masks,utf8,pipeline}.{strip,rewrites}.tsv` and `stage2.{strip,rewrites}.tsv`. The comma-mask pair's removal list is in `capture.sh`; the classifier's is in `capture-json.sh` and the fixture header, by class rather than per item. Captures refuse constructs outside the fragment (`refuse_unmodelled`) and the result is checked with `opt -passes=verify`. Each removal is a per-item claim, not a proof; entry's `nuw`, `nsw`, `nneg` and `disjoint` are stripped with the widening recorded as "not re-established". `loop.ll`, `json-scan-body.ll` and `json-caller.ll` are printer output with nothing stripped |
+| 5 | Fixture normalisation | That reducing an emission or a printed body to the syntax the parser models leaves the computed value unchanged | outside the kernel's reach | Per-item records exist for six units: `json-{entry,escape,s1-masks,utf8,pipeline}.{strip,rewrites}.tsv` and `stage2.{strip,rewrites}.tsv`. The comma-mask pair's removal list is in `capture.sh`; the classifier's is in `capture-json.sh` and the fixture header, by class rather than per item. Captures refuse constructs outside the fragment (`refuse_unmodelled`) and the result is checked with `opt -passes=verify`. Each removal is a per-item claim, not a proof; entry's `nuw`, `nsw`, `nneg` and `disjoint` are stripped with the widening recorded as "not re-established". `loop.ll`, `json-scan-body.ll` and `json-caller.ll` are printer output with nothing stripped. The production module's twenty `switch` instructions are the one such reduction measured rather than assumed: `probes/install/ir/check-switch-lowering.sh` lowers the captured emission and checks every switch's successor over all 256 `i8` bit patterns (the one `i32` switch over the constants its tree tests and their neighbours), reporting 20/20 at `e88ee2d` with the per-switch rows in `probes/install/ir/stage2.production.switch.tsv`; the check is an IR-level correspondence for that emission, not a compiler-preservation theorem |
 | 6 | Fixture-to-AST association | The parser, `include_str`, and the executable pin that bind each proof's literal AST to the committed fixture bytes | checked by an executable pin | `#guard decide` over `parseModule src` in `JsonClassifyIR.lean`, `JsonEntryIR.lean`, `JsonEscapeIR.lean`, `JsonS1MasksIR.lean`, `JsonUtf8IR.lean` and `JsonSeam.lean`; the depth pin is restated in `LeanLLVMTest/Refinement.lean`. `probes/install/check.sh` mutates the candidate and loop fixtures and requires the guard to fail. Fixtures are not `lake build` inputs, so the pin is read only when its module is elaborated; the certificate producer re-elaborates the module from source, and that is what makes the pin current on the installation path |
 | 7 | Printer | That `LeanLLVM/Printer.lean`'s text means to real LLVM what the AST means here, and is accepted by it | checked by an executable pin | The three F3 decisions are written at the printer: no `inbounds`; a register index at the width its definition binds; `align 1` on load and store, with an `alloca`'s alignment printed as parsed. `LoopEmit.lean` refuses to print unless its output parses back to the same function; `json-caller.ll` and `json-scan-body.ll` are printed and pinned. Round trips are pinned in `LeanLLVMTest/Core.lean`; `llvm-as` acceptance is exercised in `tests/phi-differential.sh` and `opt -passes=verify` in the captures. The printer is inside the artifact path for `loop`, whose installed object is built from printed text |
 | 8 | Native compilation | That clang, the LLVM backend and assembler, and `ld` preserve the fixture's meaning, and that a rebuild reproduces the object | outside the kernel's reach | `probes/install/build.sh` compiles each unit with `clang -c` and links its marker with `ld -r`; `probes/install/select.sh` rebuilds from the fixtures under the same basenames and requires the same object hash. Captures and installations record their flags and target (`-O2 -mavx2` for the classifier; `target_features=none`, triple and data layout in the manifest); `probes/install/toolchain-id.sh` pins the Lean, clang and ld versions. **The JSON entry's own link:** `probes/json/route/build.sh` links the route from the explicit `cone_ir` list, which names exactly the object's 69-module import closure — the route's own modules, the five modules the entry needed out of heavier ones (`JsonEventBytes`, `JsonEventDecode`, `JsonCanon`, `StrtodRead`, `JsonConsumerEvent`), and the refinement and JSON cone the route already carried (`JsonPipelineSpec`, `JSON.Render`, `JSON.TapeCorrect`, `JSON.Correct` and the IR modules). `nm` over the linked `leanllvm-json-route` reports no undefined Mathlib or Batteries symbol; the closure it was linked from is the `cone_ir` list above. That names *which* closure was linked, which a byte-equal rebuild cannot; it does not say the object's instructions are the fixture's, which is the paragraph above. |
@@ -557,12 +557,10 @@ close.
 
 Second, **the number path's two agreements are separate and both stay visible**.
 The conversion's agreement is `strtodSpec`'s, proved for every well-formed
-lexeme: `numFastEmitted_strtodSpec`.  The *lexical* agreement is the scan's:
-`numLexScan_accepts_iff_numLexB` reads the emitted function's index scan as the
-tree's structural scan, and `LeanLLVM.JSON.numLexB_iff` carries that to
-`RfcNumber`, so the lexemes the scan accepts are the grammar's — checked by the
-`#guard`s at the three malformed tokens the assessment names and at accepted
-controls —
+lexeme: `numFastEmitted_strtodSpec`.  The *lexical* agreement is not: which
+lexemes reach a conversion is the emitted function's own scan, modelled as
+`numLexScan` and checked by `#guard`s at the three malformed tokens the
+assessment names and at accepted controls —
 
 ```
 #guard numLexScan [0x31, 0x65] = (2, false)              -- "1e"
@@ -572,8 +570,8 @@ controls —
 #guard numLexScan [0x2D, 0x30, 0x2E, 0x35] = (4, true)   -- "-0.5", control
 ```
 
-What is *not* proved is the extent the stage-1 scanner hands the scan: that a
-token the scanner classifies as a number is exactly RFC 8259 §6's token is the
+The scan's acceptance is the *emitted function's*, not a proof that a token the
+stage-1 scanner classifies as a number is RFC 8259 §6's: that step is the
 scanner's token-extent obligation, and it is stated here rather than assumed.  A
 model that converted every readable lexeme would answer a value where the emitted
 function answers a refusal, which is why the refusal is modelled and not skipped.
@@ -681,18 +679,11 @@ path when a callee is absent, because the call is not guarded by an answer
 their `step`/`runFuel` forms).  A body-level proof of the arm cannot therefore be
 carried by the body's run at the walk's environment: the conversion's arithmetic
 is unreachable there, and `NumFastBodyArm`'s `Calls` parameter is what a proof
-must supply first.  The three callees are captured now:
-`probes/install/ir/capture-stage2-callees.sh` writes `stage2.callee.num_d8_el1.ll`,
-`stage2.callee.num_el_el1.ll` and `stage2.callee.stk_mul_u64.ll` from the same
-emission the helpers come from, and `stage2.callees.tsv` records each body's
-shape — three blocks and nineteen instructions for the digit pair, six and
-forty-one for the kernel (whose two `el_` helpers stay out of line and whose
-`EPOW` table is a module-level global), eight and eighty-eight for the multiply.
-So the digit pair's shape is read rather than decided; the kernel's decision and
-the multiply's product are still decisions, and the agreement of each body with
-its model remains the obligation `NumFastCalleesAnswered` names.
-`JsonStage2NumFastCalleeD8` pins `num_d8_el1`'s body and proves its eight-digit
-test — the branch condition, not the value.
+must supply first.  None of
+the three callees is captured as a fixture — no `define` for them exists under
+`probes/` or `kernel/` — so their answers' shape (the digit pair, the kernel's
+decision and code, the multiply's product) is a decision to make, not a fact to
+read.
 
 Two further inputs are outside the contract's staging, and `NumFastBodyArm`
 carries them as hypotheses rather than silently taking them.  The first is the
@@ -2067,13 +2058,12 @@ tape the decoder accepts.
 **The facts.**  `TokenBytes bs tok` is the document-side statement a token carries:
 
 ```text
-TokenBytes bs (.punct _ s)      :=  s.stop = s.start + 1 ∧ bs[s.start]? = some p.byte
+TokenBytes bs (.punct _ s)      :=  s.stop = s.start + 1
 TokenBytes bs (.null s)         :=  (bs.drop s.start).take 4 = literal "null"  ∧ s.stop = s.start + 4
 TokenBytes bs (.bool true s)    :=  (bs.drop s.start).take 4 = literal "true"  ∧ s.stop = s.start + 4
 TokenBytes bs (.bool false s)   :=  (bs.drop s.start).take 5 = literal "false" ∧ s.stop = s.start + 5
 TokenBytes bs (.number s)       :=  ∃ lex, (bs.drop s.start).take (s.stop - s.start) = lex
                                       ∧ lex.length = s.stop - s.start ∧ RfcNumber lex
-                                      ∧ lex = numRunFrom bs s.start
 TokenBytes bs (.string s)       :=  bs[s.start]? = some 0x22
                                       ∧ ∃ cs, StringAt .strict bs s.start s.stop cs
 ```
@@ -2084,19 +2074,9 @@ at the guards that produced each token).  Nothing private had to be exported for
 it: the facts are read off the guards rather than restated from the parser's
 soundness theorem, so `DecodesValue` and the per-branch `valueAt_*_inv` lemmas stay
 `private` and no claim about the parser is duplicated.  The punctuation byte is
-part of `TokenBytes`: the guard reads `bs[i]?` at the span's start, so the row
-records it beside the one-byte width, and §7.12's four container rows read it
-through `WalkAlign.class` plus the arm's byte test rather than supplying it from
-the span discipline alone.
-
-The number row's `lex = numRunFrom bs s.start` is the decoder's own construction:
-`decodeValue`'s number branch sets `lex := numRunFrom bs i` and emits the span
-`⟨i, i + lex.length⟩`, so the span's bytes *are* the maximal number run rather
-than merely some RFC 8259 number.  `tape_tokenBytes_number` carries the equality to
-the record byte list, and `JsonNumberPremises.tape_number_maximal_run` /
-`parse_number_maximal_run` restate it as the number arm's extent, which is why the
-release theorem's extent assumption (`JsonNumberExtentAssumed`) no longer names
-maximality.
+deliberately *not* in `TokenBytes`: the run's own read supplies it (`WalkAlign.class`
+plus the arm's byte test), which is why §7.12's four container rows need nothing
+from the tape but the one-byte stop.
 
 **The record each class carries.**  `LeanLLVM/Refinement/JsonStage2TraceRow.lean`
 reads those facts at the byte list the records are stated over

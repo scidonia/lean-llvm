@@ -149,6 +149,12 @@
               # the verification runs.
               llvm.llvm
               llvm.clang
+              # Two checks read IR and generate corpora: the switch-lowering
+              # correspondence and the fair-measurement corpus generator.  Both
+              # were reaching an inherited `python3`, which is not the shell's to
+              # rely on; providing it here makes them runnable where the rest of
+              # the toolchain does.
+              pkgs.python3
             ];
 
             shellHook = ''

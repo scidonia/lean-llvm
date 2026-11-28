@@ -1,0 +1,22 @@
+index	function	block	type	condition	default	cases	domain	tested	chain_blocks	mismatches	verdict	detail
+1	leanllvm_json_stage2	26	i8	%38	227	7	exhaustive i8 (all 256 bit patterns)	256	14	0	ok	
+2	leanllvm_json_stage2	55	i8	%50	1162	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+3	leanllvm_json_stage2	85	i8	%84	1162	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+4	leanllvm_json_stage2	236	i8	%238	247	4	exhaustive i8 (all 256 bit patterns)	256	6	0	ok	
+5	leanllvm_json_stage2	240	i8	%243	244	4	exhaustive i8 (all 256 bit patterns)	256	6	0	ok	
+6	leanllvm_json_stage2	253	i8	%38	256	3	exhaustive i8 (all 256 bit patterns)	256	6	0	ok	
+7	leanllvm_json_stage2	272	i8	%269	1162	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+8	leanllvm_json_stage2	273	i32	%258	677	2	representative i32: tested constants +/- 1 and type extremes	10	4	0	ok	
+9	leanllvm_json_stage2	453	i8	%455	497	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+10	leanllvm_json_stage2	459	i8	%461	465	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+11	leanllvm_json_stage2	677	i8	%38	710	3	exhaustive i8 (all 256 bit patterns)	256	6	0	ok	
+12	leanllvm_json_stage2	719	i8	%722	723	4	exhaustive i8 (all 256 bit patterns)	256	6	0	ok	
+13	leanllvm_json_stage2	907	i8	%909	951	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+14	leanllvm_json_stage2	913	i8	%915	919	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+15	leanllvm_json_stage2	1084	i8	%38	1162	3	exhaustive i8 (all 256 bit patterns)	256	6	0	ok	
+16	leanllvm_json_stage2	1111	i8	%1114	1162	4	exhaustive i8 (all 256 bit patterns)	256	6	0	ok	
+17	leanllvm_json_stage2	1131	i8	%1134	1162	4	exhaustive i8 (all 256 bit patterns)	256	6	0	ok	
+18	num_scan	59	i8	%61	88	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+19	num_scan	65	i8	%67	70	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+20	num_scan	191	i8	%193	197	2	exhaustive i8 (all 256 bit patterns)	256	4	0	ok	
+summary	ok	switches=20	mismatched=0
