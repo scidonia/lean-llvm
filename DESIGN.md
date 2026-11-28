@@ -445,7 +445,10 @@ model reads.  A definition's parameter-attribute reader drops `noundef` and the
 ABI and callee-promise tokens, and refuses `nonnull`, `align`, `dereferenceable`,
 `range`, `nofpclass` and `noalias` with the caller obligation named in the
 message: the model has no field to carry that obligation, so the imported body
-is not claimed over an argument set the source leaves undefined.  The emitted
+is not claimed over an argument set the source leaves undefined.  The `noundef`
+obligation is the `ArgsDefined` entry premise, whose `Value.defined` predicate
+reads every lane of a vector, so a `vecPoison` that still carries a poison lane
+is not admitted even though it is not `Value.poison`.  The emitted
 text is canonical IR, checked with `llvm-as` in the verification runs.
 
 ## Next milestones

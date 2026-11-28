@@ -128,7 +128,11 @@ This is the linker's selection seen from the semantics: an entry maps a symbol,
 an argument list, the caller's memory and the caller's allocator state to what
 the callee leaves.  A missing entry is an unresolved call, which is `ub`.  The
 allocator is shared: the callee receives the caller's `next` and the caller
-resumes from the value the callee returns. -/
+resumes from the value the callee returns.  An entry is asked only about
+argument lists outside `Value.poison` that are `ArgsDefined`: a `call` reads its
+operands and forwards the result, and a defined operand list yields a defined
+argument list (`ArgsDefined.of_evalOperands`), so this is the class a `noundef`
+parameter's obligation lives in rather than a separate field on the environment. -/
 abbrev Calls := String → List Value → Mem → Nat → Option CallOutcome
 
 /-- The environment in which no call resolves. -/
@@ -2582,22 +2586,89 @@ theorem runFuel_sameExceptPre {calls : Calls} {f : Function} (hf : f.phiFree = t
   rw [ht, runFuel_setPre hf n s t.pre]
 
 
+/-- The definedness obligation an argument list carries: every value in it is
+`Value.defined`.  This is the residue of `noundef`, stated where an argument list
+enters the model — the denotation `Beh`/`run` and the executable entry
+`runDefined` — and where a `call` forwards it to the `Calls` environment.  It is
+not the inequality `∀ v ∈ args, v ≠ Value.poison`: a `vecPoison` carrying one
+poison lane is a distinct value that satisfies that inequality and fails this
+predicate, and `noundef` constrains the value's bits. -/
+def ArgsDefined (args : List Value) : Prop := ∀ v ∈ args, v.defined
+
+namespace ArgsDefined
+
+@[simp] theorem nil : ArgsDefined [] := by simp [ArgsDefined]
+
+@[simp] theorem cons {v : Value} {vs : List Value} :
+    ArgsDefined (v :: vs) ↔ v.defined ∧ ArgsDefined vs := by
+  simp [ArgsDefined]
+
+/-- A defined argument list excludes the poison marker at every position, which
+is the older, weaker reading of the same boundary. -/
+theorem ne_poison {args : List Value} (h : ArgsDefined args) :
+    ∀ v ∈ args, v ≠ .poison := fun v hv => Value.defined.ne_poison (h v hv)
+
+/-- A `call` forwards exactly what `evalOperands` reads.  If every argument
+operand reads a defined value, the list the `Calls` environment receives is
+`ArgsDefined`: the call-side half of the boundary, and the reason a composition
+that asks its environment about such a list is the model's contract. -/
+theorem of_evalOperands {s : State} :
+    ∀ (args : List (Ty × Operand)) {vs : List Value},
+      evalOperands s args = some vs →
+      (∀ (o : Operand) (v : Value), o ∈ args.map (·.2) →
+        evalOperand s o = some v → v.defined) →
+      ArgsDefined vs
+  | [], vs, h, _ => by
+      simp only [evalOperands, Option.some.injEq] at h
+      subst h
+      exact nil
+  | (ty, op) :: rest, vs, h, hd => by
+      simp only [evalOperands] at h
+      split at h
+      · rename_i v vs' hv hvs
+        cases h
+        exact cons.mpr
+          ⟨hd op v (by simp) hv,
+           of_evalOperands rest hvs (fun o v ho => hd o v (by simp [ho]))⟩
+      · cases h
+
+end ArgsDefined
+
+/-- `ArgsDefined` is decidable, because `Value.isDefined` reads the same lanes. -/
+instance ArgsDefined.instDecidable (args : List Value) : Decidable (ArgsDefined args) :=
+  decidable_of_iff (args.all Value.isDefined = true)
+    (by
+      rw [List.all_eq_true]
+      exact ⟨fun h v hv => Value.isDefined_eq_true.mp (h v hv),
+             fun h v hv => Value.isDefined_eq_true.mpr (h v hv)⟩)
+
 /-- Initial state for a call: parameters bound to the arguments, empty memory,
 address `0` reserved for `null`, the entry block loaded, and no predecessor —
-the entry block has none, so a `phi` there selects nothing. -/
+the entry block has none, so a `phi` there selects nothing.  The arguments are
+the model's `ArgsDefined` class: a caller stating the entry premise states that
+predicate, and a value outside it — a vector still carrying a poison lane — is
+not something the model claims an entry run for. -/
 def initState (f : Function) (args : List Value) : State :=
   { env := (f.params.zip args).map fun (p, v) => (p.1, v)
     mem := [], next := 1, pc := f.entry?.getD "", pre := none }
 
 /-- The set of outcomes a function can produce, as a predicate.  A `ub` outcome
 on any prefix admits every outcome; a function that never finishes admits
-none.  This is the observable behaviour `Refines` compares. -/
+none.  This is the observable behaviour `Refines` compares.
+
+The argument list is the one the model claims a run for, which is `ArgsDefined`:
+`noundef` on a parameter is this predicate, and a vector still carrying a poison
+lane is outside it.  `Function` has no field for a parameter attribute, so the
+premise is stated where a caller uses this denotation rather than inside it; the
+compiled body was optimised on the assumption, and quantifying over a wider
+argument list would claim the source defined where it does not. -/
 def Beh (calls : Calls) (f : Function) (args : List Value) (o : Outcome) : Prop :=
   (∃ n, runFuel calls n f (initState f args) = some .ub) ∨
     (∃ n, runFuel calls n f (initState f args) = some o)
 
 /-- `target` refines `source`: every outcome the target can produce is one the
-source can produce. -/
+source can produce.  The quantified argument lists are the model's defined ones;
+a caller states `ArgsDefined args` for the parameters that carried `noundef`. -/
 def Refines (calls : Calls) (target source : Function) : Prop :=
   ∀ args o, Beh calls target args o → Beh calls source args o
 
@@ -2605,6 +2676,27 @@ def Refines (calls : Calls) (target source : Function) : Prop :=
 def run (calls : Calls) (f : Function) (args : List Value) (fuel : Nat := 10000) :
     Option Outcome :=
   runFuel calls fuel f (initState f args)
+
+/-- The defined entry: `run` gated by the model's argument contract
+`ArgsDefined`.  A `noundef` parameter's obligation is discharged here, so an
+argument list carrying a `vecPoison` with a poison lane is refused rather than
+executed, while the plain vector the sole-lane overwrite produces is admitted.
+`run` stays the raw executor for a caller that has discharged the premise in a
+theorem; this is the boundary a concrete check reads. -/
+def runDefined (calls : Calls) (f : Function) (args : List Value)
+    (fuel : Nat := 10000) : Option Outcome :=
+  if ArgsDefined args then run calls f args fuel else none
+
+/-- A defined argument list runs exactly as the raw entry does. -/
+theorem runDefined_eq_run {calls : Calls} {f : Function} {args : List Value}
+    {fuel : Nat} (h : ArgsDefined args) : runDefined calls f args fuel =
+      run calls f args fuel := by
+  simp [runDefined, h]
+
+/-- An argument list outside the model's class has no defined-entry run. -/
+theorem runDefined_eq_none {calls : Calls} {f : Function} {args : List Value}
+    {fuel : Nat} (h : ¬ ArgsDefined args) : runDefined calls f args fuel = none := by
+  simp [runDefined, h]
 
 /-- Existing runs are unchanged.  A `phi`-free function's canonical run does not
 depend on the predecessor its initial state carries, so every result recorded

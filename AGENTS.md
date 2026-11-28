@@ -599,10 +599,17 @@ re-elaborating the delta.
   visibility and calling-convention set `isHeaderSurface` names, on both
   headers; a definition's return attributes; and a definition's *parameter*
   attributes, read by `parseParamAttrs` and split by what their violation does:
-  `noundef` is dropped because the value domain has no undefined constructor and
-  no operand a modelled `call` passes is `poison` (`evalOperand_ne_poison`), so
-  its residue is the `∀ v ∈ args, v ≠ Value.poison` premise at the denotation
-  entry `Beh`/`run`; the ABI sign tokens (`zeroext`, `signext`, `noext`,
+  `noundef` is dropped because the model's argument class is `Value.defined`,
+  which reads every lane: the entry premise is `ArgsDefined args`, not
+  `∀ v ∈ args, v ≠ Value.poison`, because a `vecPoison` carrying one poison lane
+  is a distinct value that satisfies the inequality and fails `noundef`; a
+  parsed definition's parameter is one type token, so a vector parameter is
+  refused by the type grammar and the vector case is a hand-built `Function`'s;
+  the executable entry `runDefined` applies the same predicate, and a `call` whose
+  operand reads are defined forwards an `ArgsDefined` list
+  (`ArgsDefined.of_evalOperands`), so the `Calls` environment is asked only about
+  that class, with the overwrite's plain vector (`Value.vec`) inside it; the ABI
+  sign tokens (`zeroext`, `signext`, `noext`,
   `inreg`) and the callee's own capture, memory and lifetime promises
   (`captures`, `nocapture`, `nofree`, `readonly`, `writeonly`, `readnone`,
   `returned`) are claims about the body the compiler emitted rather than caller

@@ -120,6 +120,72 @@ inductive Value where
   | poison
   deriving DecidableEq, Repr
 
+/-- The definedness `noundef` speaks about: every bit of the value's
+representation.  An integer, a pointer, a plain vector and a binary64 pattern
+are defined by construction.  `poison` is not.  A `vecPoison` is defined exactly
+when every lane is `some` — one poison lane makes the representation undefined
+even though the value is a distinct constructor and not `Value.poison`.  That is
+why the entry contract is stated with this predicate and not with the inequality
+against the marker: `noundef` constrains the value's bits. -/
+def Value.defined : Value → Prop
+  | .int _ _ => True
+  | .ptr _ => True
+  | .vec _ _ _ => True
+  | .float _ => True
+  | .vecPoison _ _ lanes => ∀ l ∈ lanes, l.isSome
+  | .poison => False
+
+/-- The computable form of `Value.defined`, for the entry test a run applies.  It
+reads every lane of a `vecPoison`, which is the check the proposition states. -/
+def Value.isDefined : Value → Bool
+  | .vecPoison _ _ lanes => lanes.all (fun l => l.isSome)
+  | .poison => false
+  | _ => true
+
+theorem Value.isDefined_eq_true {v : Value} : v.isDefined = true ↔ v.defined := by
+  cases v with
+  | int w x => simp [Value.isDefined, Value.defined]
+  | ptr a => simp [Value.isDefined, Value.defined]
+  | vec n w l => simp [Value.isDefined, Value.defined]
+  | float b => simp [Value.isDefined, Value.defined]
+  | poison => simp [Value.isDefined, Value.defined]
+  | vecPoison n w lanes =>
+      simp [Value.isDefined, Value.defined, List.all_eq_true]
+
+/-- The definedness of a value is decidable, so a boundary can test it. -/
+instance Value.instDecidableDefined (v : Value) : Decidable v.defined :=
+  decidable_of_iff (v.isDefined = true) Value.isDefined_eq_true
+
+@[simp] theorem Value.defined_int {w : Nat} {v : BitVec w} :
+    (Value.int w v).defined := trivial
+
+@[simp] theorem Value.defined_ptr {a : Nat} : (Value.ptr a).defined := trivial
+
+@[simp] theorem Value.defined_vec {n w : Nat} {lanes : List (BitVec w)} :
+    (Value.vec n w lanes).defined := trivial
+
+@[simp] theorem Value.defined_float {bits : BitVec 64} :
+    (Value.float bits).defined := trivial
+
+@[simp] theorem Value.defined_vecPoison {n w : Nat} {lanes : List (Option (BitVec w))} :
+    (Value.vecPoison n w lanes).defined ↔ ∀ l ∈ lanes, l.isSome := Iff.rfl
+
+theorem Value.not_defined_poison : ¬ (Value.poison).defined := fun h => h
+
+/-- A defined value is not the poison marker.  The converse does not hold: a
+`vecPoison` with a poison lane is not `Value.poison` and is not defined. -/
+theorem Value.defined.ne_poison {v : Value} (h : v.defined) : v ≠ .poison := by
+  intro hv
+  rw [hv] at h
+  exact h
+
+/-- A value with a `none` lane is not defined, whichever lane it is. -/
+theorem Value.not_defined_vecPoison {n w : Nat} {lanes : List (Option (BitVec w))}
+    (h : ∃ l ∈ lanes, l = none) : ¬ (Value.vecPoison n w lanes).defined := by
+  rw [Value.defined_vecPoison]
+  obtain ⟨l, hl, rfl⟩ := h
+  exact fun hall => by simpa using hall none hl
+
 /-- The value of a literal.  `undef` and `poison` are modelled as undefined
 behaviour: the first slice has no nondeterministic semantics, so a program that
 reads one — an operand the instruction reads directly — is `ub`.  That is an

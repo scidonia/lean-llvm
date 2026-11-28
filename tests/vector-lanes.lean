@@ -496,4 +496,46 @@ entry:
             (.imm (.vectorPoison 64 [none, some 0])) (.reg "%298") (.imm (.int 64 0))
   | _ => false
 
+/-! ### The `noundef` boundary
+
+A definition's parameter type is one token in the text, so a vector parameter is
+refused by the type grammar before an attribute is read; the obligation is
+stated for the hand-built `Function` the refinement modules build, whose
+parameter is a vector.  The predicate reads every lane of that argument, so a
+`vecPoison` that still carries a poison lane is refused at the defined entry even
+though it is not `Value.poison`; the plain vector the sole-lane overwrite
+produces is admitted.  The two controls below are one function and one argument
+list, differing only in that predicate.
+-/
+
+/-- The function taking the vector argument and returning its lane 1. -/
+def vectorArgFunction : Function :=
+  { name := "va",
+    retTy := .int 64,
+    params := [("%v", .vec 2 (.int 64))],
+    blocks := [
+      { name := "entry",
+        instrs := [.extractelement "%x" 2 64 (.reg "%v") (.imm (.int 32 1))],
+        term := .ret (.int 64) (some (.reg "%x")) } ] }
+
+-- Control 1: the argument is a vector whose lane 0 is still poison.  It is a
+-- `Value.vecPoison`, not `Value.poison`, so the older inequality would admit it;
+-- `ArgsDefined` reads every lane and refuses it at the entry.
+#guard !decide (ArgsDefined [.vecPoison 2 64 [none, some 7]])
+#guard runDefined noCalls vectorArgFunction [.vecPoison 2 64 [none, some 7]] = none
+
+-- Control 2: the sole poison lane is overwritten, and the overwrite rule yields
+-- a plain vector.  The same predicate admits it and the entry returns lane 1.
+#guard decide (ArgsDefined [.vec 2 64 [0, 7]])
+#guard
+  match runDefined noCalls vectorArgFunction [.vec 2 64 [0, 7]] with
+  | some (.ret (some (.int 64 x)) _) => x = BitVec.ofNat 64 7
+  | _ => false
+
+-- The two controls come from the same source literal through the overwrite
+-- rule: `poisonWriteProgram` writes lane 0 and covers the poison lane, and the
+-- read succeeds; `poisonSurvivesProgram` writes lane 1, leaves it, and is `ub`.
+#guard returnsInt (runSource poisonWriteProgram [.int 64 7]) 64 7
+#guard isUb (runSource poisonSurvivesProgram [.int 64 7])
+
 end VectorLanes

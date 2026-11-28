@@ -2160,21 +2160,37 @@ imported body is claimed to implement its source, past the arguments the source
 defines — an unsound claim — so the reader splits the attributes three ways.
 
 * **Dropped, because the model already reads the obligation or there is none.**
-  `noundef` says the caller passes a defined value: `Value` has no undefined
-  constructor, no operand a modelled `call` passes evaluates to `Value.poison`
-  (`evalOperand_ne_poison`), and the one place an argument list is not a read —
-  the denotation entry `Beh`/`run` — takes its premise from the theorem, which is
-  recorded here as `∀ v ∈ args, v ≠ Value.poison`, rather than in `Function`,
-  which has no field for it.  The other dropped tokens are not caller
-  obligations: `zeroext`, `signext`, `noext` and `inreg` are ABI sign and register
-  properties, and the model's typed values have no upper bits for an extension to
-  occupy; `readonly`, `writeonly` and `readnone` state the callee's own memory
-  effect through the pointer; `captures`, `nocapture` and `nofree` are promises
-  the callee makes about capturing or freeing the pointer; and `returned` is a
-  promise about the callee's own result.  Each of those is a claim about the body
-  the compiler emitted — importing its text already takes that claim as true of
-  it — not a constraint whose violation makes the caller's argument undefined, so
-  none narrows or widens the argument list a theorem must quantify over.
+  `noundef` says the caller passes a value whose representation has no undefined
+  bits, and the predicate that states it is `Value.defined`: an integer, a
+  pointer, a plain vector lane and a binary64 pattern are defined by
+  construction, `poison` is not, and a `vecPoison` is defined only when every
+  lane is `some`.  The last clause is why the obligation is not the inequality
+  `v ≠ Value.poison`: a vector with one poisoned lane is a distinct value that
+  satisfies the inequality and fails `noundef`, and a modelled `call` forwards
+  what it reads.  A parsed definition's parameter is one type token, so a vector
+  parameter is refused by the type grammar before an attribute is read; the
+  predicate's vector case is what a hand-built `Function` with a vector parameter
+  is held to, which is the form the refinement modules construct.  The one place
+  an argument list is not a read — the denotation
+  entry `Beh`/`run` — takes its premise from the theorem, recorded here as
+  `ArgsDefined args`, rather than in `Function`, which has no field for it; the
+  executable entry `runDefined` applies the same predicate.  A `call` whose
+  operand reads are defined forwards an `ArgsDefined` list to the `Calls`
+  environment (`ArgsDefined.of_evalOperands`), so the environment is asked only
+  about the class the attribute admits.  A vector literal that still carries a
+  poison lane is outside that class; the lane write that covers every poison
+  lane produces a plain vector, which is inside it
+  (`evalInstr_insertelement_poison_lane`).  The other dropped tokens are not
+  caller obligations: `zeroext`, `signext`, `noext` and `inreg` are ABI sign and
+  register properties, and the model's typed values have no upper bits for an
+  extension to occupy; `readonly`, `writeonly` and `readnone` state the callee's
+  own memory effect through the pointer; `captures`, `nocapture` and `nofree` are
+  promises the callee makes about capturing or freeing the pointer; and
+  `returned` is a promise about the callee's own result.  Each of those is a
+  claim about the body the compiler emitted — importing its text already takes
+  that claim as true of it — not a constraint whose violation makes the caller's
+  argument undefined, so none narrows or widens the argument list a theorem must
+  quantify over.
 
 * **Refused, as a caller obligation that changes definedness.**  `nonnull`,
   `align N`, `dereferenceable(N)`, `dereferenceable_or_null(N)`, `range(...)`,
