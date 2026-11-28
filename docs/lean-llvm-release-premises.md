@@ -19,7 +19,7 @@ reference decoder.
 | the emitted stream's value at the run's post is the reference decoder's canonical value, given the run's own facts | `JsonEventEmission.evb_emission_of_spec` | pinned in `LeanLLVMTest/Refinement.lean` |
 | the emission at `[1]`'s accept route, from the walk's four reads | `JsonStage2WalkSpansChain.evb_emission_of_bracket_walk` | `[propext, Classical.choice, Quot.sound]` |
 | the walk's interface: the `%ndst` and `%nev` words and the two payloads, each read at its own address and length | `JsonNumFastSpine.JsonWalkReads`, `JsonStage2WalkSpansNil.walk_accept_ndst_zero_of_reads` | `[propext, Quot.sound]` |
-| **the caller's result for staged `[1]`** — verdict, both cursors, both payloads, the canonical value and the certificate, with **no** segment, carry equation, numeral record or window among its hypotheses | `JsonEventCallerResultEntry.evb_caller_result_staged` | `[propext, Classical.choice, Quot.sound]` |
+| **the caller's result for staged `[1]`** — verdict, both cursors, both payloads, the canonical value and the certificate, with **no** segment, carry equation, numeral record, window or address-width row among its hypotheses — only the route's layout, the staged entry and the document's two facts | `JsonEventCallerResultEntry.evb_caller_result_staged` | `[propext, Classical.choice, Quot.sound]` |
 
 A frame cannot substitute for the interface: `UnchangedOutside` is silent
 inside its region list, and the report's list is not the walk's. Both failures
