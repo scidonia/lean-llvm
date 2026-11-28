@@ -1,6 +1,6 @@
 # The release claim, and every premise under it
 
-**27 November 2026 · `main` at `2039998` (70 commits since the handoff at `e88ee2d`)**
+**28 November 2026 · `main` at `98bd149` (92 commits since the handoff at `e88ee2d`)**
 
 This page exists so that a reader can see, without reconstructing it from the
 tree, exactly what a release claim for the certified JSON parser rests on at
@@ -19,6 +19,7 @@ reference decoder.
 | the emitted stream's value at the run's post is the reference decoder's canonical value, given the run's own facts | `JsonEventEmission.evb_emission_of_spec` | pinned in `LeanLLVMTest/Refinement.lean` |
 | the emission at `[1]`'s accept route, from the walk's four reads | `JsonStage2WalkSpansChain.evb_emission_of_bracket_walk` | `[propext, Classical.choice, Quot.sound]` |
 | the walk's interface: the `%ndst` and `%nev` words and the two payloads, each read at its own address and length | `JsonNumFastSpine.JsonWalkReads`, `JsonStage2WalkSpansNil.walk_accept_ndst_zero_of_reads` | `[propext, Quot.sound]` |
+| **the caller's result for staged `[1]`** — verdict, both cursors, both payloads, the canonical value and the certificate, with **no** segment, carry equation, numeral record or window among its hypotheses | `JsonEventCallerResultEntry.evb_caller_result_staged` | `[propext, Classical.choice, Quot.sound]` |
 
 A frame cannot substitute for the interface: `UnchangedOutside` is silent
 inside its region list, and the report's list is not the walk's. Both failures
@@ -53,7 +54,7 @@ ninety-one rows**, not a comment (`epow_rows_e_bounds`).
 | the comparator's copy length, and the constant half | `numCmpCopyLen_le_of_value` (`8·n ≤ 776`) | same |
 | the producer's two counts, from the nests' own call counts | `ingest_limbs_le`, `pow_five_limbs_le`, `pow_ten_limbs_le`, `fold_limbs_le` (`41`, `42`, `59`, `58` limbs) | `JsonStage2NumFastProducerCount` |
 
-## Assumption: four, all named in the tree
+## Assumption: three, all named in the tree
 
 | premise | anchor | what it says | what would discharge it |
 |---|---|---|---|
@@ -62,14 +63,15 @@ ninety-one rows**, not a comment (`epow_rows_e_bounds`).
 
 | the cursor record's words at `%c.i` | `JsonEventCallerResultSeamWords` (the seam's environment row), reported by the caller | the staged record's base and error pointer, which `walkSeg3Stores` writes and no block of the walk rewrites | nothing in the walk's invariant: `WalkInv` carries the record's address, its presence and a frame that is silent *inside* it, so the words have to be a row where the seam reads them — or `WalkInv` gains them beside a second frame, which is the widening this tree has been shrinking |
 
-| the staged error pointer's width | the consumer's environment row (`he64 : S.e < 2 ^ 64`), for now | the entry stores eight bytes of the error pointer at `%c.i + 1112` (`walkSeg3Stores`), so without the bound the word reads back as `e mod 2^64` and the scalar call's frame region `(e, stage2ErrorExtent)` can move | a record change, measured: `stage2Pre` gains `err < 2 ^ 64` beside `b`, `ep`, `dst` and `ev`; `stage2StagedPre` mirrors it; `Stage2Run` gains `errLt` with `Stage2Run.pre` passing it and every constructor supplying it from its boundary record; `pipelineStaging` likewise; then about ten destructors gain one binder and `WalkStage.eLt` follows, after which the row disappears |
+| ~~the staged error pointer's width~~ | **removed in `98bd149`** | the bound is now part of the ABI precondition, the staging record, the route's precondition and the walk's stage, so the error word is produced from the entry memory rather than assumed | — |
 
-The fourth is the error pointer's width. Its siblings in the ABI precondition —
-`b`, `ep`, `dst`, `ev` — are all bounded, and `err` was omitted; the omission is
-why this row exists. Taking the record route was measured and deferred rather
-than attempted at the end of a session: the concrete `[1]` staging can supply
-the bound, and the cost is the two records and their constructors, not the
-staging.
+The fourth assumption — the staged error pointer's width — was removed rather than
+discharged by argument: the bound joined the ABI precondition's address-word group
+(beside `b`, `ep`, `dst` and `ev`), was threaded through the staging record and the
+route's precondition by the layout refusal, became a field of the walk's stage and
+geometry, and with it the seam's error word is produced from the entry memory. The
+measurement that made this worth doing is recorded in the commit: eleven files,
++171/−52, one constructor that needed the workspace table's address word named.
 
 The second is the count tie. The third is the cursor record: its token half —
 position, end and kind — is now **proved** from the seam's own stores
