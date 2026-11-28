@@ -53,14 +53,22 @@ ninety-one rows**, not a comment (`epow_rows_e_bounds`).
 | the comparator's copy length, and the constant half | `numCmpCopyLen_le_of_value` (`8·n ≤ 776`) | same |
 | the producer's two counts, from the nests' own call counts | `ingest_limbs_le`, `pow_five_limbs_le`, `pow_ten_limbs_le`, `fold_limbs_le` (`41`, `42`, `59`, `58` limbs) | `JsonStage2NumFastProducerCount` |
 
-## Assumption: two, both named in the tree
+## Assumption: three, all named in the tree
 
 | premise | anchor | what it says | what would discharge it |
 |---|---|---|---|
 | `NumFastCalleesAnswered calls epow` | `JsonNumFastAssumed:176` | `calls = stage2NumFastCalls epow`: the selection is the model of the measured C | nothing in this tree — it is the trust statement |
 | `fbStkCounts mem v` | `JsonStage2NumFastFallback:349`, read at `NumFastProducerCount.stkBnCountTie` | the two bignum counts in memory, each within its ninety-six-limb array | a statement that each nest's memory is the model's run: the counts are bounded from the nests' guards (`41`, `42`, `59`, `58` limbs, each under `96`) and the store's own count is proved (`stkMulAddAnswer_count`), so what remains is that the emitted body is `stkMulAddRun` from the entry's zero or one |
 
-The second is the count tie. Its *numbers* are no longer only the C's:
+| the cursor record's words at `%c.i` | `JsonEventCallerResultSeamWords` (the seam's environment row), reported by the caller | the staged record's base and error pointer, which `walkSeg3Stores` writes and no block of the walk rewrites | nothing in the walk's invariant: `WalkInv` carries the record's address, its presence and a frame that is silent *inside* it, so the words have to be a row where the seam reads them — or `WalkInv` gains them beside a second frame, which is the widening this tree has been shrinking |
+
+The second is the count tie. The third is the cursor record: its token half —
+position, end and kind — is now **proved** from the seam's own stores
+(`evbSeam_pos`, `evbSeam_end`, `evbSeam_kind`), and what remains unproved is the
+base word the staging reads at `%c.i`, without which the lexeme's window and
+therefore the numeral's record are not determined.
+
+The count tie. Its *numbers* are no longer only the C's:
 `JsonStage2NumFastProducerCount` bounds the counts the emitting blocks can write
 from the guards alone — one `stk_mul_add` appends at most one limb
 (`stkMulAddCalls_length_le`), the digit guard `R < 768` makes the ingest at most
