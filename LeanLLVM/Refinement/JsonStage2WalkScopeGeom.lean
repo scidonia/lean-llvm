@@ -109,6 +109,9 @@ structure WalkGeom (m0 : Mem) where
   /-- **The event stream's staged address is a word**, `stage2Pre`'s clause: the
   twin of `dstLt` at `%ev`, whose word `if.then328.i` reads as `%33`. -/
   evLt : ev < 2 ^ 64
+  /-- **The refusal slot's staged address is a word**, `stage2Pre`'s clause: the
+  twin of `dstLt` at `%err`, which the wrapper stores a refusing offset through. -/
+  errLt : err < 2 ^ 64
   /-- **The event cursor's signed bound**, `stage2Pre`'s clause.
   `if.then328.i` forms its record pointers from a signed index, so the cursor has
   to stay below `2 ^ 63`; the clause is `nev0 + 13 * n < 2 ^ 63`, and
@@ -138,7 +141,7 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, -, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
     evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, hnxp, hdstcap,
-    hevcap, hbpos, hbLt, hepLt, hdstLt, hevLt, hev63⟩ := h'
+    hevcap, hbpos, hbLt, hepLt, hdstLt, hevLt, herrLt, hev63⟩ := h'
   exact ⟨{
     b := b
     n := n
@@ -179,6 +182,7 @@ theorem WalkGeom.nonempty {args : List Value} {m0 : Mem} {next : Nat}
     epLt := hepLt
     dstLt := hdstLt
     evLt := hevLt
+    errLt := herrLt
     ev63 := hev63
     separate := separate
     next0 := next
@@ -260,6 +264,16 @@ structure WalkStage {m0 : Mem} (G : WalkGeom m0) where
   fresh of the log and the event stream, so a link that calls `s2_after_value`
   needs no staging hypothesis beside it. -/
   sevenEnd : ∀ r ∈ stage2StagedWrites c ctype cst tok s z e, r.1 + r.2 ≤ G.next0
+  /-- **The refusal record's address is a `2 ^ 64` word.**  `%e` is the object the
+  walk writes its refusal record through and hands its sub-calls as `.ptr e`, and
+  the entry stores the address itself into the cursor record's eight-byte error
+  word (`%c.i + 1112`).  A value at or above `2 ^ 64` is that word's residue
+  rather than the address, so the width is part of the staging: it is
+  `stage2StagedPre`'s `e < 2 ^ 64` clause, transported here by
+  `walkStage_at_pre`.  Its consumer is the error word's read
+  (`stage2ReadWord … 8 = some S.e`), which is what the scalar call's refusal
+  record is written through. -/
+  eLt : e < 2 ^ 64
 
 /-- **The root slot misses the log.**  `%root_done.i` is the second allocated slot
 at `G.next0 + 8`, four bytes wide, and the log ends at or below `G.next0`, so the

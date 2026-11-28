@@ -635,7 +635,16 @@ def stage2StagedPre (args : List Value) (mem : Mem) (next : Nat)
     -- record at thirteen arguments cannot name these objects; its consumer is the
     -- walk's own staging (`WalkStage.sevenEnd`), which is what makes the container
     -- arms' root slot fresh of the log and the event stream.
-    (∀ r ∈ stage2StagedWrites c ctype cst tok s z e, r.1 + r.2 ≤ next)
+    (∀ r ∈ stage2StagedWrites c ctype cst tok s z e, r.1 + r.2 ≤ next) ∧
+    -- **The appended refusal record's address is a word.**  `%e` is one of the
+    -- eight objects the flattening appends, and the entry's third segment stores
+    -- it into the cursor record's eight-byte error word (`%c.i + 1112`); the walk
+    -- then hands it to its sub-calls as `.ptr e`.  A value at or above `2 ^ 64`
+    -- is the word's residue rather than the address, so the width is stated here
+    -- beside the staging that already names the object's presence and extent —
+    -- this is the ABI's `err < 2 ^ 64` clause at the object the walk writes
+    -- instead of at the slot the wrapper stores through.
+    e < 2 ^ 64
 
 /-- **An object appended after a separated list is separate from every member**
 and from its neighbour.  This is the shape `stage2StagedRegions` appends the
@@ -1030,6 +1039,14 @@ def stage2Pre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
     -- of the staging bounds an address's value, and `HasBytes` at `%dst`/`%ev`
     -- bounds the staged bytes rather than the number in them.
     --
+    -- **The refusal slot's address is a word too.**  `%err` is the object the
+    -- wrapper stores the refusing offset through, and the walk's refusal record
+    -- is written at the appended `%e` beside it; both are staged addresses, and
+    -- the entry stores the appended record's address into the cursor record's
+    -- eight-byte error word.  A value at or above `2 ^ 64` would be read back as
+    -- itself modulo the word, so the address's width is the caller's to state
+    -- here, exactly as `%dst`'s and `%ev`'s are.
+    --
     -- The third clause is the event cursor's own.  `if.then328.i` forms its
     -- record pointers from a **signed** index (`%add.i84 = %z.val + 13`, and
     -- `%add.ptr297.i`/`%add.ptr302.i`/`%add.ptr304.i` from it), so the cursor has
@@ -1038,7 +1055,8 @@ def stage2Pre (args : List Value) (mem : Mem) (next : Nat) : Prop :=
     -- (`WalkInv.evlen_le`), so stating the sum here is what makes
     -- `C.evlen < 2 ^ 63` a consequence of the staging at every head state,
     -- instead of a promise the walk layer would have to invent.
-    dst < 2 ^ 64 ∧ ev < 2 ^ 64 ∧ nev0 + stage2RecordBytes * n < 2 ^ 63
+    dst < 2 ^ 64 ∧ ev < 2 ^ 64 ∧ err < 2 ^ 64 ∧
+    nev0 + stage2RecordBytes * n < 2 ^ 63
 
 /-! ### The post -/
 

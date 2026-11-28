@@ -2512,7 +2512,7 @@ theorem walkGeom_at_pre {args : List Value} {m0 : Mem} {next : Nat}
   obtain ⟨b, n, ep, nep, xp, nxp, dst, dstcap, ndst, ev, evcap, nev, err, bs, ent,
     ndst0, nev0, hargs, doc, tail, entries, order, inside, esc, arenaCap, arenaRoom,
     evCap, evRoom, ndstRead, nevRead, errBytes, maxDoc, separate, hwm, hnxp, hdstcap,
-    hevcap, hbpos, hbLt, hepLt, hdstLt, hevLt, hev63⟩ := h'
+    hevcap, hbpos, hbLt, hepLt, hdstLt, hevLt, herrLt, hev63⟩ := h'
   refine ⟨{
     b := b
     n := n
@@ -2553,6 +2553,7 @@ theorem walkGeom_at_pre {args : List Value} {m0 : Mem} {next : Nat}
     epLt := hepLt
     dstLt := hdstLt
     evLt := hevLt
+    errLt := herrLt
     ev63 := hev63
     separate := separate
     next0 := next
@@ -2775,7 +2776,7 @@ theorem walkStage_at_pre {args : List Value} {m0 : Mem} {next : Nat}
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] := by
   obtain ⟨G, hnext, hargs⟩ := walkGeom_at_pre hpre
   obtain ⟨hpres, hd8, b', nw, ep', nepw, xp', nxpw, dst', dstcapw, ndst0', ev', evcapw,
-    ndst', nev', err', hargs', hread', hdisj', hndst0w, hwm'⟩ := hst
+    ndst', nev', err', hargs', hread', hdisj', hndst0w, hwm', he64e⟩ := hst
   -- the argument list names one set of objects, read at the ABI's words and again
   -- at the adapter's: the two readings' slot addresses agree, and so does the rest
   obtain ⟨-, -, -, -, -, -, -, -, hndstEq, -, -, -, -⟩ :=
@@ -2801,7 +2802,8 @@ theorem walkStage_at_pre {args : List Value} {m0 : Mem} {next : Nat}
     rw [← hrecon] at hdisj'
     simpa only [stage2StagedRegions, List.append_assoc] using hdisj'
   refine ⟨G, ?_, hnext, hargs⟩
-  refine ⟨c, ctype, cst, tok, s, z, e, nkSlot, nxpSlot, ?_, hpres, d, hd8, ?_, ?_⟩
+  refine ⟨c, ctype, cst, tok, s, z, e, nkSlot, nxpSlot, ?_, hpres, d, hd8, ?_, ?_,
+    he64e⟩
   · exact walkDisjoint_drop_member hdisjG
   · have hL : DisjointRegions
         (stage2WalkRegions G.b G.n G.ep G.nep G.xp G.nxp G.dst G.ndst0 G.ev G.evcap
@@ -2998,6 +3000,7 @@ noncomputable def Stage2Run.ofInv {m0 : Mem} (G : WalkGeom m0) (C : WalkCarry G)
   evcap := G.evcap
   nev := G.nev
   err := G.err
+  errLt := G.errLt
   bs := G.bs
   ent := G.ent
   ndst0 := G.ndst0

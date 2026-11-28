@@ -33,34 +33,32 @@ segment-3 stores put `G.b` and `S.e` at those two addresses, and the four stores
 above are peeled one at a time.  The root slot's word is the segment-4 zero.
 
 
-## The one row that is not derived
+## The refusal record's width
 
 `HcontSeamStage.heErr` needs the cursor record's error word to be `S.e`.  The
 entry's third segment stores `natToBytes S.e 8` at `%c.i + 1112`, so the word
 reads back as `S.e` only when `S.e < 2 ^ 64`; without the bound it is
 `S.e mod 2 ^ 64`, and the copy call's frame region `(e, stage2ErrorExtent)`
 (`s2ScalarValueFoot`) can move off the object `seamCtypeByte_err_sep` reasons
-about.  `WalkGeom` bounds `b`, `ep`, `dst` and `ev` by `2 ^ 64`; `WalkStage`
-carries `e` and no bound.  This module therefore takes
+about.  The width is a clause of the staging and not a hypothesis of the seam's
+row:
 
-`(he64 : S.e < 2 ^ 64)` — the refusal record's address is a sixty-four-bit word,
-
-as one environment row.  The fix and its measured ripple, for the record that
-owns `stage2Pre`:
-
-1. `stage2Pre` gains `err < 2 ^ 64` in its address-word group (beside `b`, `ep`,
-   `dst`, `ev`);
-2. `stage2StagedPre` mirrors it;
-3. `Stage2Run` gains `errLt`, `Stage2Run.pre` passes it, and every constructor
-   supplies it from the boundary record it reads (`Stage2Run` restates the pre's
-   clause list as fields, so this is a record change, not a hypothesis edit);
-4. `pipelineStaging`, if it carries the same clause list;
-5. the fixed-arity destructors gain one binder: `WalkGeom.nonempty`,
-   `walkGeom_at_pre`, `JsonEventCallerResult.lean:213`, the five in
-   `JsonEventEmission.lean`, `JsonStage2Body:3565`, and
-   `walkStage_at_pre_fields`;
-6. then `WalkStage.eLt` is produced at `walkStage_at_pre_fields` from `hpre`,
-   and `heErr` follows from the store.
+* `stage2Pre` states `err < 2 ^ 64` in its address-word group, beside `b`, `ep`,
+  `dst` and `ev`.  `pipelineStaging` carries the same clause for the slot the
+  wrapper passes, `routePre` states it for the layout's `err`, and
+  `layoutRefusal` checks it, so every caller the route admits has it;
+* `stage2StagedPre` states `e < 2 ^ 64` for the appended refusal record — the
+  object the entry writes into the error word — and that is the clause the walk
+  reads;
+* `WalkGeom` and `Stage2Run` carry `errLt`, supplied by `WalkGeom.nonempty`,
+  `walkGeom_at_pre` and `Stage2Run.ofInv`, and `Stage2Run.pre` passes it back to
+  the record's precondition;
+* `WalkStage.eLt` is the staged clause at the walk's staging, supplied by
+  `walkStage_at_pre` and `walkStage_at_pre_fields`;
+* `natToBytes8_readWord` turns the entry's byte read into the word the scalar
+  call reads; `evbStagedErrWord` is that at the entry,
+  `seamKindStore_err_readWord` carries it to the seam's kind store, and
+  `evbSeamErrWord` states `HcontSeamStage.heErr` at the staged entry.
 
 The document's five-byte window at the call is likewise a row here: the document
 read plus the staged read-past tail, carried across the seam's token stores.
@@ -252,6 +250,21 @@ theorem evbStagedRoot {m0 : Mem} {G : WalkGeom m0} {S : WalkStage G} {s₀ : Sta
 
 /-- A disjunction's two halves, commuted. -/
 theorem evbOrComm {p q : Prop} (h : p ∨ q) : q ∨ p := h.elim Or.inr Or.inl
+
+/-- **Eight bytes written as a word decode to their number.**  `stage2ReadWord` is
+the read and `bytesToNat`; `natToBytes` of a number below `2 ^ 64` is that
+number's little-endian eight bytes, and `bytesToNat` recovers it exactly at the
+width.  This is the step from a byte-level read to the word-level one the
+scalar call's staging states. -/
+theorem natToBytes8_readWord {m : Mem} {a x : Nat}
+    (h : readBytes m a 8 = some (natToBytes x 8)) (hx : x < 2 ^ 64) :
+    stage2ReadWord m a 8 = some x := by
+  have hb : bytesToNat (natToBytes x 8) = x := by
+    rw [natToBytes_toNat, show (256 : Nat) ^ 8 = 2 ^ 64 from by decide,
+      Nat.mod_eq_of_lt hx]
+  show (readBytes m a 8).map bytesToNat = _
+  rw [h]
+  simp only [hb, Option.map]
 
 /-- The token record and the cursor record are separate. -/
 theorem evbTokCursor {m0 : Mem} {G : WalkGeom m0} (S : WalkStage G) :
@@ -723,6 +736,51 @@ theorem s2ScalarValue_numberRet {mem : Mem} {c t o next : Nat} {r : CallOutcome}
   have hrr : r = CallOutcome.mk (.int 32 (BitVec.ofNat 32 1)) _ _ :=
     (Option.some.inj hcall).symm
   rw [hrr]
+
+/-- **The cursor record's error word at the staged entry.**  The entry's third
+segment stores the appended refusal record's address at `%c.i + 1112`
+(`evbStagedErr`), and the word decodes to `S.e` because that address is below
+`2 ^ 64` (`WalkStage.eLt`) — the width is a clause of the staging, so no caller
+supplies it. -/
+theorem evbStagedErrWord {m0 : Mem} {G : WalkGeom m0} {S : WalkStage G} {s₀ : State}
+    (hmem : s₀.mem = walkEntryMem G S) :
+    stage2ReadWord s₀.mem (S.c + 1112) 8 = some S.e :=
+  natToBytes8_readWord (evbStagedErr hmem) S.eLt
+
+/-- **`heErr` from the cursor record's byte read.**  The seam's kind store lies
+inside the token record, which the staging separates from the cursor record, so
+the error word is whatever the base memory held there.  Whenever that is the
+entry's `natToBytes S.e 8`, the word the scalar call reads is `S.e`, and the only
+side condition is the staging's own width (`WalkStage.eLt`).  A caller that
+carries the byte row across the walk's stores reaches `HcontSeamStage.heErr` from
+this. -/
+theorem seamKindStore_err_readWord {m0 : Mem} {G : WalkGeom m0} {Cs : WalkCarry G}
+    {s : State} {cA0 : BitVec 32}
+    (hread : readBytes s.mem (Cs.stage.c + 1112) 8 = some (natToBytes Cs.stage.e 8)) :
+    stage2ReadWord (seamKindStore Cs s cA0) (Cs.stage.c + 1112) 8 = some Cs.stage.e := by
+  have hsep : (Cs.stage.c + 1112) + 8 ≤ Cs.stage.tok + 16 ∨
+      Cs.stage.tok + 16 + (natToBytes cA0.toNat 4).length ≤ Cs.stage.c + 1112 := by
+    have h := evbTokCursor Cs.stage
+    simp only [stage2TokenExtent, stage2CursorExtent] at h
+    rw [natToBytes_length]
+    rcases h with h | h
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+  have hkeep : readBytes (seamKindStore Cs s cA0) (Cs.stage.c + 1112) 8 =
+      some (natToBytes Cs.stage.e 8) := by
+    simp only [seamKindStore]
+    rw [walkReadBytes_writeBytes_outside (start := Cs.stage.tok + 16)
+      (v := natToBytes cA0.toNat 4) hsep]
+    exact hread
+  exact natToBytes8_readWord hkeep Cs.stage.eLt
+
+/-- **`HcontSeamStage.heErr` at the staged entry.**  The seam's kind store misses
+the cursor record's error word, and the entry wrote it (`evbStagedErrWord`), so
+the row the scalar call's staging names holds at the seam's own memory. -/
+theorem evbSeamErrWord {m0 : Mem} {G : WalkGeom m0} {Cs : WalkCarry G} {s : State}
+    {cA0 : BitVec 32} (hmem : s.mem = walkEntryMem G Cs.stage) :
+    stage2ReadWord (seamKindStore Cs s cA0) (Cs.stage.c + 1112) 8 = some Cs.stage.e :=
+  seamKindStore_err_readWord (evbStagedErr hmem)
 
 end WalkScope
 end LeanLLVM.Refinement

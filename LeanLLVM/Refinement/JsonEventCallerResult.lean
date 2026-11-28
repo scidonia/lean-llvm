@@ -210,7 +210,7 @@ theorem evb_caller_result {m0 : Mem} {G : WalkGeom m0} {S : WalkStage G}
   obtain ⟨hseg, hInv, hspans⟩ :=
     bracket_walk_chain hopen hhead₁ hnumber hhead₂ hcloser h₁ hH₁ h₂ hH₂ h₃
   -- the staging's zeroed cursor
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsep⟩ := hpre
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsep, -⟩ := hpre
   have hstaged : readBytes m0 G.ndst 8 = some (wordBytes 8 0) := by
     rw [hstageWord]
     exact evb_stage_ndst hsep

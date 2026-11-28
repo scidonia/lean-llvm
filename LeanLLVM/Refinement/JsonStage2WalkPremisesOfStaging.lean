@@ -865,7 +865,7 @@ theorem walkStage_at_pre_fields {args : List Value} {m0 : Mem} {next : Nat}
         .int 64 (BitVec.ofNat 64 G.evcap), .ptr G.nev, .ptr G.err] := by
   obtain ⟨G, hnext, hargs⟩ := walkGeom_at_pre hpre
   obtain ⟨hpres, hd8, b', nw, ep', nepw, xp', nxpw, dst', dstcapw, ndst0', ev', evcapw,
-    ndst', nev', err', hargs', hread', hdisj', hndst0w, hwm'⟩ := hst
+    ndst', nev', err', hargs', hread', hdisj', hndst0w, hwm', he64e⟩ := hst
   obtain ⟨-, -, -, -, -, -, -, -, hndstEq, -, -, -, -⟩ :=
     stage2Args_components hargs hargs'
   have hmod : G.ndst0 % 2 ^ 64 = ndst0' % 2 ^ 64 := by
@@ -886,7 +886,8 @@ theorem walkStage_at_pre_fields {args : List Value} {m0 : Mem} {next : Nat}
         [(nkSlot, 8), (nxpSlot, 8)]) := by
     rw [← hrecon] at hdisj'
     simpa only [stage2StagedRegions, List.append_assoc] using hdisj'
-  refine ⟨G, WalkStage.mk c ctype cst tok s z e nkSlot nxpSlot ?_ hpres d hd8 ?_ ?_,
+  refine ⟨G, WalkStage.mk c ctype cst tok s z e nkSlot nxpSlot ?_ hpres d hd8 ?_ ?_
+      he64e,
     hnext, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, hargs⟩
   · exact walkDisjoint_drop_member hdisjG
   · have hL : DisjointRegions

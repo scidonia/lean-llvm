@@ -16,9 +16,13 @@
 #
 # Documents: the generator's fixed seed (`0x243F6A8885A308D3`), dense at 64 KiB
 # and 1 MiB, strings at 1 MiB, and the corpus's 23-byte `doc-nested` and 4-byte
-# `esc-bad`.  Each row is `--value-bench`'s three arms on the same loaded bytes:
-# the indexed `valueOf`, the previous list-materialising decode, and the scalar
-# canonical reference, with the digests required to agree (`equal=1`).
+# `esc-bad`.  Each row is `--value-bench`'s four arms on the same loaded bytes:
+# the indexed `valueOf`, the previous list-materialising decode, the scalar
+# canonical reference, and the fused event-reader prototype, with the digests
+# required to agree (`equal=1`).  The fused arm is a benchmark arm only; it is
+# not the route's value path.  The aggregate line reports which answer the
+# route's value arm takes on the same bytes (`path=fast` or `path=fallback`), so
+# coverage and throughput are separate fields of the same run.
 #
 # Every run is `taskset`-pinned.  `BENCH_CPU` selects the CPU (default 2),
 # `REPS_BIG` the 1 MiB repetition count (default 3) and `REPS_SMALL` the rest
@@ -108,7 +112,9 @@ printf 'host: %s; cpu: %s; reps: big=%s small=%s\n' \
   "$reps_big" "$reps_small"
 
 row() { # <path> <label> <reps>
-  local path=$1 label=$2 reps=$3 out status size indexed listed reference equal digest
+  local path=$1 label=$2 reps=$3 out status size indexed indexed_min indexed_max
+  local listed reference reference_min reference_max fused fused_min fused_max
+  local equal digest pathkind
   out=$(taskset -c "$cpu" timeout "$call_timeout" "$route" --value-bench "$path" "$reps" 2>&1)
   status=$?
   if [ "$status" -ne 0 ]; then
@@ -117,14 +123,25 @@ row() { # <path> <label> <reps>
     printf '%s\n' "$out" >&2
     return 1
   fi
-  arm() { printf '%s\n' "$out" | awk -v a=" arm=$1 " 'index($0, a) {for (i = 1; i <= NF; i++) if ($i ~ /^median_ns=/) print substr($i, 11)}'; }
-  indexed=$(arm indexed)
-  listed=$(arm listed)
-  reference=$(arm reference)
+  field() { # <arm> <field>
+    printf '%s\n' "$out" | awk -v a=" arm=$1 " -v k="$2=" \
+      'index($0, a) {for (i = 1; i <= NF; i++) if (index($i, k) == 1) print substr($i, length(k) + 1)}'
+  }
+  indexed=$(field indexed median_ns)
+  indexed_min=$(field indexed min_ns)
+  indexed_max=$(field indexed max_ns)
+  listed=$(field listed median_ns)
+  reference=$(field reference median_ns)
+  reference_min=$(field reference min_ns)
+  reference_max=$(field reference max_ns)
+  fused=$(field fused median_ns)
+  fused_min=$(field fused min_ns)
+  fused_max=$(field fused max_ns)
   equal=$(printf '%s\n' "$out" | sed -n 's/^valuebench .* equal=\([^ ]*\).*/\1/p')
   digest=$(printf '%s\n' "$out" | awk '/ arm=indexed /{for (i = 1; i <= NF; i++) if ($i ~ /^digest=/) print substr($i, 8)}')
+  pathkind=$(printf '%s\n' "$out" | sed -n 's/^valuebench .* path=\([^ ]*\).*/\1/p')
   size=$(printf '%s\n' "$out" | sed -n 's/^valuebench doc=[^ ]* size=\([0-9]*\).*/\1/p' | head -1)
-  [ -n "$indexed" ] && [ -n "$listed" ] && [ -n "$reference" ] ||
+  [ -n "$indexed" ] && [ -n "$listed" ] && [ -n "$reference" ] && [ -n "$fused" ] ||
     { printf 'valuebench artifact_sha256=%s route_sha256=%s doc=%s malformed-row\n' \
         "$object_sha" "$binary_sha" "$label" >&2
       printf '%s\n' "$out" >&2; return 1; }
@@ -132,14 +149,34 @@ row() { # <path> <label> <reps>
     { printf 'valuebench artifact_sha256=%s route_sha256=%s doc=%s equal=%s\n' \
         "$object_sha" "$binary_sha" "$label" "$equal" >&2
       printf '%s\n' "$out" >&2; return 1; }
-  printf 'valuebench artifact_sha256=%s route_sha256=%s doc=%s size=%s reps=%s indexed_ns=%s listed_ns=%s reference_ns=%s equal=%s digest=%s\n' \
-    "$object_sha" "$binary_sha" "$label" "${size:--}" "$reps" "$indexed" "$listed" "$reference" "$equal" "$digest"
+  printf 'valuebench artifact_sha256=%s route_sha256=%s doc=%s size=%s reps=%s path=%s indexed_ns=%s indexed_min_ns=%s indexed_max_ns=%s fused_ns=%s fused_min_ns=%s fused_max_ns=%s reference_ns=%s reference_min_ns=%s reference_max_ns=%s listed_ns=%s equal=%s digest=%s\n' \
+    "$object_sha" "$binary_sha" "$label" "${size:--}" "$reps" "${pathkind:--}" \
+    "$indexed" "$indexed_min" "$indexed_max" \
+    "$fused" "$fused_min" "$fused_max" \
+    "$reference" "$reference_min" "$reference_max" \
+    "$listed" "$equal" "$digest"
+  rows_total=$((rows_total + 1))
+  rows_equal=$((rows_equal + 1))
+  case "$pathkind" in
+    fast) fast_total=$((fast_total + 1)) ;;
+    fallback) fallback_total=$((fallback_total + 1)) ;;
+    *) failed_total=$((failed_total + 1)) ;;
+  esac
 }
 
 status=0
+rows_total=0
+rows_equal=0
+fast_total=0
+fallback_total=0
+failed_total=0
 row "$dense1m" dense-1MiB "$reps_big" || status=1
 row "$strings1m" strings-1MiB "$reps_big" || status=1
 row "$dense64" dense-64KiB "$reps_small" || status=1
 row "$nested" doc-nested "$reps_small" || status=1
 row "$bad" esc-bad "$reps_small" || status=1
+printf 'coverage docs=%s fast=%s fallback=%s failed=%s\n' \
+  "$rows_total" "$fast_total" "$fallback_total" "$failed_total"
+printf 'agreement rows=%s equal=%s artifact_sha256=%s route_sha256=%s\n' \
+  "$rows_total" "$rows_equal" "$object_sha" "$binary_sha"
 exit "$status"

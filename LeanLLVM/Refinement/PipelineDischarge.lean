@@ -794,7 +794,8 @@ theorem stage2Pre_of_exit
     nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
     hzero3, hpos, htab, hsc, hcarry, hcount, hnxp, hepcap, hxp, hdstcap, hdst, hev,
     hnev, hndst, hnev', hroomk, hroomxn, hblk, harm, hreads, hdisj, hbLtStaging,
-    hepLtStaging, hdstLtStaging, hevLtStaging, hnev63Staging⟩ := hst
+    hepLtStaging, hdstLtStaging, hevLtStaging, herrLtStaging, _hworkEStaging,
+    hnev63Staging⟩ := hst
   subst hargs
   simp only [exitArgs] at htie
   obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
@@ -1149,7 +1150,7 @@ theorem stage2Pre_of_exit
     S.ndst, S.ev, S.evcap.toNat, S.nev, S.err, bs, S.ent, ndst0, nev0,
     ?_, hdoc_ms, htail_ms, hlanes, hord, hbnd, hesc_ms, hdst_ms, ?_, hev_ms, ?_,
     hndst_ms, hnev_ms, herr_ms, ?_, hx37 ▸ hdisj2, by rw [hx37]; exact hstaged,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, hdisj2p⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, hdisj2p⟩
   · simpa [stage2Args] using hkv
   · simpa [stage2ArenaReserve] using hdstcap
   · simpa [stage2RecordBytes, ← hn] using hnev
@@ -1165,6 +1166,7 @@ theorem stage2Pre_of_exit
   · exact hepLtStaging
   · exact hdstLtStaging
   · exact hevLtStaging
+  · exact herrLtStaging
   · rw [stage2RecordBytes, hn]; exact hnev63Staging
 
 /-! ### Piece 3: the tail's run and post
@@ -1970,7 +1972,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
     nev0, n, epcap, xpcap, dstcap, evcap, arm, bs, hargs, hn, hlim, hwin, htail, hb3,
     hzero3, hpos, htab, hsc, hcarry, hnk0, hnxp, hepcap, hxp, hdstcap, hdst, hev,
     hnev, hndst, hnev0, hroomk, hroomxn, hblk, harm, hreads, hdisj, hbLtStaging,
-    hepLtStaging⟩ := hst
+    hepLtStaging, _hdstLtS, _hevLtS, _herrLtS, hworkE, _hnev63S⟩ := hst
   -- the workspace's own staging, aligned with the staging's witnesses
   obtain ⟨nw, scw, mkw, entww, epw, nkw, xpw, nxpw, xcarryw, dstw, ndstw, evw, nevw,
     errw, nxp0w, epcapw, xpcapw, dstcapw, evcapw, armw, hwargs, hwpres, hwdisj,
@@ -2207,7 +2209,7 @@ theorem pipelineTailTarget {tab base : Nat} {s2 : Calls}
       ⟨hstagedPres, hdCall,
         ⟨S.b, S.n, S.ep, S.kw, S.xp, BitVec.ofNat 64 S.xn, S.dst, S.dstcap,
           ndst0, S.ev, S.evcap, S.ndst, S.nev, S.err,
-          by simp [stage2Args], hndstCall, hstagedDisj, hndst0Lt, hstagedWm⟩⟩
+          by simp [stage2Args], hndstCall, hstagedDisj, hndst0Lt, hstagedWm, hworkE⟩⟩
     have hfixedPre : (WalkScope.Γ_stage2fixed tab).pre
         (stage2Args S.b S.ep S.xp S.dst S.ndst S.ev S.nev S.err S.n S.kw
           (BitVec.ofNat 64 S.xn) S.dstcap S.evcap)

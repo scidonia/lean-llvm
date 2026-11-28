@@ -226,7 +226,7 @@ theorem evb_arena_not_empty (hpre : routePre evbLayout evbDoc) :
       pipelineUnitsPost evbArgs evbMem (routeNext evbLayout evbDoc)
         (.ret (some (.int 64 1)) m) ∧
       readBytes m evbLayout.dst out.length = some out := by
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep⟩ := hpre
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep, _⟩ := hpre
   let m : Mem := writeBytes evbMem evbLayout.ndst (wordBytes 8 1)
   let out : List UInt8 := [0]
   have hmem : readBytes m evbLayout.ndst 8 = some (wordBytes 8 1) := by
@@ -413,7 +413,7 @@ theorem evb_events_of_post {m : Mem} {next : Nat}
       (.ret (some (.int 64 1)) m)) :
     ∃ (nev' : Nat) (evs : List UInt8),
       readBytes m evbLayout.ev nev' = some evs ∧ evs = evbEvents := by
-  obtain ⟨_, hb3, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep⟩ := hpre
+  obtain ⟨_, hb3, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep, _⟩ := hpre
   simp only [Sigma_pipeline, evbArgs, routeArgs] at hpost
   obtain ⟨bs, nk', nxp', ndstU, ndst', nev', hlen, hread, -, -, -, -, -, -, -,
     hacc, -, -⟩ := hpost
@@ -490,7 +490,7 @@ theorem evb_arena_extent_zero_of_evidence {m : Mem} {ndst' nev' : Nat}
       ndst' = 0 ∧ readBytes m evbLayout.dst ndst' = some arena ∧ arena = [] ∧
       (∀ (n : Nat) (a : List UInt8),
         n ≤ ndst' → readBytes m evbLayout.dst n = some a → a = []) := by
-  obtain ⟨_, hb3, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep⟩ := hpre
+  obtain ⟨_, hb3, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep, _⟩ := hpre
   simp only [pipelineOutputExtents, evbArgs, routeArgs] at hext
   obtain ⟨hextLt, -, -, -⟩ := hext
   simp only [Stage2OutcomeEvidence, evbArgs, routeArgs] at h
@@ -543,7 +543,7 @@ theorem evb_events_of_evidence {m : Mem} {ndstU nev' : Nat}
       (.ret (some (.int 64 1)) m)) :
     ∃ evs : List UInt8,
       readBytes m evbLayout.ev nev' = some evs ∧ evs = evbEvents := by
-  obtain ⟨_, hb3, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep⟩ := hpre
+  obtain ⟨_, hb3, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hsep, _⟩ := hpre
   simp only [Stage2OutcomeEvidence, evbArgs, routeArgs] at hev
   obtain ⟨bs, _, hread, hcase⟩ := hev
   rcases hcase with
@@ -813,7 +813,7 @@ theorem evb_evidence_of_spec {m : Mem} {next ndstU nev' : Nat}
     (hndst : readBytes m evbLayout.ndst 8 = some (wordBytes 8 0)) :
     Stage2OutcomeEvidence evbLayout.base evbArgs evbMem ndstU nev'
       (.ret (some (.int 64 1)) m) := by
-  obtain ⟨-, hb3, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsep⟩ := hpre
+  obtain ⟨-, hb3, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsep, -⟩ := hpre
   -- the header extents, and their bound on the cursor word
   simp only [pipelineOutputExtents, evbArgs, routeArgs] at hext
   obtain ⟨hndstLt, hnevLt, hndstSlot, hnevSlot⟩ := hext

@@ -437,13 +437,14 @@ def routePre (l : RouteLayout) (doc : List UInt8) : Prop :=
   -- the arena and the event stream: the reached extent and the write room
   l.ndst0 + doc.length + 64 ≤ l.dstcap ∧
   l.nev0 + 13 * doc.length ≤ l.evcap ∧
-  -- **the two staged output addresses are 64-bit words, and the event cursor is
-  -- a signed index.**  `l.dst` and `l.ev` are the objects the record's tail hands
-  -- its sub-calls and appends to, and the log's words naming them are eight-byte
-  -- residues; `if.then328.i` forms its record pointers from a signed index, so
-  -- the cursor's worst case `nev0 + 13 * n` is below `2 ^ 63`.  These are the
-  -- caller's numbers, not the staging's: `HasBytes` at the two objects bounds the
-  -- staged bytes and never the address in them.
+  -- **the three staged addresses are 64-bit words, and the event cursor is
+  -- a signed index.**  `l.dst`, `l.ev` and `l.err` are the objects the record's
+  -- tail hands its sub-calls, appends to and stores its refusal through, and the
+  -- log's words naming the first two are eight-byte residues; `if.then328.i`
+  -- forms its record pointers from a signed index, so the cursor's worst case
+  -- `nev0 + 13 * n` is below `2 ^ 63`.  These are the caller's numbers, not the
+  -- staging's: `HasBytes` at the objects bounds the staged bytes and never the
+  -- address in them.
   l.dst < 2 ^ 64 ∧ l.ev < 2 ^ 64 ∧ l.nev0 + 13 * doc.length < 2 ^ 63 ∧
   -- the two growing cursors' room, and the 32-bit document bound
   cursorRoom 0 (pipelineBlocks doc.length) 9 ∧
@@ -452,7 +453,19 @@ def routePre (l : RouteLayout) (doc : List UInt8) : Prop :=
   -- the arm selector's reserved bits
   l.arm < 8 ∧
   -- every staged object is separate
-  DisjointRegions (stagedExtents l doc)
+  DisjointRegions (stagedExtents l doc) ∧
+  -- **the refusal slot's address is a 64-bit word.**  Stage 2's record asks it
+  -- of its caller (`stage2Pre`'s `err < 2 ^ 64`), and the wrapper passes this
+  -- layout's `err` at the ABI's thirteenth slot; the object staged there is
+  -- eight bytes, and a value at or above `2 ^ 64` would be read as its residue.
+  l.err < 2 ^ 64 ∧
+  -- **the stage-2 workspace's refusal record is a 64-bit word.**  The eight
+  -- appended staging objects sit at fixed offsets above the POS8 table
+  -- (`stage2WorkExtents`), and the workspace's `%e` is what the entry stores into
+  -- the cursor record's error word; a table address that put it at or above
+  -- `2 ^ 64` is one the adapter cannot stage.  The adapter's predicate asks it
+  -- (`stage2StagedPre`'s `e < 2 ^ 64`).
+  stage2WorkE l.tab < 2 ^ 64
 
 /-- **The domain decision is the admission predicate.**  `documentDecision` is
 `admitted` exactly when `admission` accepts the document's bytes, so the shell's
@@ -769,7 +782,7 @@ theorem routeStaging (l : RouteLayout) (doc : List UInt8)
     (h : routePre l doc) :
     pipelineStaging l.tab l.base (routeArgs l doc) (stagedMem l doc) := by
   obtain ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
-    hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩ := h
+    hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep, herrLt, hworkLt⟩ := h
   obtain ⟨hpos, hlim, -⟩ := admitted_documentDomain hadm
   have hdoc64 : doc.length < 2 ^ 64 := by
     have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim
@@ -845,9 +858,10 @@ theorem routeStaging (l : RouteLayout) (doc : List UInt8)
     rw [← pipelineRegions_eq_stagedExtents l doc hdoc64 hdst64 hev64] at hsep
     exact List.Pairwise.sublist (List.sublist_append_left _ _) hsep
   · exact hbLt
-  · -- the staged boundary's output clauses: `%ep`'s word, the two staged output
-    -- addresses' words, and the event cursor's worst case as a signed index
-    exact ⟨hepLt, hdstLtR, hevLtR, hnev63R⟩
+  · -- the staged boundary's output clauses: `%ep`'s word, the three staged
+    -- addresses' words, the workspace's refusal record, and the event cursor's
+    -- worst case as a signed index
+    exact ⟨hepLt, hdstLtR, hevLtR, herrLt, hworkLt, hnev63R⟩
 
 /-- The document's exact-length read at the caller's base, which is
 `pipelineSpecPre`'s input relation and not a clause of `pipelineStaging`. -/
@@ -889,7 +903,7 @@ theorem routeStagedBelow (l : RouteLayout) (doc : List UInt8)
     pipelineStagedBelow l.tab l.base (routeArgs l doc) (stagedMem l doc)
       (routeNext l doc) := by
   obtain ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
-    _hdstLtR, _hevLtR, _hnev63R, hroom0, hroomx, h32, harm, hsep⟩ := h
+    _hdstLtR, _hevLtR, _hnev63R, hroom0, hroomx, h32, harm, hsep, _, _⟩ := h
   obtain ⟨-, hlim, -⟩ := admitted_documentDomain hadm
   have hdoc64 : doc.length < 2 ^ 64 := by
     have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim
@@ -921,7 +935,7 @@ theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
     pipelineSpecPre l.tab l.base (routeArgs l doc) (stagedMem l doc)
       (routeNext l doc) := by
   obtain ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64, hepcap, hdst, hev,
-    hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩ := h
+    hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep, herrLt, hworkLt⟩ := h
   obtain ⟨hpos, hlim, hdom⟩ := admitted_documentDomain hadm
   have hdoc64 : doc.length < 2 ^ 64 := by
     have : doc.length ≤ 1048576 := by simpa [Limits.default] using hlim
@@ -958,9 +972,9 @@ theorem routeSpecPre (l : RouteLayout) (doc : List UInt8)
         (by omega) (by decide)).2
       omega
   refine ⟨routeStaging l doc ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64,
-    hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩,
+    hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep, herrLt, hworkLt⟩,
     routeStagedBelow l doc ⟨hadm, hb3, hbLt, hepLt, hep64, hxp64, hdst64, hev64,
-      hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep⟩,
+      hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32, harm, hsep, herrLt, hworkLt⟩,
     hwork,
     doc, l.nev0, l.evcap, l.nev, ?_, ?_, ?_, stagedDoc_read l doc hsep hb3, ?_,
     hdom'⟩
@@ -1028,9 +1042,10 @@ instance disjointRegionsDecidable (rs : List (Nat × Nat)) : Decidable (Disjoint
 
 /-- The caller-side layout check: the prefix room, the arm's reserved bits, the
 four capacities, the two cursors' room, the 32-bit document bound, the 64-bit
-width of each capacity, the 64-bit width of the base and of the three staged
-addresses `ep`, `dst` and `ev`, the event cursor's signed-index bound, and the
-staged regions' separation. -/
+width of each capacity, the 64-bit width of the base and of the four staged
+addresses `ep`, `dst`, `ev` and `err`, the width of the stage-2 workspace's
+refusal record, the event cursor's signed-index bound, and the staged regions'
+separation. -/
 def layoutRefusal (l : RouteLayout) (doc : List UInt8) : Option RouteRefusal :=
   if l.base < 3 then some (.noPrefixRoom l.base)
   else if 8 ≤ l.arm then some (.armReserved l.arm)
@@ -1053,6 +1068,8 @@ def layoutRefusal (l : RouteLayout) (doc : List UInt8) : Option RouteRefusal :=
   else if 2 ^ 64 ≤ l.ep then some (.addressWidth l.ep)
   else if 2 ^ 64 ≤ l.dst then some (.addressWidth l.dst)
   else if 2 ^ 64 ≤ l.ev then some (.addressWidth l.ev)
+  else if 2 ^ 64 ≤ l.err then some (.addressWidth l.err)
+  else if 2 ^ 64 ≤ stage2WorkE l.tab then some (.addressWidth (stage2WorkE l.tab))
   else if ¬ l.nev0 + 13 * doc.length < 2 ^ 63 then
     some (.signedCursor (l.nev0 + 13 * doc.length))
   else if ¬ DisjointRegions (stagedExtents l doc) then
@@ -1087,7 +1104,8 @@ theorem layoutRefusal_none {l : RouteLayout} {doc : List UInt8}
     64 * pipelineBlocks doc.length + 63 < 2 ^ 32 ∧
     DisjointRegions (stagedExtents l doc) ∧
     l.base < 2 ^ 64 ∧ l.ep < 2 ^ 64 ∧
-    l.dst < 2 ^ 64 ∧ l.ev < 2 ^ 64 ∧ l.nev0 + 13 * doc.length < 2 ^ 63 := by
+    l.dst < 2 ^ 64 ∧ l.ev < 2 ^ 64 ∧ l.nev0 + 13 * doc.length < 2 ^ 63 ∧
+    l.err < 2 ^ 64 ∧ stage2WorkE l.tab < 2 ^ 64 := by
   have hbase : 3 ≤ l.base := by
     apply Classical.byContradiction
     intro h
@@ -1284,6 +1302,55 @@ theorem layoutRefusal_none {l : RouteLayout} {doc : List UInt8}
         if_pos (show 2 ^ 64 ≤ l.ev by omega)]
     rw [this] at hl
     cases hl
+  have herrLt : l.err < 2 ^ 64 := by
+    apply Classical.byContradiction
+    intro h
+    have : layoutRefusal l doc = some (.addressWidth l.err) := by
+      simp only [layoutRefusal, if_neg (show ¬ l.base < 3 by omega),
+        if_neg (show ¬ 8 ≤ l.arm by omega),
+        if_neg (show ¬ l.epcap < 64 * pipelineBlocks doc.length + 9 by omega),
+        if_neg (show ¬ l.dstcap < l.ndst0 + doc.length + 64 by omega),
+        if_neg (show ¬ l.evcap < l.nev0 + 13 * doc.length by omega),
+        if_neg (show ¬ ¬ cursorRoom 0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroom0),
+        if_neg (show ¬ ¬ cursorRoom l.nxp0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroomx),
+        if_neg (show ¬ 2 ^ 32 ≤ 64 * pipelineBlocks doc.length + 63 by omega),
+        if_neg (show ¬ ¬ (l.epcap < 2 ^ 64 ∧ l.xpcap < 2 ^ 64 ∧
+          l.dstcap < 2 ^ 64 ∧ l.evcap < 2 ^ 64) by
+          intro h; exact h hwidths),
+        if_neg (show ¬ 2 ^ 64 ≤ l.base by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.ep by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.dst by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.ev by omega),
+        if_pos (show 2 ^ 64 ≤ l.err by omega)]
+    rw [this] at hl
+    cases hl
+  have hworkLt : stage2WorkE l.tab < 2 ^ 64 := by
+    apply Classical.byContradiction
+    intro h
+    have : layoutRefusal l doc = some (.addressWidth (stage2WorkE l.tab)) := by
+      simp only [layoutRefusal, if_neg (show ¬ l.base < 3 by omega),
+        if_neg (show ¬ 8 ≤ l.arm by omega),
+        if_neg (show ¬ l.epcap < 64 * pipelineBlocks doc.length + 9 by omega),
+        if_neg (show ¬ l.dstcap < l.ndst0 + doc.length + 64 by omega),
+        if_neg (show ¬ l.evcap < l.nev0 + 13 * doc.length by omega),
+        if_neg (show ¬ ¬ cursorRoom 0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroom0),
+        if_neg (show ¬ ¬ cursorRoom l.nxp0 (pipelineBlocks doc.length) 9 by
+          intro h; exact h hroomx),
+        if_neg (show ¬ 2 ^ 32 ≤ 64 * pipelineBlocks doc.length + 63 by omega),
+        if_neg (show ¬ ¬ (l.epcap < 2 ^ 64 ∧ l.xpcap < 2 ^ 64 ∧
+          l.dstcap < 2 ^ 64 ∧ l.evcap < 2 ^ 64) by
+          intro h; exact h hwidths),
+        if_neg (show ¬ 2 ^ 64 ≤ l.base by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.ep by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.dst by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.ev by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.err by omega),
+        if_pos (show 2 ^ 64 ≤ stage2WorkE l.tab by omega)]
+    rw [this] at hl
+    cases hl
   have hnev63R : l.nev0 + 13 * doc.length < 2 ^ 63 := by
     apply Classical.byContradiction
     intro h
@@ -1306,6 +1373,8 @@ theorem layoutRefusal_none {l : RouteLayout} {doc : List UInt8}
         if_neg (show ¬ 2 ^ 64 ≤ l.ep by omega),
         if_neg (show ¬ 2 ^ 64 ≤ l.dst by omega),
         if_neg (show ¬ 2 ^ 64 ≤ l.ev by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.err by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ stage2WorkE l.tab by omega),
         if_pos (show ¬ l.nev0 + 13 * doc.length < 2 ^ 63 by omega)]
     rw [this] at hl
     cases hl
@@ -1330,6 +1399,8 @@ theorem layoutRefusal_none {l : RouteLayout} {doc : List UInt8}
         if_neg (show ¬ 2 ^ 64 ≤ l.ep by omega),
         if_neg (show ¬ 2 ^ 64 ≤ l.dst by omega),
         if_neg (show ¬ 2 ^ 64 ≤ l.ev by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ l.err by omega),
+        if_neg (show ¬ 2 ^ 64 ≤ stage2WorkE l.tab by omega),
         if_neg (show ¬ ¬ l.nev0 + 13 * doc.length < 2 ^ 63 by
           intro h; exact h hnev63R),
         if_pos h]
@@ -1337,7 +1408,7 @@ theorem layoutRefusal_none {l : RouteLayout} {doc : List UInt8}
     cases hl
   exact ⟨hbase, harm, hwidths.1, hwidths.2.1, hwidths.2.2.1, hwidths.2.2.2,
     hepcap, hdst, hev, hroom0, hroomx, h32, hsep, hbaseLt, hepLt, hdstLtR,
-    hevLtR, hnev63R⟩
+    hevLtR, hnev63R, herrLt, hworkLt⟩
 
 /-- **Acceptance implies the record's precondition.**  A `checkRoute` that
 accepts has established every clause of `routePre`; this is the bridge a route
@@ -1355,10 +1426,10 @@ theorem routePre_of_checkRoute_ok {l : RouteLayout} {doc : List UInt8}
       | none =>
           obtain ⟨hbase, harm, hep64, hxp64, hdst64, hev64, hepcap, hdst,
             hev, hroom0, hroomx, h32, hsep, hbaseLt, hepLt, hdstLtR, hevLtR,
-            hnev63R⟩ := layoutRefusal_none hl
+            hnev63R, herrLt, hworkLt⟩ := layoutRefusal_none hl
           exact ⟨hd, hbase, hbaseLt, hepLt, hep64, hxp64, hdst64, hev64,
             hepcap, hdst, hev, hdstLtR, hevLtR, hnev63R, hroom0, hroomx, h32,
-            harm, hsep⟩
+            harm, hsep, herrLt, hworkLt⟩
   | refused e =>
       rw [hd] at h
       cases h

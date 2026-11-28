@@ -106,6 +106,7 @@ def usage : String :=
   "       leanllvm-json-route --consume-noevent <file> [reps]  (the same arm)\n" ++
   "       leanllvm-json-route --consume-events <file> [reps]   (the certified event arm)\n" ++
   "       leanllvm-json-route --value <file>                   (the decoded value)\n" ++
+  "       leanllvm-json-route --value-fused <file>             (the fused prototype)\n" ++
   "       leanllvm-json-route --value-bench <file> [reps]      (in-process valueOf)\n" ++
   "       leanllvm-json-route --indexed-check <file>           (the two readers agree)\n" ++
   "       leanllvm-json-route --arm <events|noevent> --consume <file> [reps]"
@@ -1019,6 +1020,168 @@ value is canonicalised twice. -/
 def valueOf (doc : ByteArray) : IO RouteValue :=
   valueOfUsing decodeResult doc
 
+/-! ### The fused event reader and value builder (prototype)
+
+The indexed arm above reads the emitted stream into a `ConsumerEvent` list and
+then walks that list a second time in `valueOfEvents`.  This prototype is one
+reading: the record at the cursor is inspected and the value is constructed in
+the same recursion, so the intermediate list is never built.  It is a benchmark
+arm only; `valueOf`, and therefore the route's value path, is unchanged.
+
+The record widths, truncation checks and body reads are the indexed step's
+(`stepR1`), written here as they are consumed rather than as a `ConsumerEvent`
+the caller would have to allocate.  The recursion and its fuel have the same
+shape as `valueOfEvents`: a container's members each spend one unit, the step
+spends one, and the caller supplies more fuel than the stream can have records. -/
+
+/-- A key or string record at cursor `i`: its decoded code points and the cursor
+after it, or `none` where the record is truncated or its body is unreadable.
+The width and bounds are `stepR1`'s. -/
+def fusedBody (bs arena evs : ByteString) (i : Nat) : Option (List Nat × Nat) :=
+  if i + 13 ≤ evs.size then
+    let len := leNatAt evs (i + 1) 4
+    let field := leNatAt evs (i + 5) 8
+    match recordBodyCodePointsIndexed bs arena len field with
+    | some cps => some (cps, i + 13)
+    | none => none
+  else none
+
+mutual
+
+/-- One value at cursor `i`, with the cursor after it. -/
+def fusedValue (bs arena evs : ByteString) : Nat → Nat → Option (JSON.Value × Nat)
+  | 0, _ => none
+  | f + 1, i =>
+      match evs[i]? with
+      | none => none
+      | some b =>
+          match b.toNat with
+          | 1 =>
+              match fusedMembers bs arena evs f (i + 1) with
+              | some (ms, j) => some (.object ms, j)
+              | none => none
+          | 3 =>
+              match fusedElems bs arena evs f (i + 1) with
+              | some (vs, j) => some (.array vs, j)
+              | none => none
+          | 5 =>
+              match fusedBody bs arena evs i with
+              | some (cps, j) => some (.string cps, j)
+              | none => none
+          | 6 =>
+              match fusedBody bs arena evs i with
+              | some (cps, j) => some (.string cps, j)
+              | none => none
+          | 7 =>
+              if i + 9 ≤ evs.size then
+                some (.number (ByteString.literal (bitsLexeme (leNatAt evs (i + 1) 8))),
+                  i + 9)
+              else none
+          | 8 => some (.bool true, i + 1)
+          | 9 => some (.bool false, i + 1)
+          | 10 => some (.null, i + 1)
+          | _ => none
+
+/-- Array elements from cursor `i`, closed by `T_ARR_END` (consumed here). -/
+def fusedElems (bs arena evs : ByteString) : Nat → Nat → Option (List JSON.Value × Nat)
+  | 0, _ => none
+  | f + 1, i =>
+      match evs[i]? with
+      | none => none
+      | some b =>
+          if b.toNat = 4 then some ([], i + 1)
+          else
+            match fusedValue bs arena evs f i with
+            | some (v, j) =>
+                match fusedElems bs arena evs f j with
+                | some (vs, k) => some (v :: vs, k)
+                | none => none
+            | none => none
+
+/-- Object members from cursor `i`, closed by `T_OBJ_END` (consumed here).  A
+member is a key record followed by a value, and a key is a string whichever of
+`T_KEY`/`T_STR` the record carries, as in `valueOfEvents`. -/
+def fusedMembers (bs arena evs : ByteString) :
+    Nat → Nat → Option (List (List Nat × JSON.Value) × Nat)
+  | 0, _ => none
+  | f + 1, i =>
+      match evs[i]? with
+      | none => none
+      | some b =>
+          if b.toNat = 2 then some ([], i + 1)
+          else if b.toNat = 5 ∨ b.toNat = 6 then
+            match fusedBody bs arena evs i with
+            | none => none
+            | some (key, j) =>
+                match fusedValue bs arena evs f j with
+                | some (val, l) =>
+                    match fusedMembers bs arena evs f l with
+                    | some (ms, m) => some ((key, val) :: ms, m)
+                    | none => none
+                | none => none
+          else none
+
+end
+
+/-- **The event stream read and built in one pass.**  The buffers are in the
+indexed reader's order (`bs`, `evs`, `arena`); a value is accepted when it
+consumes the whole stream, and the answer is `valueOfEvents` on the same bytes. -/
+def valueOfFusedEvents (bs evs arena : ByteString) : Option JSON.Value :=
+  match fusedValue bs arena evs (evs.size + 1) 0 with
+  | some (v, j) => if j = evs.size then some v else none
+  | none => none
+
+/-- The fused arm of `valueOfUsing`: the route's decision and native call, with
+the emitted stream read once into the value instead of into an event list.  A
+stream the fused reader cannot finish is the reference's to answer, exactly as
+in `valueOfUsing`. -/
+def valueOfFusedUsing (decode : ByteArray → IO (Except UInt32 Observation))
+    (doc : ByteArray) : IO RouteValue := do
+  match ← decide2 doc with
+  | .failed status => exitStatus status
+  | .refused _ => fallbackValue doc
+  | .admitted f =>
+      let staged ← stage doc doc.size
+      let result ← call staged f.escapeSkip
+      match ← decode result with
+      | .error status => exitStatus status
+      | .ok o =>
+          if o.verdict != 1 then fallbackValue doc
+          else
+            let (arena, events) := payloads result o.ndst o.nev
+            match valueOfFusedEvents doc events arena with
+            | some v => return .value v
+            | none => fallbackValue doc
+
+/-- The fused prototype over the route's own header decode. -/
+def valueOfFused (doc : ByteArray) : IO RouteValue :=
+  valueOfFusedUsing decodeResult doc
+
+/-- Which answer the route's value arm takes on `doc`: the fast reader's or the
+reference fallback's.  It repeats the indexed arm's decision and read once, so
+`--value-bench` can report coverage without putting this work in a timed
+interval.  An admitted document whose native answer is a refusal, whose stream
+is unreadable, or whose events are not one value is a fallback row. -/
+def valueArmPath (doc : ByteArray) : IO String := do
+  match ← decide2 doc with
+  | .failed _ => return "failed"
+  | .refused _ => return "fallback"
+  | .admitted f =>
+      let staged ← stage doc doc.size
+      let result ← call staged f.escapeSkip
+      match ← decodeResult result with
+      | .error _ => return "failed"
+      | .ok o =>
+          if o.verdict != 1 then return "fallback"
+          else
+            let (arena, events) := payloads result o.ndst o.nev
+            match eventsOfBytesIndexed doc events arena with
+            | none => return "fallback"
+            | some ces =>
+                match valueOfEvents ces with
+                | none => return "fallback"
+                | some _ => return "fast"
+
 /-- The value line: the arm's prefix, the verdict word the observation uses, and
 the value's rendering as lowercase hex of its UTF-8 bytes on acceptance; the
 reference's refusal class and offset on refusal. -/
@@ -1039,6 +1202,21 @@ def runValue (path : String) : IO UInt32 := do
       IO.eprintln s!"route: cannot read '{path}': {e}"
       return 2
   let answer ← valueOf doc
+  IO.println (valueLine answer)
+  match answer with
+  | .value _ => return 0
+  | .refused _ => return 2
+
+/-- `--value-fused <file>`: the prototype's value path, with the same line and
+exit status as `--value`.  It exists so the fused reader can be compared with
+the indexed one on a corpus; the route's value path does not use it. -/
+def runValueFused (path : String) : IO UInt32 := do
+  let doc ← try
+      IO.FS.readBinFile path
+    catch e =>
+      IO.eprintln s!"route: cannot read '{path}': {e}"
+      return 2
+  let answer ← valueOfFused doc
   IO.println (valueLine answer)
   match answer with
   | .value _ => return 0
@@ -1234,7 +1412,14 @@ def runValueBench (path : String) (reps : Nat) : IO UInt32 := do
       IO.eprintln s!"route: cannot read '{path}': {e}"
       return 2
   let name := (System.FilePath.fileName path).getD path
+  -- The coverage word is the value arm's own answer on the same bytes each arm
+  -- will take; it is read once, outside every timed interval.
+  let pathKind ← valueArmPath doc
   let indexed ← benchArm reps (fun _ => valueOfUsing decodeResult doc)
+  -- The fused arm follows the indexed one directly: these two are the
+  -- comparison, so the reference arm's much longer run (tens of seconds on the
+  -- 1 MiB dense document) is kept from churning the machine between them.
+  let fused ← benchArm reps (fun _ => valueOfFused doc)
   let listed ← benchArm reps (fun _ => valueOfUsing decodeResultListed doc)
   let reference ← benchArm reps (fun _ => fallbackValue doc)
   let report (arm : String) (a : BenchArm) : IO Unit :=
@@ -1244,11 +1429,20 @@ def runValueBench (path : String) (reps : Nat) : IO UInt32 := do
   report "indexed" indexed
   report "listed" listed
   report "reference" reference
+  report "fused" fused
   let sameIL := decide (indexed.sum = listed.sum) && decide (indexed.outcome = listed.outcome)
   let sameIR := decide (indexed.sum = reference.sum) && decide (indexed.outcome = reference.outcome)
-  IO.println s!"valuebench doc={name} size={doc.size} equal={if sameIL && sameIR then 1 else 0} \
-    indexed_vs_listed={if sameIL then 1 else 0} indexed_vs_reference={if sameIR then 1 else 0}"
-  return if sameIL && sameIR then 0 else 5
+  let sameIF := decide (fused.sum = indexed.sum) && decide (fused.outcome = indexed.outcome)
+  let sameFR := decide (fused.sum = reference.sum) && decide (fused.outcome = reference.outcome)
+  let equal := sameIL && sameIR && sameIF && sameFR
+  IO.println s!"valuebench doc={name} size={doc.size} equal={if equal then 1 else 0} \
+    indexed_vs_listed={if sameIL then 1 else 0} \
+    indexed_vs_reference={if sameIR then 1 else 0} \
+    fused_vs_indexed={if sameIF then 1 else 0} \
+    fused_vs_reference={if sameFR then 1 else 0} \
+    path={pathKind} fast={if pathKind == "fast" then 1 else 0} \
+    fallback={if pathKind == "fallback" then 1 else 0}"
+  return if equal then 0 else 5
 
 /-! ### The indexed reader's differential check
 
@@ -2098,6 +2292,7 @@ def main (args : List String) : IO UInt32 := do
   | ["--consume-events", path] => runConsume path 11
   | ["--consume-events", path, reps] => runConsume path reps.toNat!
   | ["--value", path] => runValue path
+  | ["--value-fused", path] => runValueFused path
   | ["--value-bench", path] => runValueBench path 5
   | ["--value-bench", path, reps] => runValueBench path reps.toNat!
   | ["--indexed-check", path] => runIndexedCheck path
