@@ -292,6 +292,21 @@ the equivalence of the two compiled objects.  It is a per-switch, IR-level
 correspondence for this emission, recorded under ledger row 5's basis rather
 than as a compiler-preservation theorem.
 
+**The correspondence has a premise, because the lowering is not neutral.**  A
+switch whose condition is poison is undefined behaviour, and so is a branch on a
+poison condition, so the `icmp`-plus-`br` form the pass emits for a switch with
+several successors agrees with the model on that case too.  The shape where they
+disagree is the **single-successor switch** — zero cases, or every case label
+equal to the default — which lowers to a bare `br label %dest` that never reads
+the condition: defined, where the model's `switch` on a poison condition is
+`ub`.  That gap is invisible to the successor table, which enumerates defined
+integer values.  It does not arise in this module: all twenty switches have
+between two and seven cases and at least two distinct successors, measured.  So
+the premise the row carries is *every switch in the module has at least two
+distinct successors*, checked for these bytes rather than assumed, and the check
+is what must be re-run if the module or its flags change.  Duplicate case values
+are not an ambiguity here either: the verifier rejects them.
+
 Past the switches, the descent's first refusal is the poison lane:
 `while.body.i140.preheader` line 638 carries
 `%vecinit1.i1901714 = insertelement <2 x i64> <i64 poison, i64 0>, i64 %35, i64 0`
