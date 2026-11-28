@@ -403,3 +403,9 @@ import LeanLLVM.Refinement.JsonEventCallerResult
 import LeanLLVM.Refinement.JsonStage2NumFastPowAppend
 import LeanLLVM.Refinement.JsonStage2NumFastFoldAppend
 import LeanLLVM.Refinement.JsonStage2WalkMergeCond
+import LeanLLVM.Refinement.JsonEventCallerResultPrefix
+import LeanLLVM.Refinement.JsonEventCallerResultSeamWords
+import LeanLLVM.Refinement.JsonEventCallerResultNumeral
+import LeanLLVM.Refinement.JsonEventCallerResultCloserTerm
+import LeanLLVM.Refinement.JsonEventCallerResultSeamLexeme
+import LeanLLVM.Refinement.JsonEventCallerResultSeamH1
