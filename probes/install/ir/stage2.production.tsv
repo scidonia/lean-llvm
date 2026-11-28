@@ -14,7 +14,7 @@ declares	10
 functions	leanllvm_json_stage2,num_scan,stk_mul_u64,stk_cmp
 verify	opt -passes=verify: ok
 parser_layout	parseModule (empty Layout): the module's own %struct.EPow/%struct.Stk/%struct.StkBn definitions supply the byte extents its allocas need, computed from their fields and the target datalayout; no declared layout is passed
-import	exit 1: unsupported token(s) 'local_unnamed_addr #0 align 64' after the parameter list of @leanllvm_json_stage2
+import	exit 1: in block '1168': unexpected trailing tokens: , !tbaa !6
 object	clang -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -c -Xclang -disable-llvm-passes probes/install/ir/stage2.production.ll -o stage2.o
 object_sha256	045448b820ad01fe4727a4839c21ac6cc5361cc524494f0d5b45bd3ce487f168
 object_bytes	25264

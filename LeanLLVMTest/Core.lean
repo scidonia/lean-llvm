@@ -81,6 +81,45 @@ def mentions (s sub : String) : Bool := (s.splitOn sub).length > 1
   | .error e => mentions e "unsupported" && mentions e "noreturn"
   | .ok _ => false
 
+/-- A definition's function-attribute tail with the group it names declared
+later in the module — the shape the production emission has. -/
+def functionTailSrc (tail : String) (group : String) : String :=
+"define i64 @f(i64 %x) " ++ tail ++ " {
+entry:
+  ret i64 %x
+}
+
+attributes #0 = { " ++ group ++ " }
+"
+
+-- `local_unnamed_addr`, the group reference and `align N` each leave no field;
+-- the group's members are classified where the reference stands.
+#guard
+  match parseModule (functionTailSrc "local_unnamed_addr #0 align 64"
+      "nounwind sspstrong uwtable \"frame-pointer\" = \"all\" \
+       \"target-features\" = \"+avx,+avx2\"") with
+  | .ok _ => true
+  | .error _ => false
+
+-- A group member that is a caller contract is refused through the reference,
+-- not accepted because the reference is only a number.
+#guard
+  match parseModule (functionTailSrc "#0 align 64" "nounwind noreturn") with
+  | .error e => mentions e "noreturn" && mentions e "unsupported"
+  | .ok _ => false
+
+-- An unknown group is refused by name rather than dropped.
+#guard
+  match parseModule (functionTailSrc "#9" "nounwind") with
+  | .error e => mentions e "#9" && mentions e "unsupported"
+  | .ok _ => false
+
+-- `align` needs its number.
+#guard
+  match parseModule (functionTailSrc "align" "nounwind") with
+  | .error e => mentions e "align" && mentions e "decimal"
+  | .ok _ => false
+
 -- A declaration's header is checked with the same discipline as a definition's:
 -- a token the model has no field for is refused by name rather than read past
 -- the closing parenthesis and dropped.  `declarationCleanSample` is the control.
@@ -1451,83 +1490,6 @@ entry:
 #guard refusedWith (paramAttrSrc "ptr" "captures(foo) ") ["captures(foo)"]
 #guard refusedWith (paramAttrSrc "ptr" "sret ") ["sret", "not modelled"]
 #guard refusedWith (paramAttrSrc "i64" "cold ") ["cold"]
-
--- `noundef`'s residue is `Value.defined`, which reads every lane, and not the
--- inequality `v ≠ Value.poison`.  A `vecPoison` carrying a poison lane is a value
--- of its own constructor, so the inequality admits it while `noundef` does not:
--- the predicate below is false for it and the entry contract `ArgsDefined` is
--- false for an argument list holding it.
-#guard decide (Value.defined (.int 64 1))
-#guard decide (Value.defined (.ptr 8))
-#guard decide (Value.defined (.vec 2 64 [11, 22]))
-#guard decide ((Value.vecPoison 2 64 [some 11, some 22]).defined)
-#guard !decide (Value.defined (.vecPoison 2 64 [some 11, none]))
-#guard !decide (Value.defined (.poison))
-#guard decide (ArgsDefined [.int 64 1, .vec 2 64 [11, 22]])
-#guard !decide (ArgsDefined [.vecPoison 2 64 [none, some 22]])
-
--- A parsed definition's parameter type is one token, so a vector parameter is
--- already refused by the type grammar; the predicate is the obligation for a
--- hand-built `Function` whose parameter is a vector (the form the refinement
--- modules construct).  The refusal is pinned so the two boundaries stay
--- distinct: the parser never admits the shape, and the entry predicate is what
--- rejects a poisoned lane at a hand-built one.
-#guard refusedWith (paramAttrSrc "<2 x i64>" "noundef ") ["unsupported type", "<"]
-
--- A function taking the vector argument and returning its lane 1, as the
--- refinement modules build one.
-def vectorParamFunction : Function :=
-  { name := "vp",
-    retTy := .int 64,
-    params := [("%v", .vec 2 (.int 64))],
-    blocks := [
-      { name := "entry",
-        instrs := [.extractelement "%x" 2 64 (.reg "%v") (.imm (.int 32 1))],
-        term := .ret (.int 64) (some (.reg "%x")) } ] }
-
--- Control 1: the defined entry refuses a vector still carrying a poison lane,
--- even though the value is not `Value.poison`.
-#guard runDefined noCalls vectorParamFunction [.vecPoison 2 64 [none, some 7]] = none
-
--- Control 2: the plain vector the sole-lane overwrite produces is admitted by
--- the same entry and read.
-#guard
-  runDefined noCalls vectorParamFunction [.vec 2 64 [0, 7]] =
-    some (.ret (some (.int 64 (BitVec.ofNat 64 7))) [])
-
-/-- The overwrite rule at the entry's own terms: write lane `lane` of
-`<i64 poison, i64 7>`, then read lane 1.  Lane 0 is the poison lane, so a write
-at `0` covers it and a write at `1` leaves it in place. -/
-def overwriteLaneSrc (lane : Nat) : String :=
-"define i64 @ow() {
-entry:
-  %v = insertelement <2 x i64> <i64 poison, i64 7>, i64 0, i32 " ++ toString lane ++ "
-  %x = extractelement <2 x i64> %v, i32 1
-  ret i64 %x
-}
-"
-
--- The write that covers the poison lane makes a plain vector, so the read that
--- follows returns lane 1 ...
-#guard intOf noCalls (overwriteLaneSrc 0) [] = some (some 7)
--- ... and the write that leaves it poisoned is `ub` at the read.
-#guard intOf noCalls (overwriteLaneSrc 1) [] = some none
-
-/-- info: 'LeanLLVM.Value.isDefined_eq_true' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.Value.isDefined_eq_true
-
-/-- info: 'LeanLLVM.Value.defined.ne_poison' does not depend on any axioms -/
-#guard_msgs in
-#print axioms LeanLLVM.Value.defined.ne_poison
-
-/-- info: 'LeanLLVM.ArgsDefined.of_evalOperands' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.ArgsDefined.of_evalOperands
-
-/-- info: 'LeanLLVM.runDefined_eq_run' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in
-#print axioms LeanLLVM.runDefined_eq_run
 
 /-- A function whose entry block carries no label, beside the same program with
 the label the parser synthesizes written out. -/

@@ -114,8 +114,12 @@ raw_status=0
 cat > "$work/site.awk" <<'AWK'
 # The parse refusal names a block and the token it refused; find the first
 # instruction in that block carrying the token, and the define that encloses it.
-# A refusal in a parameter list names the function instead, and its site is the
-# `define` line that carries the parameter.
+# A refusal in a parameter list or in the function-attribute tail names the
+# function instead, and its site is the `define` line that carries it.  An
+# unlabelled entry block has no line to name, so the search starts at its
+# `define` line and stops at the next label.  A refusal whose message carries no
+# quotable construct (`unexpected trailing tokens: …`) takes the trailing text
+# as the token to locate.
 BEGIN {
   msg = ENVIRON["MSG"]
   blk = ""
@@ -124,16 +128,28 @@ BEGIN {
     split(rest, parts, "\047")
     blk = parts[2]
   }
-  n = split(msg, q, "\047")
-  tok = (n >= 3) ? q[n - 1] : ""
+  tok = ""
+  at = index(msg, "unexpected trailing tokens: ")
+  if (at > 0) {
+    tok = substr(msg, at + 28)
+    sub(/[ \t]+$/, "", tok)
+  } else {
+    n = split(msg, q, "\047")
+    tok = (n >= 3) ? q[n - 1] : ""
+  }
 }
 { line[NR] = $0 }
 END {
   start = 0
+  entry = 0
   for (i = 1; i <= NR; i++)
     if (blk != "" && index(line[i], blk ":") == 1) { start = i; break }
+  if (start == 0 && blk != "") {
+    for (i = 1; i <= NR; i++)
+      if (index(line[i], "define ") == 1) { start = i; entry = 1; break }
+  }
   if (start == 0) {
-    if (index(msg, "in parameters of @") > 0) {
+    if (index(msg, "in parameters of @") > 0 || index(msg, "after the parameter list of @") > 0) {
       at = index(msg, "@")
       rest = substr(msg, at + 1)
       match(rest, /^[A-Za-z0-9_.$]+/)
@@ -149,7 +165,7 @@ END {
     exit
   }
   hit = 0
-  for (i = start; i <= NR; i++) {
+  for (i = (entry ? start + 1 : start); i <= NR; i++) {
     if (i > start && line[i] ~ /^[A-Za-z0-9_.]+:/) break
     if (tok != "" && index(line[i], tok) > 0) { hit = i; break }
   }

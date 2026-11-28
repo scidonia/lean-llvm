@@ -1,5 +1,5 @@
 parsed	probes/install/ir/baseline.ll
-refused	probes/install/ir/baseline.o1.ll	unsupported token(s) 'local_unnamed_addr #0' after the parameter list of @leanllvm_comma_mask8
+refused	probes/install/ir/baseline.o1.ll	unsupported attribute group '#0' after the parameter list of @leanllvm_comma_mask8
 refused	probes/install/ir/baseline.raw.ll	unsupported attribute group '#0' after the parameter list of @leanllvm_comma_mask8
 parsed	probes/install/ir/caller.ll
 parsed	probes/install/ir/candidate.ll
@@ -33,7 +33,7 @@ parsed	probes/install/ir/stage2.helper.s2_after_value.ll
 parsed	probes/install/ir/stage2.helper.s2_init.ll
 parsed	probes/install/ir/stage2.helper.s2_string_body.ll
 parsed	probes/install/ir/stage2.helper.s2_value_pos.ll
-refused	probes/install/ir/stage2.production.ll	unsupported token(s) 'local_unnamed_addr #0 align 64' after the parameter list of @leanllvm_json_stage2
+refused	probes/install/ir/stage2.production.ll	unexpected trailing tokens: , !tbaa !6
 parsed	tests/call.ll
 parsed	tests/constfold.ll
 parsed	tests/counterexamples/gep-roundtrip.ll

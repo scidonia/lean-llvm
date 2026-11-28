@@ -77,6 +77,29 @@ LeanLLVMTest`, both exit 0):
   operand.**  `probes/install/ir/stage2.production.import.tsv` records the
   production fixture's new stopping point, and `repo-census.sh` exits 0.
 
+Measured 2026-11-28, with the driver carrying the function-attribute-tail change
+(`nix develop -c lake build leanllvm` and `nix develop -c lake build
+LeanLLVMTest`, both exit 0; `nix develop -c lake env lean
+tests/core-extension.lean`, exit 0):
+
+- **The checked manifest still covers the whole tracked corpus: 53 files (62
+  `define`s) — 46 parse, 7 are refused — and the four header refusals now all
+  stop at an attribute group reference `#0`.**  A definition's
+  `local_unnamed_addr`/`unnamed_addr` and `align N` are read and dropped, so
+  `baseline.o1.ll` joins `baseline.raw.ll` and `candidate.raw.ll` at an
+  undeclared `#0`; `stage2.production.ll` resolves its declared group and moves
+  into the entry block, where the first refusal is the `!tbaa` attachment on its
+  first `load` (`unexpected trailing tokens: , !tbaa !6`, line 33).  The other
+  three — `stage2.callee.num_el_el1.ll`, `stage2.callee.stk_cmp.ll` and
+  `stage2.helper.num_fast_el1.ll` — remain the partial extracts that name a
+  `%struct` their text does not define.
+- **Coverage is unchanged: 0 files with an `icmp … ptr` line, 0 with a written
+  callee function type, 8 with a literal vector operand, 6 with an
+  `extractelement` line, 6 with an `insertelement` line and 6 with a
+  `zeroinitializer` operand.**  `probes/install/ir/stage2.production.import.tsv`
+  records the production fixture's stopping point at that `!tbaa` line, and the
+  manifest check above runs clean.
+
 ## The stage-1 kernel
 
 `tests/v16/ci2.ll` is `v16.generated.ll`'s `@ci2` — the stage-1 index kernel the

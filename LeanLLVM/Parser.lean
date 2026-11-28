@@ -49,9 +49,15 @@ module's own statement of that symbol's interface — its return and parameter
 types — so a constraint dropped from it would leave the interface claiming more
 than the text does.  The two headers therefore differ on this one attribute,
 deliberately: the asymmetry is recorded rather than closed, and
-`LeanLLVMTest/Core.lean` pins both sides.  A function attribute or attribute
-group reference after a definition's parameter list, and, on a declaration, a
-parameter attribute, are refused by name too.  A definition's parameter list is
+`LeanLLVMTest/Core.lean` pins both sides.  A definition's function-attribute
+tail after the parameter list is read attribute by attribute: `local_unnamed_addr`
+/ `unnamed_addr` and a function `align N` are dropped, a group reference `#N` is
+resolved to its `attributes #N = { ... }` line and every member of the group is
+classified the same way, and an attribute the reader has no reading for —
+`noreturn` among them — is refused by name.  The three-way split and each
+member's reason are at `checkFunctionAttrs`.  A declaration's function-attribute
+tail, and a parameter attribute on a declaration, are refused by name too.  A
+definition's parameter list is
 read as a type, the attributes in front of the name, and the name: an attribute
 here is a *caller* obligation rather than a constraint on a result, and the
 compiler may have optimised the body on it, so `parseParamAttrs` drops only the
@@ -2779,18 +2785,42 @@ def countToken (t : String) : List String → Nat
   | [] => 0
   | x :: xs => (if x = t then 1 else 0) + countToken t xs
 
-/-- The data layout and the named type definitions of a module, read from its
-module-level lines and not from the lines of a body — the tokenizer drops
-indentation, so a body is skipped by counting braces: a definition's own braces
-balance on its line, while a body opens on its `define` and closes on its `}`.
-Everything else at module level is left to the reader that walks the lines in
-order, so a malformed global is reported where it stands. -/
+/-- An attribute group's contents, keyed by its `#N` spelling.  A `define` may
+refer to a group the module declares later, so the groups are collected from the
+whole header before any function is read. -/
+abbrev AttributeGroups := List (String × List String)
+
+/-- Read an `attributes #N = { ... }` line: its id and the tokens inside the
+braces.  Only the outer shape is checked here.  The members are classified where
+the group is used — a `define`'s tail or another reference — because a group's
+contents say nothing until a header refers to it, and an unused group must not
+decide the module. -/
+def attributeGroupOf (l : List String) : Except String (String × List String) :=
+  match l with
+  | "attributes" :: id :: "=" :: "{" :: body =>
+      if !id.startsWith "#" || (parseNat (id.drop 1).toString).isNone then
+        .error s!"malformed attribute group: '{id}' is not an attribute-group number"
+      else match body.reverse with
+        | "}" :: revInner =>
+            if revInner.contains "{" || revInner.contains "}" then
+              .error s!"malformed attribute group {id}: a nested brace is not modelled"
+            else .ok (id, revInner.reverse)
+        | _ => .error s!"malformed attribute group {id}: expected '}'"
+  | _ => .error s!"malformed attribute group line '{String.intercalate " " l}'"
+
+/-- The data layout, the named type definitions and the attribute groups of a
+module, read from its module-level lines and not from the lines of a body — the
+tokenizer drops indentation, so a body is skipped by counting braces: a
+definition's own braces balance on its line, while a body opens on its `define`
+and closes on its `}`.  Everything else at module level is left to the reader
+that walks the lines in order, so a malformed global is reported where it
+stands. -/
 def scanHeader (lines : List (List String)) :
-    Except String (TargetLayout × List NamedType) :=
+    Except String (TargetLayout × List NamedType × AttributeGroups) :=
   let rec go : List (List String) → Nat → TargetLayout → List NamedType →
-      Except String (TargetLayout × List NamedType)
-    | [], _, dl, ts => .ok (dl, ts.reverse)
-    | l :: rest, depth, dl, ts =>
+      AttributeGroups → Except String (TargetLayout × List NamedType × AttributeGroups)
+    | [], _, dl, ts, gs => .ok (dl, ts.reverse, gs.reverse)
+    | l :: rest, depth, dl, ts, gs =>
         let opens := countToken "{" l
         let closes := countToken "}" l
         let depth' := if closes ≤ depth + opens then depth + opens - closes else 0
@@ -2799,15 +2829,18 @@ def scanHeader (lines : List (List String)) :
           | "target" :: "datalayout" :: "=" :: value => do
               let text ← stringLiteral value
               let dl' ← parseDataLayout text
-              go rest depth' dl' ts
+              go rest depth' dl' ts gs
           | name :: "=" :: "type" :: body =>
               if name.startsWith "%" then do
                 let nt ← parseNamedType name body
-                go rest depth' dl (nt :: ts)
-              else go rest depth' dl ts
-          | _ => go rest depth' dl ts
-        else go rest depth' dl ts
-  go lines 0 {} []
+                go rest depth' dl (nt :: ts) gs
+              else go rest depth' dl ts gs
+          | "attributes" :: _ => do
+              let g ← attributeGroupOf l
+              go rest depth' dl ts (g :: gs)
+          | _ => go rest depth' dl ts gs
+        else go rest depth' dl ts gs
+  go lines 0 {} [] []
 
 /-- Resolve every struct definition the module makes into the byte extents a
 body's `alloca` reads, and merge them with the caller's declared `Layout`.  A
@@ -2975,23 +3008,13 @@ def checkTargetLine (l : List String) : Except String Unit :=
   | "target" :: key :: _ => .error s!"unsupported target declaration 'target {key}'"
   | _ => .error s!"malformed target line '{String.intercalate " " l}'"
 
-/-- Check an `attributes #N = { ... }` line and drop it.  An attribute group
-collects the function, parameter and return attributes a header and a call refer
-to by number; the model has no attribute vocabulary, so there is nothing for the
-group's contents to attach to, and only the `attributes #N = { ... }` shape and
-its brace balance are checked. -/
-def checkAttributeGroup (l : List String) : Except String Unit :=
-  match l with
-  | "attributes" :: id :: "=" :: "{" :: body =>
-      if !id.startsWith "#" || (parseNat (id.drop 1).toString).isNone then
-        .error s!"malformed attribute group: '{id}' is not an attribute-group number"
-      else match body.reverse with
-        | "}" :: revInner =>
-            if revInner.contains "{" || revInner.contains "}" then
-              .error s!"malformed attribute group {id}: a nested brace is not modelled"
-            else .ok ()
-        | _ => .error s!"malformed attribute group {id}: expected '}'"
-  | _ => .error s!"malformed attribute group line '{String.intercalate " " l}'"
+/-- Check an `attributes #N = { ... }` line and drop it.  The group's members
+are classified where a header refers to them (`checkFunctionAttrs`); here only
+the `attributes #N = { ... }` shape and its brace balance are checked, so an
+unused group cannot decide the module. -/
+def checkAttributeGroup (l : List String) : Except String Unit := do
+  let _ ← attributeGroupOf l
+  pure ()
 
 /-- Check a global's definition line and drop it.  The model has no global
 table: a symbol operand's value is the address the run binds to the symbol, so
@@ -3078,7 +3101,204 @@ def dropHeaderSurface : List String → List String
       if (parseNat n).isSome then dropHeaderSurface rest else "cc" :: n :: rest
   | t :: rest => if isHeaderSurface t then dropHeaderSurface rest else t :: rest
 
-def parseFunction (layout : Layout) (header : List String) (rest : List (List String)) :
+/-- The tokens between a `(` already consumed and the `)` that matches it, with
+the tokens after the close.  The depth counts the groups opened inside, so a
+nested group is kept whole and does not end the parameter list early: a
+parameter's attribute (`range(i64 0, 65)`) has its own argument list, and the
+`,` that follows it separates parameters rather than trailing the list. -/
+def takeParenGroup (toks : List String) : Except String (List String × List String) :=
+  let rec go (depth : Nat) (acc : List String) :
+      List String → Except String (List String × List String)
+    | [] => .error "unterminated parameter list: expected ')'"
+    | ")" :: rest =>
+        if depth = 0 then .ok (acc.reverse, rest)
+        else go (depth - 1) (")" :: acc) rest
+    | "(" :: rest => go (depth + 1) ("(" :: acc) rest
+    | t :: rest => go depth (t :: acc) rest
+  go 0 [] toks
+
+/-! ### A definition's function attributes
+
+A definition's header may carry attributes between the parameter list and the
+body.  They are classified the same three ways the parameter attributes are,
+because the same question decides each: does dropping it accept a caller
+argument, a returned outcome, or a successor that the text makes undefined?
+
+* **Dropped, because it constrains no caller and the model has no field.**
+  `local_unnamed_addr` and `unnamed_addr` say the definition's address is not
+  significant — a linker may merge it with another — and the model gives a
+  symbol its value from the run's environment (`Calls`, `Operand.global`), with
+  no address identity, no merge, and no comparison between definitions.  A
+  function `align N` states the alignment of that same emitted function symbol;
+  the model's addresses are untyped naturals and no call, load or store reads a
+  function's alignment, so the attribute has nothing here to affect.  `nounwind`
+  says this body does not unwind, and the model has no unwinding outcome at all —
+  a call's outcome is the environment's value — so there is nothing to forbid.
+  `mustprogress`, `willreturn`, `norecurse`, `nocallback`, `nofree`, `nosync`,
+  `cold`, `speculatable` and `memory(...)` are claims about the emitted body's
+  own control flow and memory effect, the reading the parameter list gives
+  `readonly`, `nocapture` and `returned`: importing the body already takes them
+  as true of it, and none constrains an argument or the returned outcome.
+  `ssp`, `sspreq`, `sspstrong`, `uwtable` (with its optional `(sync)`/`(async)`
+  argument) and the target/codegen string attributes (`"frame-pointer"`,
+  `"min-legal-vector-width"`, `"no-trapping-math"`, `"probe-stack"`,
+  `"stack-protector-buffer-size"`, `"target-cpu"`, `"target-features"`,
+  `"zero-call-used-regs"`) select or record code generation for the emitted
+  body; the model has no target, no frame and no stack protector, so it has no
+  field for them.
+
+* **Refused, because it changes what a call promises and a violation is
+  undefined behaviour.**  `noreturn` says a call to this function has no
+  successor; a body that returns violates it, and LLVM makes the caller's
+  continuation undefined.  The model's `Calls` environment can still supply a
+  returning outcome, so dropping the attribute would accept a control flow the
+  text forbids.  `Function` has no field for the promise, so the definition is
+  refused by name.
+
+* **Refused, as unmodelled.**  Any other token, and a `#N` reference whose
+  `attributes #N` line the module does not declare, is refused by name: the
+  reader has no rule for it, and accepting it on syntax alone would publish a
+  promise nothing here reads.  A group is resolved member by member rather than
+  refused as a reference; a reference to another group from inside a group is
+  refused as unmodelled.
+
+The module's groups are collected before its functions are read, because a
+`define` may refer to a group declared later in the file (the production
+emission does). -/
+
+/-- Function attributes that are claims about the emitted body or about the
+definition's own address, with no caller obligation and no field in the model.
+The reason for each group is in the section comment above. -/
+def isDroppedFunctionAttr (t : String) : Bool :=
+  ["nounwind", "mustprogress", "willreturn", "norecurse", "nocallback",
+   "nofree", "nosync", "cold", "speculatable",
+   "ssp", "sspreq", "sspstrong", "uwtable",
+   "local_unnamed_addr", "unnamed_addr"].contains t
+
+/-- The target and code-generation string attribute keys the reader knows.  The
+set is closed: an unknown key is refused rather than dropped, because a string
+attribute the reader has no rule for could change code generation in a way
+nothing here reads. -/
+def isDroppedStringAttrKey (t : String) : Bool :=
+  ["frame-pointer", "min-legal-vector-width", "no-trapping-math",
+   "probe-stack", "stack-protector-buffer-size", "target-cpu",
+   "target-features", "zero-call-used-regs"].contains t
+
+/-- Whether a token is one quoted string, as the tokenizer leaves it. -/
+def isQuotedToken (t : String) : Bool :=
+  match t.toList with
+  | '"' :: _ => t.length ≥ 2 && t.toList.getLast? = some '"'
+  | _ => false
+
+/-- A quoted token's text without its surrounding quotes. -/
+def unquoteToken (t : String) : String :=
+  String.ofList ((t.toList.drop 1).dropLast)
+
+/-- Consume a string attribute's value, which the tokenizer splits at the commas
+inside it: the value ends at the first token that closes the quote. -/
+def takeQuotedValue : List String → Except String (List String)
+  | [] => .error "an attribute value opens a quote that is not closed"
+  | t :: rest =>
+      if t.toList.getLast? = some '"' then .ok rest else takeQuotedValue rest
+
+/-- The memory locations and access kinds of `memory(...)`. -/
+def isMemoryLocation (t : String) : Bool := ["argmem", "inaccessiblemem"].contains t
+def isMemoryEffect (t : String) : Bool := ["none", "read", "write", "readwrite"].contains t
+
+/-- Check a `memory(...)` argument: `none`, or comma-separated
+`<location> : <effect>` groups. -/
+def checkMemoryAttrArg (arg : List String) : Except String Unit :=
+  if arg = ["none"] then .ok ()
+  else
+    let chunks := splitCallArgs arg
+    if chunks.isEmpty then .error "the function attribute 'memory' has an empty argument"
+    else chunks.foldlM (fun _ c =>
+      match c with
+      | [loc, ":", eff] =>
+          if isMemoryLocation loc && isMemoryEffect eff then .ok ()
+          else .error s!"the function attribute 'memory' names an unknown location or \
+              effect: '{String.intercalate " " c}'"
+      | _ => .error s!"the function attribute 'memory' needs a location, ':' and an \
+          effect, got '{String.intercalate " " c}'") ()
+
+/-- Look an attribute group up by its `#N` spelling. -/
+def lookupAttributeGroup (groups : AttributeGroups) (id : String) : Option (List String) :=
+  (groups.find? (fun g => g.1 = id)).map (fun g => g.2)
+
+/-- Read a definition's attribute tail, resolving a `#N` reference to the
+group's own members and classifying each one.  The reasons are in the section
+comment above.  A group's members are spliced in front of the tail, so the walk
+stays structurally recursive on its fuel; a group may not refer to another
+group, which bounds the splice. -/
+def checkFunctionAttrs (name : String) (groups : AttributeGroups)
+    (toks : List String) : Except String Unit :=
+  let fuel := toks.length + (groups.foldl (fun acc g => acc + g.2.length + 1) 0) + 1
+  let rec go : Nat → List String → Except String Unit
+    | 0, _ => .error "internal parser error: function attribute fuel exhausted"
+    | _, [] => .ok ()
+    | fuel + 1, t :: rest =>
+        if t.startsWith "#" then
+          match lookupAttributeGroup groups t with
+          | none =>
+              .error s!"unsupported attribute group '{t}' after the parameter list of \
+                  @{name}: the module declares no 'attributes {t}' line"
+          | some body =>
+              if body.any (fun b => b.startsWith "#") then
+                .error s!"unsupported nested attribute group reference in '{t}' after the \
+                    parameter list of @{name}: a group that refers to another group is not \
+                    modelled"
+              else go fuel (body ++ rest)
+        else if t = "align" then
+          match rest with
+          | n :: rest' =>
+              if (parseNat n).isSome then go fuel rest'
+              else .error s!"the function attribute 'align' needs a decimal alignment, \
+                  got '{n}'"
+          | [] => .error s!"the function attribute 'align' after the parameter list of \
+              @{name} needs a decimal alignment"
+        else if t = "noreturn" then
+          .error s!"unsupported function attribute 'noreturn' after the parameter list of \
+              @{name}: it promises that a call has no successor, a returning body makes the \
+              caller's continuation undefined behaviour, and the model has no field to carry \
+              the promise"
+        else if t = "memory" then
+          match rest with
+          | "(" :: more => do
+              let (arg, rest') ← takeParenGroup more
+              checkMemoryAttrArg arg
+              go fuel rest'
+          | _ => .error s!"malformed function attribute 'memory' after the parameter list \
+              of @{name}: expected a parenthesised argument"
+        else if t = "uwtable" then
+          match rest with
+          | "(" :: arg :: ")" :: rest' =>
+              if arg = "sync" || arg = "async" then go fuel rest'
+              else .error s!"the function attribute 'uwtable' takes 'sync' or 'async', \
+                  got '{arg}'"
+          | _ => go fuel rest
+        else if isDroppedFunctionAttr t then go fuel rest
+        else if t.startsWith "\"" then
+          match rest with
+          | "=" :: v :: more =>
+              if !isQuotedToken t then
+                .error s!"malformed function attribute '{t}' after the parameter list \
+                    of @{name}"
+              else if !isDroppedStringAttrKey (unquoteToken t) then
+                .error s!"unsupported string function attribute '{t}' after the parameter \
+                    list of @{name}: the reader has no rule for it"
+              else if !v.startsWith "\"" then
+                .error s!"the function attribute '{t}' needs a quoted value, got '{v}'"
+              else do
+                let rest' ← takeQuotedValue (v :: more)
+                go fuel rest'
+          | _ => .error s!"malformed function attribute '{t}' after the parameter list of \
+              @{name}: expected '=' and a quoted value"
+        else
+          .error s!"unsupported function attribute '{t}' after the parameter list of @{name}"
+  go fuel toks
+
+def parseFunction (layout : Layout) (groups : AttributeGroups) (header : List String)
+    (rest : List (List String)) :
     Except String (Function × List (List String)) := do
   let (retTok?, nameTok, afterName) ←
     match findAt none header with
@@ -3102,21 +3322,16 @@ def parseFunction (layout : Layout) (header : List String) (rest : List (List St
     match parseParams afterName with
     | .ok pr => .ok pr
     | .error e => .error s!"in parameters of @{name}: {e}"
-  -- A function attribute stands between the parameter list and the body, and
-  -- changes what the function promises its caller; it is refused for the same
-  -- reason.
+  -- A function attribute stands between the parameter list and the body.  It is
+  -- read and classified by `checkFunctionAttrs`, whose section comment gives the
+  -- three-way split and each reason.
   let (functionAttrs, hasBody) :=
     match afterParams.reverse with
     | "{" :: rev => (rev.reverse, true)
     | _ => (afterParams, false)
-  if !functionAttrs.isEmpty then
-    let joined := String.intercalate " " functionAttrs
-    if functionAttrs.head!.startsWith "#" then
-      throw s!"unsupported attribute group '{joined}' after the parameter list of @{name}"
-    else
-      throw s!"unsupported token(s) '{joined}' after the parameter list of @{name}"
   if !hasBody then
     throw s!"malformed function header of @{name}: expected an opening brace after the parameter list"
+  checkFunctionAttrs name groups functionAttrs
   let (body, rest') ← takeBody rest
   let blocks ← parseBlocks layout body
   let f : Function := ⟨name, retTy, params, blocks⟩
@@ -3135,22 +3350,6 @@ def parseFunction (layout : Layout) (header : List String) (rest : List (List St
                   match checkCastTypes f with
                   | .error e => throw e
                   | .ok _ => .ok (f, rest')
-
-/-- The tokens between a `(` already consumed and the `)` that matches it, with
-the tokens after the close.  The depth counts the groups opened inside, so a
-nested group is kept whole and does not end the parameter list early: a
-parameter's attribute (`range(i64 0, 65)`) has its own argument list, and the
-`,` that follows it separates parameters rather than trailing the list. -/
-def takeParenGroup (toks : List String) : Except String (List String × List String) :=
-  let rec go (depth : Nat) (acc : List String) :
-      List String → Except String (List String × List String)
-    | [] => .error "unterminated parameter list: expected ')'"
-    | ")" :: rest =>
-        if depth = 0 then .ok (acc.reverse, rest)
-        else go (depth - 1) (")" :: acc) rest
-    | "(" :: rest => go (depth + 1) ("(" :: acc) rest
-    | t :: rest => go depth (t :: acc) rest
-  go 0 [] toks
 
 /-- Read one declaration parameter from the tokens between two commas: its type
 and, optionally, a `%name`.  `Decl` carries parameter types and no names, so a
@@ -3256,7 +3455,7 @@ one defined later in the same header, and the second walks the module in order.
 -/
 def parseModuleWith (layout : Layout) (src : String) : Except String Module := do
   let lines := tokenLines src
-  let (dl, types) ← scanHeader lines
+  let (dl, types, groups) ← scanHeader lines
   let effective ← resolveNamedTypes layout dl types
   let rec go : Nat → List (List String) → List Decl → List Function →
       Except String Module
@@ -3269,7 +3468,7 @@ def parseModuleWith (layout : Layout) (src : String) : Except String Module := d
             | .error e => .error e
             | .ok d => go fuel rest (d :: decls) acc
         | "define" :: _ =>
-            match parseFunction effective l rest with
+            match parseFunction effective groups l rest with
             | .error e => .error e
             | .ok (f, rest') => go fuel rest' decls (f :: acc)
         | ["}"] => go fuel rest decls acc
