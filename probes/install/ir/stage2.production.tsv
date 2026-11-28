@@ -14,9 +14,17 @@ declares	10
 functions	leanllvm_json_stage2,num_scan,stk_mul_u64,stk_cmp
 verify	opt -passes=verify: ok
 parser_layout	parseModule (empty Layout): the module's own %struct.EPow/%struct.Stk/%struct.StkBn definitions supply the byte extents its allocas need, computed from their fields and the target datalayout; no declared layout is passed
-import	exit 1: in parameters of @leanllvm_json_stage2: expected a parameter name, got 'noundef'
+import	exit 1: unsupported token(s) 'local_unnamed_addr #0 align 64' after the parameter list of @leanllvm_json_stage2
 object	clang -O2 -march=x86-64-v3 -mpclmul -std=gnu11 -falign-loops=64 -falign-functions=64 -c -Xclang -disable-llvm-passes probes/install/ir/stage2.production.ll -o stage2.o
 object_sha256	045448b820ad01fe4727a4839c21ac6cc5361cc524494f0d5b45bd3ce487f168
 object_bytes	25264
 source_object_sha256	8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85
-object_dataset	the same flags build 8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85 from kernel/json/stage2.c: the text-derived object is not that object; the bitcode route (-c -emit-llvm, then -Xclang -disable-llvm-passes) reproduces it byte for byte
+bitcode_sha256	1fb04ce13e8c4bfaa1789f99379552f70293403788fe976aafe3b2e4f8f1d73c
+bitcode_object_sha256	8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85
+bitcode_dataset	the bitcode route (-c -emit-llvm kernel/json/stage2.c, then -Xclang -disable-llvm-passes) builds 8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85, the source object byte for byte
+object_dataset	the same flags build 8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85 from kernel/json/stage2.c: the textual-IR object is not that object, nor the bitcode route's 8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85
+release_artifact	the textual-IR-derived object: probes/install/ir/stage2.production.ll (sha256 9e8975a41d466126136575102f5b5bb660eb6cf9e04427eedc612203677e51f4) compiled with -Xclang -disable-llvm-passes -> stage2.o sha256 045448b820ad01fe4727a4839c21ac6cc5361cc524494f0d5b45bd3ce487f168, 25264 bytes
+release_input	sha256 9e8975a41d466126136575102f5b5bb660eb6cf9e04427eedc612203677e51f4 (probes/install/ir/stage2.production.ll)
+release_object	sha256 045448b820ad01fe4727a4839c21ac6cc5361cc524494f0d5b45bd3ce487f168 (stage2.o)
+release_selection	The declared release object is the one compiled from the committed production IR, not the source or bitcode object: the committed bytes are what the importer reads and what the route's STAGE2_IR build compiles, so the object bound to the release is the one whose input a reviewer can hash.  The capture measures the other two routes and finds the textual round trip is not byte-faithful to them (045448b820ad01fe4727a4839c21ac6cc5361cc524494f0d5b45bd3ce487f168 against 8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85), so the choice is deliberate rather than an assumption of identity.
+switch_lowering	every switch has at least two distinct successors, and the pass preserves each one for every value its tests can distinguish (4874 values swept)

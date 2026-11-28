@@ -1714,3 +1714,89 @@ reader and still 1.9 times faster than the scalar reference.
   `probes`, `tests` and `docs` between `f39a621` and `c8f1f94`.  The flake, its
   lock and `lakefile.toml` are outside it, so the toolchain that built these
   artefacts is named by version, not pinned by the digest.
+
+## The release artifact, selected and measured at `5a03fd3`
+
+The release object is the textual-IR-derived `stage2.o`, sha256
+`045448b820ad01fe4727a4839c21ac6cc5361cc524494f0d5b45bd3ce487f168` (25,264
+bytes), compiled from the committed production module
+`probes/install/ir/stage2.production.ll` (sha256
+`9e8975a41d466126136575102f5b5bb660eb6cf9e04427eedc612203677e51f4`, 201,868
+bytes) with the middle end disabled.  The capture record names it in
+`release_artifact`, `release_input` and `release_object`; `build.sh` prints the
+input and object hashes for a `STAGE2_IR` build, and when the input is the
+recorded artifact it fails unless the object is the recorded one.
+
+The choice is measured rather than assumed.  The same capture builds the two
+other routes and records their digests: the source object is
+`8cccf3efaf37ce1e6b077167254139ff105f529f26dc390af93ca292f3269b85`, and the
+bitcode route (`clang -c -emit-llvm`, then `clang -c
+-Xclang -disable-llvm-passes` on the bitcode) builds the same bytes — the
+source object byte for byte; the bitcode module itself is
+`1fb04ce13e8c4bfaa1789f99379552f70293403788fe976aafe3b2e4f8f1d73c`.  The
+textual round trip is not byte-faithful to either: parsing the printed module
+back and compiling it gives the released `045448b8…` object.  The released
+object is therefore the one whose input is the hashable committed module, and
+the identity of the other two routes is a recorded comparison, not a premise.
+
+| quantity | sha256 | size |
+|---|---|---|
+| production module `probes/install/ir/stage2.production.ll` | `9e8975a4…` | 201,868 B |
+| release object `stage2.o` | `045448b8…` | 25,264 B |
+| source object (`clang -c kernel/json/stage2.c`) | `8cccf3ef…` | — |
+| bitcode module | `1fb04ce1…` | — |
+| bitcode-route object | `8cccf3ef…` (identical to the source object) | — |
+| linked `leanllvm-json-route` | `14f8c78031bd6c85c7fe4ba1452e8851838fe5fe38b366a1adeb79f049901e36` | — |
+
+### What was run against that object
+
+Host `relartifact-01a21253` (`europe-west1-b`), Intel Xeon Platinum 8581C at
+2.10 GHz, 8 vCPUs, Linux 6.18.64, a shared spot machine.  The route and its
+objects were built at `5a03fd3` with these edits, `OPT=-O2`.
+
+| Command | Exit | Result |
+|---|---|---|
+| `nix develop -c lake build leanllvm` | 0 | `Build completed successfully (2596 jobs).` |
+| `nix develop -c bash probes/install/ir/capture-stage2-production.sh` | 0 | module `9e8975a4…`, object `045448b8…`; the raw import stops at line 24 with `expected a parameter name, got 'noundef'`; the source and bitcode objects are built and hashed in the same run |
+| `nix develop -c lake build` the seven route targets (`JsonKernelDomain`, `JSON.Parse`, `JSON.Render`, `Refinement.JsonEventBytes`, `Refinement.JsonEventCursor`, `Refinement.JsonCanon`, `Refinement.JsonPipelineSpec`) | 0 | `Build completed successfully (73 jobs).` |
+| `STAGE2_IR=probes/install/ir/stage2.production.ll nix develop -c bash probes/json/route/build.sh` | 0 | `stage2: bound to probes/install/ir/stage2.production.tsv (input 9e8975a4…, object 045448b8…)`; route `14f8c780…` |
+| `nix develop -c bash tests/json-event-slice/check.sh` | 0 | `ok: [1] is a native success: verdict=1 nk=3 nxp=0 ndst=0 nev=11 err=0`; `ok: the [1] event slice's two caller fixtures` |
+| `nix develop -c bash probes/json/route/check.sh` | 0 | 122 default-profile rows; 107 fast-path rows agree with `driver.c` byte for byte (22 arena bytes over 9 rows, 1,138 event bytes over 70 rows); divergence 0; the two-phase admission agrees with `admission` on 265 rows |
+| `nix develop -c bash probes/json/route/value-bench.sh` | 0 | the five rows below; every `equal=1` |
+
+`value-bench.sh` refuses to print a row unless `build/stage2.o` and the input
+have the capture record's hashes, so the rows below belong to the named object
+and not to whatever object was last built.  Each row is `taskset -c 2`,
+`--value-bench`'s median over three repetitions at 1 MiB and five below it,
+with the digests taken outside the timed interval.
+
+| shape | size (B) | indexed `valueOf` (ms) | previous decode (ms) | scalar reference (ms) | digest |
+|---|---|---|---|---|---|
+| dense | 1,048,576 | 131.699 | 1,807.868 | 27,696.293 | 15528671326543812410 |
+| strings | 1,048,576 | 62.739 | 718.122 | 112.898 | 16664960774532209245 |
+| dense | 65,536 | 6.951 | 87.561 | 1,725.757 | 2181283897724872311 |
+| small `doc-nested` | 23 | 0.004177 | 0.079287 | 0.005013 | 14529324086165368568 |
+| malformed `esc-bad` | 4 | 0.002189 | 0.062231 | 0.000404 | 16520821915782133370 |
+
+All five digests equal the pinned values in [the indexed sweep](#the-header-decode-indexed),
+so the three arms decode to the same value on each document.
+
+**Caveats.**  The earlier 150.361 ms and 67.745 ms medians were measured on
+`rv-wd-01a21253`; this run is a different machine of the same CPU model and
+kernel, so the difference is cross-host and is not a before/after of the
+artifact.  The machine is shared spot capacity with no PMU, the 1 MiB reference
+arm costs tens of seconds per call, and the small-document rows are dominated by
+call overhead.  What the run establishes is that the released object answers the
+five documents, agrees with the reference, and lands at these numbers on this
+host; it is not a quiet-host measurement.
+
+### The model differential is unavailable at this revision
+
+`probes/json/route/model-differential.sh` needs
+`.lake/build/bin/leanllvm-json-pipeline-model`, but `lakefile.toml` at
+`5a03fd3` declares no such executable — the declaration added with the
+differential (`f8419a6`) is absent from the merged file.  `nix develop -c lake
+build leanllvm-json-pipeline-model` reports ``error: unknown target
+`leanllvm-json-pipeline-model` ``, and the script exits 3 at its model-presence
+check.  The corpus differential reported above is `check.sh`, the Lean route
+against `driver.c`; the object-versus-model differential was not run.

@@ -54,9 +54,36 @@ done
 # alignment the artifact was emitted under.
 if [ -n "${STAGE2_IR:-}" ]; then
   [ -f "$STAGE2_IR" ] || { printf 'missing STAGE2_IR: %s\n' "$STAGE2_IR" >&2; exit 3; }
+  stage2_ir_sha=$(sha256sum "$STAGE2_IR" | awk '{print $1}')
   clang "${kflags[@]}" -c -Xclang -disable-llvm-passes "$STAGE2_IR" -o "$build/stage2.o"
+  stage2_object_sha=$(sha256sum "$build/stage2.o" | awk '{print $1}')
+  printf 'stage2: ir=%s sha256=%s\n' "$STAGE2_IR" "$stage2_ir_sha"
+  printf 'stage2: object=%s sha256=%s\n' "${build#$repo/}/stage2.o" "$stage2_object_sha"
+  # The release artifact's identity is the capture record's.  When the supplied
+  # IR is the recorded production emission, the object compiled from it must be
+  # the object the record binds; a toolchain or flag drift is a failed build
+  # rather than a silently different artifact.  An IR that is not the recorded
+  # one is reported as such and is not bound to the record.
+  production_record="$repo/probes/install/ir/stage2.production.tsv"
+  if [ -f "$production_record" ]; then
+    recorded_ir=$(awk -F'\t' '$1=="sha256"{print $2}' "$production_record")
+    recorded_object=$(awk -F'\t' '$1=="object_sha256"{print $2}' "$production_record")
+    if [ "$stage2_ir_sha" = "$recorded_ir" ]; then
+      [ "$stage2_object_sha" = "$recorded_object" ] || {
+        printf 'build: the recorded production IR compiled to %s, not the recorded object %s\n' \
+          "$stage2_object_sha" "$recorded_object" >&2
+        exit 1
+      }
+      printf 'stage2: bound to probes/install/ir/stage2.production.tsv (input %s, object %s)\n' \
+        "$recorded_ir" "$recorded_object"
+    else
+      printf 'stage2: not the recorded production IR (record has %s)\n' "$recorded_ir"
+    fi
+  fi
 else
   clang "${kflags[@]}" -c "$repo/kernel/json/stage2.c" -o "$build/stage2.o"
+  printf 'stage2: object=%s sha256=%s (from kernel/json/stage2.c)\n' \
+    "${build#$repo/}/stage2.o" "$(sha256sum "$build/stage2.o" | awk '{print $1}')"
 fi
 
 # The no-event arm's two units, at the same kernel flags.  They are additive:
@@ -288,4 +315,5 @@ clang "${kflags[@]}" "$here/guard_check.c" \
   "$build/pipeline.o" "$build/s1_block.o" "$build/entry.o" \
   "$build/escape.o" "$build/utf8.o" "$build/stage2.o" -o "$build/guard_check"
 
-echo "ok: $build/leanllvm-json-route"
+printf 'ok: %s (sha256 %s)\n' "$build/leanllvm-json-route" \
+  "$(sha256sum "$build/leanllvm-json-route" | awk '{print $1}')"

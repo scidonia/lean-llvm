@@ -12,8 +12,11 @@
 #
 # Output
 #   stage2.production.ll        the emission, byte for byte
-#   stage2.production.tsv       the command, flags, target layout, digest and
-#                               the import verdict
+#   stage2.production.tsv       the command, flags, target layout, digest, the
+#                               import verdict, the source and bitcode objects
+#                               the capture built beside it, and the declared
+#                               release artifact (the textual-IR-derived object)
+#                               with its input and object hashes
 #   stage2.production.import.tsv  each measured stopping point, from the raw
 #                               module inward: the first construct the parser
 #                               refuses at that level, with its function and
@@ -241,6 +244,17 @@ obj_bytes=$(wc -c < "$work/stage2.o" | tr -d ' ')
 ( cd "$repo" && clang "${flags[@]}" -c "$src" -o "$work/source.o" ) ||
   fail "clang refused the source object"
 src_obj_sha=$(sha256sum "$work/source.o" | awk '{print $1}')
+# The bitcode route: the module emitted to bitcode, then compiled by the
+# backend with the middle end disabled.  Its bitcode and object digests are
+# computed here so the identity the record states is a comparison this script
+# ran, not a claim beside hashes it did not build.
+( cd "$repo" && clang "${flags[@]}" -c -emit-llvm "$src" -o "$work/stage2.bc" ) ||
+  fail "clang refused the bitcode emission"
+bc_sha=$(sha256sum "$work/stage2.bc" | awk '{print $1}')
+( cd "$repo" && clang "${flags[@]}" -c -Xclang -disable-llvm-passes "$work/stage2.bc" \
+    -o "$work/bitcode.o" 2>/dev/null ) ||
+  fail "clang refused the bitcode as an object input"
+bc_obj_sha=$(sha256sum "$work/bitcode.o" | awk '{print $1}')
 # The naming flag is a naming flag: the named emission, compiled the same way,
 # is the same object.  The record states it only because this proves it here.
 ( cd "$repo" && clang "${flags[@]}" -c -Xclang -disable-llvm-passes "$work/named.ll" \
@@ -250,6 +264,20 @@ named_obj_sha=$(sha256sum "$work/named.o" | awk '{print $1}')
   fail "-fno-discard-value-names changed the object ($named_obj_sha against $obj_sha)"
 
 cp "$work/stage2.ll" "$artifact"
+
+
+# The descent's last parse row replaces every `switch` with
+# `opt -passes=lower-switch`.  That is a transformation, not a parse, so the row
+# is only as good as the pass's per-switch correspondence; check it here on the
+# same bytes, and record the count it swept.
+( cd "$repo" && opt -S -passes=lower-switch "${artifact#$repo/}" \
+    -o "$work/production.lowered.ll" ) ||
+  fail "opt refused the emission during the switch-lowering check"
+switch_tested=$(python3 "$repo/probes/install/ir/check-switch-lowering.py" \
+  "$artifact" "$work/production.lowered.ll" "$here/stage2.production.switch.tsv" >/dev/null 2>&1 && \
+  awk -F'\t' '$1 != "summary" && $1 != "index" {n += $9} END {print n+0}' \
+  "$here/stage2.production.switch.tsv") ||
+  fail "lower-switch does not preserve a switch's successor; see stage2.production.switch.tsv"
 
 {
   printf '# The production stage-2 emission and what reads it.\n'
@@ -276,11 +304,28 @@ cp "$work/stage2.ll" "$artifact"
   printf 'object_sha256\t%s\n' "$obj_sha"
   printf 'object_bytes\t%s\n' "$obj_bytes"
   printf 'source_object_sha256\t%s\n' "$src_obj_sha"
+  printf 'bitcode_sha256\t%s\n' "$bc_sha"
+  printf 'bitcode_object_sha256\t%s\n' "$bc_obj_sha"
+  if [ "$bc_obj_sha" = "$src_obj_sha" ]; then
+    printf 'bitcode_dataset\tthe bitcode route (-c -emit-llvm %s, then -Xclang -disable-llvm-passes) builds %s, the source object byte for byte\n' \
+      "$src" "$bc_obj_sha"
+  else
+    printf 'bitcode_dataset\tthe bitcode route (-c -emit-llvm %s, then -Xclang -disable-llvm-passes) builds %s; the source object is %s\n' \
+      "$src" "$bc_obj_sha" "$src_obj_sha"
+  fi
   if [ "$obj_sha" = "$src_obj_sha" ]; then
     printf 'object_dataset\tthe same flags build this object from kernel/json/stage2.c: identical\n'
   else
-    printf 'object_dataset\tthe same flags build %s from kernel/json/stage2.c: the text-derived object is not that object; the bitcode route (-c -emit-llvm, then -Xclang -disable-llvm-passes) reproduces it byte for byte\n' "$src_obj_sha"
+    printf 'object_dataset\tthe same flags build %s from kernel/json/stage2.c: the textual-IR object is not that object, nor the bitcode route'"'"'s %s\n' \
+      "$src_obj_sha" "$bc_obj_sha"
   fi
+  printf 'release_artifact\tthe textual-IR-derived object: probes/install/ir/stage2.production.ll (sha256 %s) compiled with -Xclang -disable-llvm-passes -> stage2.o sha256 %s, %s bytes\n' \
+    "$sha" "$obj_sha" "$obj_bytes"
+  printf 'release_input\tsha256 %s (probes/install/ir/stage2.production.ll)\n' "$sha"
+  printf 'release_object\tsha256 %s (stage2.o)\n' "$obj_sha"
+  printf 'release_selection\tThe declared release object is the one compiled from the committed production IR, not the source or bitcode object: the committed bytes are what the importer reads and what the route'"'"'s STAGE2_IR build compiles, so the object bound to the release is the one whose input a reviewer can hash.  The capture measures the other two routes and finds the textual round trip is not byte-faithful to them (%s against %s), so the choice is deliberate rather than an assumption of identity.\n' \
+    "$obj_sha" "$src_obj_sha"
+  printf 'switch_lowering\tevery switch has at least two distinct successors, and the pass preserves each one for every value its tests can distinguish (%s values swept)\n' "${switch_tested:-0}"
 } > "$work/record.tsv"
 
 cp "$work/record.tsv" "$record"
